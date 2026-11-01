@@ -174,8 +174,9 @@
 
   /* ───────── Store ───────── */
   const KEY = 'wt.data.v1';
+  const DATA_VERSION = 3;
   const fresh = () => ({
-    version: 2,
+    version: DATA_VERSION,
     profile: WT.defaultProfile(),
     customExercises: [],
     overrides: {},
@@ -209,8 +210,36 @@
     out.history = Array.isArray(out.history) ? out.history : [];
     out.customExercises = Array.isArray(out.customExercises) ? out.customExercises : [];
     out.overrides = out.overrides || {};
+    // v2 → v3: multi-stage sets (drop / build-up). Existing sets need no change — a set without
+    // `stages` is a plain set. Only sanitise staged sets so later code can rely on their shape.
+    if ((out.version || 1) < DATA_VERSION) out.version = DATA_VERSION;
+    const fixSets = (e) => (e && Array.isArray(e.sets) ? e.sets.forEach(normalizeStagedSet(e)) : null);
+    out.history.forEach((sess) => (sess.exercises || []).forEach(fixSets));
+    if (out.active) (out.active.exercises || []).forEach(fixSets);
     return out;
   }
+  const normalizeStagedSet = (e) => (set) => {
+    if (!set || set.stages == null) return;
+    if (!Array.isArray(set.stages)) return delete set.stages;
+    set.stages = set.stages.filter((st) => st && typeof st === 'object');
+    if (!set.stages.length) return delete set.stages;
+    if (!WT.STAGED[set.type]) set.type = WT.STAGED[e.intensity] ? e.intensity : 'drop';
+  };
+
+  /* ───────── Multi-stage sets ─────────
+   * A drop set or build-up set is ONE set in `exercise.sets` (so it counts once everywhere), shaped
+   *   { type: 'drop' | 'buildup', done, at, stages: [{ w, r, tr, done, at }] }
+   * where w / r are the performed weight and reps (strings, '' until logged) and tr the stage's
+   * target reps. Plain sets keep their original shape { w, r, done, at } and never have `stages`.
+   */
+  WT.STAGED = {
+    drop: { name: 'Drop set', dir: -1, verb: 'Lower the weight each stage', rest: 'little or no rest' },
+    buildup: { name: 'Build-up set', dir: 1, verb: 'Add weight each stage', rest: 'rest as needed' },
+  };
+  WT.isStagedSet = (s) => !!(s && Array.isArray(s.stages) && s.stages.length);
+  /** Performed parts of a set: the done stages of a staged set, or the set itself. */
+  WT.setParts = (s) => (WT.isStagedSet(s) ? s.stages.filter((st) => st.done) : s && s.done ? [s] : []);
+  WT.setVolume = (s) => WT.setParts(s).reduce((a, x) => a + (+x.w || 0) * (+x.r || 0), 0);
 
   const storage = globalThis.localStorage || { getItem: () => null, setItem: () => {}, removeItem: () => {} };
 

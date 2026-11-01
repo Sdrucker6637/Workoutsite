@@ -98,6 +98,7 @@ Netlify Drop (drag the folder onto app.netlify.com/drop) and Cloudflare Pages al
 node tests/engine.test.js                          # generator, intensity statistics over 3,200 workouts, progression, PRs, import/export (≈37k assertions)
 python3 -m http.server 8765 & node tests/e2e.test.js   # full browser flow (needs Playwright)
 node tests/features.test.js                         # exercise demonstrations + More options panel
+node tests/settypes.test.js                         # drop sets, build-up sets, plain set types unchanged
 ```
 The end-to-end test generates every workout type, swaps exercises, logs a full session, refreshes mid-workout, saves, and checks that the next session shows previous weights and an increase recommendation that is only applied on approval. It also checks the v1 → v2 data upgrade, intensity variety across repeated generations through the UI, the intensity picker, PR detection, the charts, export → wipe → import, persistence after refresh, the theme toggle and offline loading.
 

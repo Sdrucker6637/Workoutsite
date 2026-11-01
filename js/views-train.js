@@ -14,7 +14,11 @@
     const tt = WT.trackType(ex);
     const u = WT.db.profile.unit;
     if (tt === 'cardio' || tt === 'time') return '';
-    const rec = WT.recommend(exId, { repMin: item.repMin, repMax: item.repMax, sets: item.sets || item.targetSets, intensity: item.intensity });
+    const rec = WT.recommend(exId, { repMin: item.repMin, repMax: item.repMax, sets: item.sets || item.targetSets, intensity: item.intensity, stages: item.stageCount });
+    if (rec && rec.stages) {
+      const ws = rec.stages.map((x) => x.w).filter((w) => w > 0);
+      return ws.length ? `${ws.map((w) => WT.fmtNum(w)).join(' → ')} ${u}` : '';
+    }
     if (rec && rec.weight != null && rec.weight > 0) return `${WT.fmtNum(rec.weight)} ${u}`;
     if (tt === 'reps') return rec && rec.addLoad ? `+${rec.addLoad} ${u}` : 'Bodyweight';
     return '';
@@ -361,8 +365,8 @@
       return {
         eyebrow: esc(ex.name),
         title: 'Intensity',
-        body: `<div class="list inset">${WT.INTENSITIES.map((k) => {
-          const ok = ex.intensities.includes(k);
+        body: `<div class="list inset">${WT.SET_TYPES.map((k) => {
+          const ok = WT.STAGED[k] ? WT.canStage(ex) : ex.intensities.includes(k);
           const pr = ok ? WT.prescribe(ex, k) : null;
           const info = WT.INTENSITY_INFO[k];
           return H.li({
@@ -370,7 +374,7 @@
             cls: it.intensity === k ? 'on' : '',
             attrs: `data-k="${k}" ${ok ? '' : 'disabled'}`,
             title: `<span class="int ${k}" style="font-size:15px">${info.name}</span>`,
-            sub: ok ? `${H.target(Object.assign({}, pr, { targetSets: pr.sets }), ex)}${pr.rest ? ` · ${WT.fmtClock(pr.rest)} rest` : ''} — ${info.text}` : 'Not suitable for this exercise',
+            sub: ok ? `${H.target(Object.assign({}, pr, { targetSets: pr.sets }), ex)}${WT.STAGED[k] ? ` · ${WT.stageReps(k, pr.stageCount, pr.repMin, pr.repMax).join(' / ')} reps` : ''}${pr.rest ? ` · ${WT.fmtClock(pr.rest)} rest` : ''} — ${info.text}` : WT.STAGED[k] ? 'Needs a weighted exercise' : 'Not suitable for this exercise',
             trail: it.intensity === k ? `<span class="accent">${I('check', 18)}</span>` : '',
           });
         }).join('')}</div>`,
@@ -380,8 +384,23 @@
       const w = ctx === 'active' ? WT.db.active : WT.db.draft;
       const it = w.exercises.find((e) => e.uid === uid);
       const pr = WT.prescribe(WT.ex(it.exId), dd.k);
-      if (ctx === 'active') Object.assign(it, { intensity: pr.intensity, repMin: pr.repMin, repMax: pr.repMax, rest: pr.rest, note: pr.note, recApplied: false });
+      const staged = !!WT.STAGED[pr.intensity];
+      if (staged) Object.assign(it, { stageCount: pr.stageCount, stageRest: pr.stageRest });
       else {
+        delete it.stageCount;
+        delete it.stageRest;
+      }
+      if (ctx === 'active') {
+        Object.assign(it, { intensity: pr.intensity, repMin: pr.repMin, repMax: pr.repMax, rest: pr.rest, note: pr.note, recApplied: false });
+        // Logged sets keep their shape; unlogged sets take the new set type.
+        it.sets = it.sets.map((x) => {
+          if (x.done) return x;
+          if (staged) return WT.isStagedSet(x) && x.type === pr.intensity ? x : WT.newSet(it);
+          return WT.isStagedSet(x) ? { w: '', r: '', done: false } : x;
+        });
+        it.edit = null;
+        it.stageSel = null;
+      } else {
         Object.assign(it, pr);
         w.estimatedMin = WT.estimateMinutes(w.exercises);
       }
@@ -576,6 +595,108 @@
   }
   const val = (s, f, d) => (s[f] !== '' && s[f] != null ? s[f] : d[f]);
 
+  /* ───────── Multi-stage sets (drop / build-up) ───────── */
+  const planOf = (it) => ({ repMin: it.repMin, repMax: it.repMax, sets: it.targetSets, intensity: it.intensity, stages: it.stageCount });
+  /** Last performance + recommendation, comparing like with like (plain sets vs. the same staged kind). */
+  function histCtx(it, a) {
+    const hist = WT.exerciseHistory(it.exId, a.id, WT.kindOf(it.intensity));
+    return { last: hist[hist.length - 1], rec: WT.recommend(it.exId, planOf(it), a.id) };
+  }
+  /**
+   * Values shown for a stage when blank: applied recommendation → same stage of the previous set
+   * today → same stage last time → derived from the stage before (drop: lighter, build-up: heavier).
+   */
+  function stageDefaults(it, i, k, ctx) {
+    const ex = WT.ex(it.exId);
+    const set = it.sets[i];
+    const st = set.stages[k];
+    const recSt = ctx.rec && ctx.rec.stages && ctx.rec.kind === set.type ? ctx.rec.stages[k] : null;
+    const prevSeq = it.sets.slice(0, i).reverse().find((x) => x.done && x.type === set.type && x.stages && x.stages[k] && x.stages[k].done);
+    const lg = ctx.last && ctx.last.groups && ctx.last.groups.length ? ctx.last.groups[Math.min(i, ctx.last.groups.length - 1)] : null;
+    const ls = lg ? lg[k] : null;
+    const before = k > 0 ? set.stages[k - 1] : null;
+    // If the stage before was logged at a different load than last time, follow today's load instead.
+    const chainBroken = before && before.done && lg && lg[k - 1] && +lg[k - 1].w !== +before.w;
+    let w = '';
+    if (it.recApplied && recSt && recSt.w > 0) w = recSt.w;
+    else if (prevSeq) w = prevSeq.stages[k].w;
+    else if (ls && !chainBroken) w = ls.w;
+    if ((w === '' || w == null) && k > 0) w = WT.stageLoad(ex, val(before, 'w', stageDefaults(it, i, k - 1, ctx)), set.type);
+    const r = st.tr || (recSt && recSt.r) || (ls && ls.r) || it.repMax;
+    return { w: w == null ? '' : w, r };
+  }
+  /** Stage being logged in a staged set: the one the user picked, else the first not yet logged. */
+  function stageIndex(it, i) {
+    const set = it.sets[i];
+    const sel = typeof it.stageSel === 'string' && it.stageSel.split(':');
+    if (sel && +sel[0] === i && set.stages[+sel[1]]) return +sel[1];
+    return set.stages.findIndex((st) => !st.done);
+  }
+  function stagedSummary(it, i, ctx) {
+    const u = WT.db.profile.unit;
+    const set = it.sets[i];
+    let anyW = false;
+    const parts = set.stages
+      .map((st, k) => {
+        if (set.done && !st.done) return null;
+        const d = stageDefaults(it, i, k, ctx);
+        const w = val(st, 'w', d);
+        if (w !== '') anyW = true;
+        return `${w === '' ? '—' : WT.fmtNum(+w)}×${val(st, 'r', d)}`;
+      })
+      .filter(Boolean);
+    return parts.join(' → ') + (anyW ? ' ' + u : '');
+  }
+  function stagedEditor(it, i, ctx, field) {
+    const ex = WT.ex(it.exId);
+    const u = WT.db.profile.unit;
+    const set = it.sets[i];
+    const info = WT.STAGED[set.type];
+    const cur = stageIndex(it, i);
+    const doneN = set.stages.filter((st) => st.done).length;
+    const lines = set.stages
+      .map((st, k) => {
+        const d = stageDefaults(it, i, k, ctx);
+        const w = val(st, 'w', d);
+        const fresh = WT.ui.justSet === `${it.uid}:${i}:${k}`;
+        const cls = `${st.done ? 'done' : 'todo'} ${k === cur ? 'editing' : ''} ${fresh ? 'fresh' : ''}`;
+        const dir = k ? `<span class="dir" aria-hidden="true">${I(set.type === 'drop' ? 'trendDown' : 'trendUp', 13)}</span>` : '';
+        return `<button class="set-line stage ${cls}" data-act="woStageSel" data-uid="${it.uid}" data-i="${i}" data-k="${k}" aria-label="Stage ${k + 1}${st.done ? ', logged' : ''}" ${k === cur ? 'aria-current="step"' : ''}><span class="sn">${k + 1}</span><span class="sv">${dir}${w === '' ? '—' : WT.fmtNum(+w) + ' ' + u} × ${val(st, 'r', d)}</span><span class="ck">${st.done ? I('check', 13) : ''}</span></button>`;
+      })
+      .join('');
+    let fields = '', warn = '';
+    if (cur >= 0) {
+      const st = set.stages[cur];
+      const d = stageDefaults(it, i, cur, ctx);
+      fields = `<div class="fields mt12">${field('w', u, 1, 'decimal', cur, val(st, 'w', d))}${field('r', 'reps', 1, 'numeric', cur, val(st, 'r', d))}</div>`;
+      if (cur > 0) {
+        const pw = +val(set.stages[cur - 1], 'w', stageDefaults(it, i, cur - 1, ctx));
+        const cw = +val(st, 'w', d);
+        if (pw > 0 && cw > 0 && (set.type === 'drop' ? cw >= pw : cw <= pw))
+          warn = `<p class="stage-warn">${I('info', 14)}<span>${set.type === 'drop' ? `Not lighter than stage ${cur} — a drop set lowers the weight each stage.` : `Not heavier than stage ${cur} — a build-up set adds weight each stage.`}</span></p>`;
+      }
+    }
+    const st = cur >= 0 ? set.stages[cur] : null;
+    let primary;
+    if (st && !st.done) primary = `<button class="btn btn-primary btn-lg btn-block complete" data-act="woStageCheck" data-uid="${it.uid}" data-i="${i}" data-k="${cur}">${I('check', 19)}Log stage ${cur + 1}</button>`;
+    else if (!set.done) primary = `<button class="btn btn-primary btn-lg btn-block complete" data-act="woStageFinish" data-uid="${it.uid}" data-i="${i}">${I('check', 19)}Complete set</button>`;
+    else primary = `<div class="row complete" style="gap:8px"><button class="btn btn-secondary btn-lg grow" data-act="woUndoSet" data-uid="${it.uid}" data-i="${i}">Mark not done</button><button class="btn btn-primary btn-lg grow" data-act="woStageDone" data-uid="${it.uid}">Save</button></div>`;
+    const lg = ctx.last && ctx.last.groups && ctx.last.groups.length ? ctx.last.groups[Math.min(i, ctx.last.groups.length - 1)] : null;
+    const a = `data-uid="${it.uid}" data-i="${i}"`;
+    return `<div class="editor staged ${set.type}">
+        <div class="editor-label"><span>${set.done ? `Edit ${info.name.toLowerCase()} ${i + 1}` : `${info.name} ${i + 1} of ${it.sets.length}`}${cur >= 0 ? ` · Stage ${cur + 1} of ${set.stages.length}` : ''}</span>${lg ? `<span class="t3">Last ${lg.map((x) => `${WT.fmtNum(x.w)}×${x.r}`).join(' → ')}</span>` : ''}</div>
+        <p class="stage-hint">${I(set.type === 'drop' ? 'trendDown' : 'trendUp', 14)}<span>${info.verb} · ${info.rest}</span></p>
+        <div class="sets stages">${lines}</div>
+        ${fields}${warn}
+        ${primary}
+        <div class="stage-actions">
+          <button class="btn btn-plain btn-sm" data-act="woStageAdd" ${a}>${I('plus', 15)}Add stage</button>
+          ${set.stages.length > 1 && cur >= 0 ? `<button class="btn btn-plain btn-sm" data-act="woStageRemove" ${a} data-k="${cur}">Remove stage ${cur + 1}</button>` : ''}
+          ${!set.done && doneN && st && !st.done ? `<button class="btn btn-plain btn-sm" data-act="woStageFinish" ${a}>End set after ${doneN} stage${doneN === 1 ? '' : 's'}</button>` : ''}
+        </div>
+      </div>`;
+  }
+
   V.workout = function () {
     const a = WT.db.active;
     if (!a)
@@ -598,7 +719,7 @@
         const cls = e.skipped ? 'skipped' : complete ? 'done' : e === it ? 'current' : '';
         return `<button class="next-row ${cls}" data-act="woFocus" data-uid="${e.uid}">
           <span class="state">${complete ? I('check', 13) : k + 1}</span>
-          <div style="min-width:0"><div class="ti ellipsis">${esc(ex.name)}</div><div class="su">${e.skipped ? 'Skipped' : H.target({ sets: e.targetSets, repMin: e.repMin, repMax: e.repMax }, ex)}${e.superset ? ` · Superset ${e.superset}` : ''}</div></div>
+          <div style="min-width:0"><div class="ti ellipsis">${esc(ex.name)}</div><div class="su">${e.skipped ? 'Skipped' : H.target({ sets: e.targetSets, repMin: e.repMin, repMax: e.repMax, intensity: e.intensity, stageCount: e.stageCount }, ex)}${e.superset ? ` · Superset ${e.superset}` : ''}</div></div>
           <span class="cnt">${e.skipped ? '' : `${d}/${e.sets.length}`}</span></button>`;
       })
       .join('');
@@ -634,10 +755,8 @@
     if (!ex) return '';
     const tt = WT.trackType(ex);
     const u = WT.db.profile.unit;
-    const hist = WT.exerciseHistory(ex.id, a.id);
-    const last = hist[hist.length - 1];
-    const rec = WT.recommend(ex.id, { repMin: it.repMin, repMax: it.repMax, sets: it.targetSets, intensity: it.intensity }, a.id);
-    const ctx = { last, rec };
+    const ctx = histCtx(it, a);
+    const { last, rec } = ctx;
     const ei = editIndex(it);
     const secUnit = tt === 'time' || ex.unit === 'sec';
     const allDone = it.sets.length && it.sets.every((s) => s.done);
@@ -651,6 +770,10 @@
 
     const setLines = it.sets
       .map((s, i) => {
+        if (WT.isStagedSet(s)) {
+          const cls = `${s.done ? 'done' : 'todo'} ${i === ei ? 'editing' : ''} ${WT.ui.justSet === it.uid + ':' + i ? 'fresh' : ''}`;
+          return `<button class="set-line ${cls}" data-act="woEditSet" data-uid="${it.uid}" data-i="${i}" aria-label="${WT.STAGED[s.type].name} ${i + 1}"><span class="sn">${i + 1}</span><span class="sv">${stagedSummary(it, i, ctx)}</span><span class="ck">${s.done ? I('check', 13) : ''}</span></button>`;
+        }
         const d = defaults(it, i, ctx);
         const editing = i === ei;
         const fresh = WT.ui.justSet === it.uid + ':' + i;
@@ -660,7 +783,14 @@
       .join('');
 
     let editor = '';
-    if (ei >= 0) {
+    if (ei >= 0 && WT.isStagedSet(it.sets[ei])) {
+      const stField = (f, label, step, mode, k, v) => `<div class="field-num">
+          <button data-act="adj" data-uid="${it.uid}" data-i="${ei}" data-k="${k}" data-f="${f}" data-d="-1" aria-label="Decrease ${label}">${I('minus', 20)}</button>
+          <input type="text" inputmode="${mode}" data-in="setVal" data-uid="${it.uid}" data-i="${ei}" data-k="${k}" data-f="${f}" value="${esc(v)}" aria-label="Stage ${k + 1} ${label}" autocomplete="off">
+          <span class="u">${label}</span>
+          <button data-act="adj" data-uid="${it.uid}" data-i="${ei}" data-k="${k}" data-f="${f}" data-d="1" aria-label="Increase ${label}">${I('plus', 20)}</button></div>`;
+      editor = stagedEditor(it, ei, ctx, stField);
+    } else if (ei >= 0) {
       const s = it.sets[ei];
       const d = defaults(it, ei, ctx);
       const field = (f, label, step, mode) => `<div class="field-num">
@@ -691,7 +821,9 @@
 
     const recIcon = { increase: 'trendUp', progress: 'trendUp', decrease: 'trendDown', hold: 'equal', reps: 'plus', return: 'refresh' }[rec.action] || 'info';
     const lastTop = last ? last.metrics.topWeight : null;
-    const canApply = (rec.weight != null && rec.weight !== lastTop && (tt === 'weight' || (tt === 'reps' && rec.weight > 0))) || (rec.addLoad && tt === 'reps');
+    const canApply = rec.stages
+      ? rec.stages.some((x) => x.w > 0)
+      : (rec.weight != null && rec.weight !== lastTop && (tt === 'weight' || (tt === 'reps' && rec.weight > 0))) || (rec.addLoad && tt === 'reps');
     const advice =
       allDone || it.skipped
         ? ''
@@ -703,7 +835,7 @@
       <div class="cur-top"><div class="grow">
           ${it.superset ? `<div class="cur-over">Superset ${it.superset}</div>` : ''}
           <h2><button data-act="exDetail" data-id="${ex.id}">${esc(ex.name)}</button></h2>
-          <div class="cur-meta"><span class="rx">${H.target({ sets: it.targetSets, repMin: it.repMin, repMax: it.repMax }, ex)}</span>${it.rest ? `<span>${WT.fmtClock(it.rest)} rest</span>` : ''}${H.intensity(it.intensity, 'pickIntensity', it.uid, 'active')}</div>
+          <div class="cur-meta"><span class="rx">${H.target({ sets: it.targetSets, repMin: it.repMin, repMax: it.repMax, intensity: it.intensity, stageCount: it.stageCount }, ex)}</span>${it.rest ? `<span>${WT.fmtClock(it.rest)} rest</span>` : ''}${H.intensity(it.intensity, 'pickIntensity', it.uid, 'active')}</div>
         </div>
         <div class="row" style="gap:0;margin:-6px -8px 0 0">
           <button class="icon-btn" data-act="openSwap" data-ctx="active" data-uid="${it.uid}" title="Swap" aria-label="Swap exercise">${I('swap', 18)}</button>
@@ -717,6 +849,13 @@
     </div>`;
   }
   function fmtSets(sets, tt, ex) {
+    if (sets.some((s) => s.g != null)) {
+      const plain = sets.filter((s) => s.g == null);
+      const groups = [];
+      sets.forEach((s) => s.g != null && (groups[s.g] = groups[s.g] || []).push(s));
+      const staged = groups.map((g) => g.map((s) => `${WT.fmtNum(s.w)}×${s.r}`).join(' → ')).join(' · ');
+      return plain.length ? fmtSets(plain, tt, ex) + ' · ' + staged : staged;
+    }
     if (tt === 'cardio') return sets.map((s) => `${s.time || 0} min${s.dist ? ' · ' + s.dist + ' mi' : ''}`).join(', ');
     if (tt === 'time' || (ex && ex.unit === 'sec' && !sets.some((s) => s.w))) return sets.map((s) => s.r + 's').join(', ');
     const allSameW = sets.every((s) => s.w === sets[0].w);
@@ -726,11 +865,7 @@
   }
   WT.fmtSets = fmtSets;
 
-  function ctxFor(it) {
-    const a = WT.db.active;
-    const hist = WT.exerciseHistory(it.exId, a.id);
-    return { last: hist[hist.length - 1], rec: WT.recommend(it.exId, { repMin: it.repMin, repMax: it.repMax, sets: it.targetSets, intensity: it.intensity }, a.id) };
-  }
+  const ctxFor = (it) => histCtx(it, WT.db.active);
   /** Step a value up/down: dumbbells move to the next one you own; reps by one. */
   function stepValue(ex, f, v, dir) {
     v = +v || 0;
@@ -749,8 +884,10 @@
   }
   A.adj = (d) => {
     const it = actItem(d.uid);
-    const s = it.sets[+d.i];
-    const cur = val(s, d.f, defaults(it, +d.i, ctxFor(it)));
+    const staged = d.k != null && d.k !== '' && WT.isStagedSet(it.sets[+d.i]);
+    const s = staged ? it.sets[+d.i].stages[+d.k] : it.sets[+d.i];
+    if (!s) return;
+    const cur = val(s, d.f, staged ? stageDefaults(it, +d.i, +d.k, ctxFor(it)) : defaults(it, +d.i, ctxFor(it)));
     s[d.f] = String(stepValue(WT.ex(it.exId), d.f, cur, +d.d));
     WT.save();
     WT.rerender();
@@ -760,7 +897,10 @@
     if (!it) return;
     const v = el.value.replace(',', '.').replace(/[^0-9.]/g, '');
     if (v !== el.value) el.value = v;
-    it.sets[+el.dataset.i][el.dataset.f] = v;
+    const set = it.sets[+el.dataset.i];
+    const k = el.dataset.k;
+    const target = k != null && k !== '' && WT.isStagedSet(set) ? set.stages[+k] : set;
+    if (target) target[el.dataset.f] = v;
     WT.save();
   };
   WT.I.exNotes = (el) => {
@@ -790,6 +930,7 @@
     const it = actItem(d.uid);
     const i = +d.i;
     it.edit = it.sets[i].done || i !== it.sets.findIndex((s) => !s.done) ? i : null;
+    it.stageSel = null;
     WT.save();
     WT.rerender();
   };
@@ -797,13 +938,13 @@
     const it = actItem(d.uid);
     it.sets[+d.i].done = false;
     it.edit = null;
+    it.stageSel = null;
     WT.ui.justSet = null;
     WT.save();
     WT.rerender();
   };
   A.woCheck = (d) => {
     WT.unlockAudio();
-    const a = WT.db.active;
     const it = actItem(d.uid);
     const ex = WT.ex(it.exId);
     const tt = WT.trackType(ex);
@@ -816,10 +957,18 @@
     if (tt === 'weight' && (s.w === '' || s.w == null)) return WT.toast('Enter the weight', 'error');
     if (tt !== 'cardio' && !(+s.r > 0)) return WT.toast(tt === 'time' ? 'Enter seconds held' : 'Enter reps', 'error');
     if (tt === 'cardio' && !(+s.time > 0) && !(+s.dist > 0)) return WT.toast('Enter time or distance', 'error');
+    completeSet(it, i);
+  };
+  /** Mark set i done and run the shared flow: rest timer, superset alternation, next exercise. */
+  function completeSet(it, i) {
+    const a = WT.db.active;
+    const tt = WT.trackType(WT.ex(it.exId));
+    const s = it.sets[i];
     const wasEditing = s.done;
     s.done = true;
     s.at = s.at || new Date().toISOString();
     it.edit = null;
+    it.stageSel = null;
     if (wasEditing) {
       WT.save();
       WT.rerender();
@@ -827,7 +976,7 @@
     }
     WT.ui.justSet = it.uid + ':' + i;
     a.askEffort = null;
-    if (tt !== 'cardio' && s.w !== '') it.sets.slice(i + 1).forEach((x) => !x.done && (x.w === '' || x.w == null) && (x.w = s.w));
+    if (tt !== 'cardio' && !WT.isStagedSet(s) && s.w !== '') it.sets.slice(i + 1).forEach((x) => !x.done && !WT.isStagedSet(x) && (x.w === '' || x.w == null) && (x.w = s.w));
     const exComplete = it.sets.every((x) => x.done);
     const remaining = a.exercises.some((e) => !e.skipped && e.sets.some((x) => !x.done));
 
@@ -855,6 +1004,82 @@
     if (rest) WT.startTimer(exComplete ? Math.min(it.rest, 120) : it.rest, exComplete ? 'Next exercise' : 'Rest');
     WT.save();
     WT.rerender();
+  }
+
+  /* Stage actions (drop / build-up sets) */
+  A.woStageSel = (d) => {
+    const it = actItem(d.uid);
+    it.stageSel = `${+d.i}:${+d.k}`;
+    if (it.sets[+d.i].done) it.edit = +d.i;
+    WT.save();
+    WT.rerender();
+  };
+  A.woStageCheck = (d) => {
+    WT.unlockAudio();
+    const it = actItem(d.uid);
+    const i = +d.i, k = +d.k;
+    const set = it.sets[i];
+    const st = set && set.stages[k];
+    if (!st) return;
+    const df = stageDefaults(it, i, k, ctxFor(it));
+    ['w', 'r'].forEach((f) => (st[f] === '' || st[f] == null) && df[f] !== '' && df[f] != null && (st[f] = String(df[f])));
+    if (st.w === '' || st.w == null) return WT.toast('Enter the weight', 'error');
+    if (!(+st.r > 0)) return WT.toast('Enter reps', 'error');
+    st.done = true;
+    st.at = st.at || new Date().toISOString();
+    it.stageSel = null;
+    WT.ui.justSet = `${it.uid}:${i}:${k}`;
+    if (!set.done && set.stages.every((x) => x.done)) return completeSet(it, i);
+    if (!set.done && set.type === 'buildup' && it.stageRest > 0) WT.startTimer(it.stageRest, 'Rest · stage ' + (set.stages.findIndex((x) => !x.done) + 1));
+    WT.save();
+    WT.rerender();
+  };
+  /** End a sequence early (or complete it after edits): keeps the logged stages, unlogged ones are dropped on save. */
+  A.woStageFinish = (d) => {
+    const it = actItem(d.uid);
+    const set = it.sets[+d.i];
+    if (!set.stages.some((x) => x.done)) return WT.toast('Log at least one stage', 'error');
+    completeSet(it, +d.i);
+  };
+  A.woStageDone = (d) => {
+    const it = actItem(d.uid);
+    it.edit = null;
+    it.stageSel = null;
+    WT.save();
+    WT.rerender();
+  };
+  /** Add / remove a stage. The new count carries to later sets of this exercise that have no stage logged yet. */
+  function restage(it, i, n) {
+    it.stageCount = n;
+    it.sets.forEach((x, j) => {
+      if (j <= i || x.done || !WT.isStagedSet(x) || x.stages.some((st) => st.done)) return;
+      x.stages = WT.newSet(it, n).stages;
+    });
+  }
+  A.woStageAdd = (d) => {
+    const it = actItem(d.uid);
+    const i = +d.i;
+    const set = it.sets[i];
+    const n = set.stages.length + 1;
+    const tr = WT.stageReps(set.type, n, it.repMin, it.repMax)[n - 1];
+    set.stages.push({ w: '', r: '', tr: set.type === 'drop' ? Math.max(tr, +set.stages[n - 2].tr || 0) : Math.min(tr, +set.stages[n - 2].tr || tr), done: false });
+    restage(it, i, n);
+    it.stageSel = `${i}:${n - 1}`;
+    if (set.done) it.edit = i;
+    WT.save();
+    WT.rerender();
+  };
+  A.woStageRemove = (d) => {
+    const it = actItem(d.uid);
+    const i = +d.i, k = +d.k;
+    const set = it.sets[i];
+    if (!set || set.stages.length < 2) return;
+    set.stages.splice(k, 1);
+    restage(it, i, set.stages.length);
+    it.stageSel = null;
+    if (set.done) it.edit = i;
+    WT.save();
+    WT.rerender();
   };
   A.dismissEffort = () => {
     WT.db.active.askEffort = null;
@@ -870,7 +1095,14 @@
   };
   A.woApplyRec = (d) => {
     const it = actItem(d.uid);
-    const rec = WT.recommend(it.exId, { repMin: it.repMin, repMax: it.repMax, sets: it.targetSets, intensity: it.intensity }, WT.db.active.id);
+    const rec = WT.recommend(it.exId, planOf(it), WT.db.active.id);
+    if (rec.stages) {
+      it.sets.forEach((s) => !s.done && WT.isStagedSet(s) && s.stages.forEach((st, k) => !st.done && rec.stages[k] && rec.stages[k].w > 0 && (st.w = String(rec.stages[k].w))));
+      it.recApplied = true;
+      WT.save();
+      WT.rerender();
+      return WT.toast('Stage loads set');
+    }
     const w = rec.weight != null ? rec.weight : rec.addLoad || null;
     if (w == null) return;
     it.sets.forEach((s) => {
@@ -884,7 +1116,8 @@
   A.woAddSet = (d) => {
     const it = actItem(d.uid);
     const lastSet = it.sets[it.sets.length - 1];
-    it.sets.push({ w: lastSet ? lastSet.w : '', r: '', done: false });
+    if (WT.STAGED[it.intensity]) it.sets.push(WT.newSet(it, lastSet && lastSet.stages ? lastSet.stages.length : it.stageCount));
+    else it.sets.push({ w: lastSet && !WT.isStagedSet(lastSet) ? lastSet.w : '', r: '', done: false });
     WT.db.active.focus = it.uid;
     WT.closeSheet(true);
     WT.save();
@@ -1034,7 +1267,7 @@
     if (!a) return;
     const done = doneSets(a), total = totalSets(a);
     let volume = 0;
-    a.exercises.forEach((e) => e.sets.forEach((s) => s.done && (volume += (+s.w || 0) * (+s.r || 0))));
+    a.exercises.forEach((e) => e.sets.forEach((s) => s.done && (volume += WT.setVolume(s))));
     WT.openSheet(() => ({
       title: 'Finish workout?',
       body: `<div class="summary">
@@ -1053,6 +1286,7 @@
       delete e.showNotes;
       delete e.expanded;
       delete e.edit;
+      delete e.stageSel;
     });
     delete s.timer;
     delete s.focus;

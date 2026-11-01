@@ -322,13 +322,19 @@
         const sec = tt === 'time' || (def && def.unit === 'sec');
         const rows = (e.sets || [])
           .map((st, i) => {
+            if (WT.isStagedSet(st)) {
+              // One row for the sequence (it is one set), its stages listed underneath
+              const info = WT.STAGED[st.type] || WT.STAGED.drop;
+              const head = `<tr class="staged-head"><td class="n">${i + 1}</td><td>${info.name} · ${st.stages.length} stage${st.stages.length === 1 ? '' : 's'}</td></tr>`;
+              return head + st.stages.map((x, k) => `<tr class="stage-row"><td class="n"></td><td><span class="t3">Stage ${k + 1}</span> ${k ? I(st.type === 'drop' ? 'trendDown' : 'trendUp', 12) : ''}${WT.fmtNum(+x.w)} ${u} × ${x.r}${x.tr ? `<span class="t3"> / ${x.tr}</span>` : ''}</td></tr>`).join('');
+            }
             const v = tt === 'cardio' ? `${st.time || '—'} min${st.dist ? ' · ' + st.dist + ' mi' : ''}` : tt === 'time' ? `${st.r} sec` : `${+st.w ? WT.fmtNum(+st.w) + ' ' + u : tt === 'reps' ? 'Bodyweight' : '—'} × ${st.r}${sec ? ' sec' : ''}`;
             return `<tr><td class="n">${i + 1}</td><td>${v}</td></tr>`;
           })
           .join('');
         return `<div class="section" style="margin-top:28px;${e.skipped ? 'opacity:.5' : ''}">
           <div class="row between base"><button class="headline" data-act="exDetail" data-id="${e.exId}" style="text-align:left">${esc(e.name || (def || {}).name || e.exId)}</button>${prIds.has(e.exId) ? `<span class="badge-pr">PR</span>` : e.skipped ? '<span class="footnote t3">Skipped</span>' : ''}</div>
-          <div class="row wrap footnote t2 mt4" style="gap:4px 12px">${e.intensity && e.intensity !== 'standard' && WT.INTENSITY_INFO[e.intensity] ? H.intensity(e.intensity) : ''}<span class="tnum">Target ${e.targetSets || '?'} × ${e.repMin}–${e.repMax}</span>${e.effort ? `<span>${{ easy: 'Felt easy', good: 'Felt solid', hard: 'Felt hard' }[e.effort]}</span>` : ''}</div>
+          <div class="row wrap footnote t2 mt4" style="gap:4px 12px">${e.intensity && e.intensity !== 'standard' && WT.INTENSITY_INFO[e.intensity] ? H.intensity(e.intensity) : ''}<span class="tnum">Target ${WT.STAGED[e.intensity] ? `${e.targetSets || '?'} × ${e.stageCount || '?'} stages` : `${e.targetSets || '?'} × ${e.repMin}–${e.repMax}`}</span>${e.effort ? `<span>${{ easy: 'Felt easy', good: 'Felt solid', hard: 'Felt hard' }[e.effort]}</span>` : ''}</div>
           ${rows ? `<table class="table mt8"><tbody>${rows}</tbody></table>` : ''}
           ${e.notes ? `<p class="footnote t2 mt8">${esc(e.notes)}</p>` : ''}</div>`;
       })

@@ -323,6 +323,7 @@
       const tt = WT.trackType(ex);
       if (tt === 'cardio') return `${item.repMin}–${item.repMax} min`;
       const unit = tt === 'time' || ex.unit === 'sec' ? 's' : '';
+      if (WT.STAGED[item.intensity]) return `${item.sets || item.targetSets} × ${item.stageCount || 3} stages`;
       return `${item.sets || item.targetSets} × ${item.repMin}${item.repMax !== item.repMin ? '–' + item.repMax : ''}${unit}`;
     },
     empty(title, text, action) {

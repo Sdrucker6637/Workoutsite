@@ -8,8 +8,18 @@
   const validSet = (s, tt) =>
     s && s.done && (tt === 'cardio' ? +s.time > 0 || +s.dist > 0 : tt === 'time' ? +s.r > 0 : +s.r > 0);
 
-  /** All completed performances of one exercise, oldest → newest. */
-  WT.exerciseHistory = function (exId, excludeSessionId) {
+  /** 'drop' | 'buildup' for a multi-stage set, 'straight' for a plain set. */
+  WT.setKind = (s) => (WT.isStagedSet(s) ? s.type : 'straight');
+  WT.kindOf = (intensity) => (WT.STAGED[intensity] ? intensity : 'straight');
+
+  /**
+   * All completed performances of one exercise, oldest → newest.
+   * kind (optional): 'straight' keeps only plain sets, 'drop' / 'buildup' only that kind of staged set,
+   * so a drop set is never compared with plain sets as if its stages were separate sets.
+   * Each entry's `sets` is flat ({w, r, …}); a stage carries g (its set's index) and k (stage index).
+   * `groups` lists the staged sets as arrays of their stages.
+   */
+  WT.exerciseHistory = function (exId, excludeSessionId, kind) {
     const ex = WT.ex(exId);
     const tt = ex ? WT.trackType(ex) : 'weight';
     const out = [];
@@ -17,16 +27,33 @@
       if (s.id === excludeSessionId) return;
       s.exercises.forEach((e) => {
         if (e.exId !== exId || e.skipped) return;
-        const sets = (e.sets || []).filter((x) => validSet(x, tt)).map((x) => ({ w: +x.w || 0, r: +x.r || 0, time: +x.time || 0, dist: +x.dist || 0 }));
+        const sets = [], groups = [];
+        let g = 0, gtype = null;
+        (e.sets || []).forEach((x) => {
+          if (kind && WT.setKind(x) !== kind) return;
+          if (WT.isStagedSet(x)) {
+            if (!x.done) return;
+            const parts = x.stages.filter((st) => validSet(st, tt)).map((st, k) => ({ w: +st.w || 0, r: +st.r || 0, time: 0, dist: 0, g, k, tr: +st.tr || null }));
+            if (!parts.length) return;
+            parts.forEach((p) => sets.push(p));
+            parts.type = x.type;
+            groups.push(parts);
+            gtype = gtype || x.type;
+            g++;
+          } else if (validSet(x, tt)) sets.push({ w: +x.w || 0, r: +x.r || 0, time: +x.time || 0, dist: +x.dist || 0 });
+        });
         if (!sets.length) return;
+        const nSets = groups.length + sets.filter((x) => x.g == null).length;
         out.push({
           date: s.endedAt || s.startedAt,
           sessionId: s.id,
           sets,
+          groups,
+          kind: !groups.length ? 'straight' : sets.some((x) => x.g == null) ? 'mixed' : gtype,
           intensity: e.intensity,
           repMin: e.repMin,
           repMax: e.repMax,
-          targetSets: e.targetSets || sets.length,
+          targetSets: e.targetSets || nSets,
           effort: e.effort || null,
           metrics: sessionMetrics(sets, tt),
         });
@@ -133,9 +160,26 @@
     const ex = WT.ex(exId);
     if (!ex) return null;
     const tt = WT.trackType(ex);
-    const hist = WT.exerciseHistory(exId, excludeSessionId);
     const u = WT.db.profile.unit;
     plan = plan || { repMin: ex.repMin, repMax: ex.repMax, sets: ex.sets, intensity: ex.intensity };
+    if (WT.STAGED[plan.intensity] && WT.canStage(ex)) return recommendStaged(ex, plan, excludeSessionId);
+    // Plain sets are compared only with plain sets: stages of a drop/build-up set are not separate sets.
+    const hist = WT.exerciseHistory(exId, excludeSessionId, 'straight');
+
+    if (!hist.length && tt === 'weight') {
+      const staged = WT.exerciseHistory(exId, excludeSessionId).filter((h) => h.groups.length);
+      const e = stagedE1rm(staged);
+      if (e > 0) {
+        const w = WT.snapLoad(ex, e / (1 + plan.repMax / 30));
+        return {
+          action: 'new',
+          weight: w,
+          reps: `${plan.repMin}–${plan.repMax}`,
+          headline: `${WT.fmtNum(w)} ${u} × ${plan.repMin}–${plan.repMax}`,
+          reasons: [`No plain sets logged yet. From your drop/build-up sets your estimated 1-rep max is ~${WT.fmtNum(Math.round(e))} ${u}.`, `${WT.fmtNum(w)} ${u} should land you in the ${plan.repMin}–${plan.repMax} range — adjust after the first set.`],
+        };
+      }
+    }
 
     if (!hist.length) {
       if (tt === 'cardio') return { action: 'new', headline: 'First logged session', reasons: ['Log time and distance — future sessions will show your pace trend.'] };
@@ -324,6 +368,158 @@
       basis,
     };
   };
+
+  /**
+   * Estimated 1RM from staged sets, using only fresh stages: the first stage of a drop set (later
+   * stages are pre-fatigued) and every stage of a build-up set.
+   */
+  function stagedE1rm(entries) {
+    let e = 0;
+    entries.forEach((h) => h.groups.forEach((grp) => {
+      (grp.type === 'buildup' ? grp : grp.slice(0, 1)).forEach((st) => (e = Math.max(e, WT.e1rm(st.w, st.r))));
+    }));
+    return e;
+  }
+
+  /** Default rep target for each stage. Drop: steady reps (last stage a little higher). Build-up: reps fall as load rises. */
+  WT.stageReps = function (kind, n, repMin, repMax) {
+    const out = [];
+    for (let k = 0; k < n; k++) {
+      if (kind === 'buildup') out.push(n === 1 ? repMax : Math.round(repMax - ((repMax - repMin) * k) / (n - 1)));
+      else out.push(k > 0 && k === n - 1 ? Math.min(repMax, repMin + 2) : repMin);
+    }
+    return out;
+  };
+  /** Next stage's load: drop sets go ~20% lighter (at least one step), build-up sets one step heavier. */
+  WT.stageLoad = function (ex, w, kind) {
+    w = +w || 0;
+    if (!(w > 0)) return '';
+    if (kind === 'buildup') return WT.stepLoad(ex, w, +1).w;
+    let x = w;
+    for (let i = 0; i < 8; i++) {
+      const nx = WT.stepLoad(ex, x, -1).w;
+      if (nx >= x) break;
+      x = nx;
+      if (x <= w * 0.8 + 1e-6) break;
+    }
+    return x < w ? x : '';
+  };
+
+  /**
+   * Progression for drop / build-up sets. Compares each stage with the SAME stage of the last set of
+   * the same kind (stage 1 with stage 1, stage 2 with stage 2…): a stage that beat its rep target by
+   * 2+ reps moves up one load step; otherwise it holds. Loads stay ordered (drop: each stage
+   * lighter; build-up: each heavier). Returns per-stage targets in `stages: [{w, r}]`.
+   */
+  function recommendStaged(ex, plan, excludeSessionId) {
+    const kind = plan.intensity;
+    const info = WT.STAGED[kind];
+    const u = WT.db.profile.unit;
+    const n = Math.max(1, plan.stages || 3);
+    const reps = WT.stageReps(kind, n, plan.repMin, plan.repMax);
+    const same = WT.exerciseHistory(ex.id, excludeSessionId, kind);
+    const last = same[same.length - 1];
+    const order = (ws) => {
+      for (let k = 1; k < ws.length; k++) {
+        if (!(ws[k - 1] > 0)) continue;
+        const ok = kind === 'drop' ? ws[k] > 0 && ws[k] < ws[k - 1] : ws[k] > ws[k - 1];
+        if (!ok) ws[k] = WT.stageLoad(ex, ws[k - 1], kind) || ws[k];
+      }
+      return ws;
+    };
+    const fmtW = (ws) => ws.map((w) => WT.fmtNum(w)).join(' → ') + ' ' + u;
+
+    if (last) {
+      const days = WT.daysBetween(last.date, new Date());
+      const when = days === 0 ? 'today' : days === 1 ? 'yesterday' : `${days} days ago`;
+      const grp = last.groups[0];
+      const hard = last.effort === 'hard';
+      const reasons = [];
+      let up = 0, held = 0;
+      const ws = [];
+      const rs = [];
+      for (let k = 0; k < n; k++) {
+        const st = grp[k];
+        const tr = (st && st.tr) || reps[k];
+        rs.push(tr);
+        if (!st) {
+          ws.push(k ? WT.stageLoad(ex, ws[k - 1], kind) || 0 : 0);
+          continue;
+        }
+        if (days > 28) {
+          ws.push(st.w);
+          held++;
+        } else if (st.r >= tr + 2 && !hard) {
+          // Clearly beat the stage's target (like reaching the top of a rep range) → one load step
+          const step = WT.stepLoad(ex, st.w, +1);
+          ws.push(step.capped ? st.w : step.w);
+          if (!step.capped) {
+            up++;
+            reasons.push(`Stage ${k + 1}: ${WT.fmtNum(st.w)} ${u} × ${st.r} beat the ${tr}-rep target → ${WT.fmtNum(step.w)} ${u}.`);
+          } else {
+            held++;
+            reasons.push(`Stage ${k + 1}: ${WT.fmtNum(st.w)} ${u} is your heaviest available load — add reps instead.`);
+          }
+        } else {
+          ws.push(st.w);
+          held++;
+          reasons.push(
+            st.r >= tr
+              ? `Stage ${k + 1}: ${WT.fmtNum(st.w)} ${u} × ${st.r} hit the target — stay here; ${tr + 2}+ reps moves it up.`
+              : `Stage ${k + 1}: ${WT.fmtNum(st.w)} ${u} × ${st.r} — stay here and aim for ${tr} reps.`
+          );
+        }
+      }
+      order(ws);
+      const done = grp.length;
+      const lastStr = grp.map((st) => `${WT.fmtNum(st.w)}×${st.r}`).join(' → ');
+      reasons.unshift(`Last ${info.name.toLowerCase()} ${when}: ${lastStr}${done < n ? ` (${done} of ${n} stages)` : ''}. Each stage is compared with the same stage last time.`);
+      if (days > 28) reasons.push(`It's been ${days} days, so start at last time's loads.`);
+      if (hard) reasons.push('You rated it hard, so loads hold this time.');
+      return {
+        action: up ? 'increase' : 'hold',
+        kind,
+        stages: ws.map((w, k) => ({ w: w > 0 ? w : null, r: rs[k] })),
+        weight: ws[0] > 0 ? ws[0] : null,
+        headline: `${info.name}: ${fmtW(ws.filter((w) => w > 0))}`,
+        reasons,
+        basis: { date: last.date, sets: last.sets, days },
+      };
+    }
+
+    // No set of this kind yet: start from the best estimate of strength available.
+    const all = WT.exerciseHistory(ex.id, excludeSessionId);
+    let e = 0;
+    all.forEach((h) => h.sets.forEach((st) => st.g == null && (e = Math.max(e, WT.e1rm(st.w, st.r)))));
+    if (!e) e = stagedE1rm(all.filter((h) => h.groups.length));
+    if (e > 0) {
+      const ws = [];
+      if (kind === 'drop') {
+        ws.push(WT.snapLoad(ex, e / (1 + reps[0] / 30)));
+        for (let k = 1; k < n; k++) ws.push(WT.stageLoad(ex, ws[k - 1], kind) || 0);
+      } else {
+        // build-up: top stage near a hard set for its reps, earlier stages from the same estimate
+        for (let k = 0; k < n; k++) ws.push(WT.snapLoad(ex, (e / (1 + reps[k] / 30)) * (k === n - 1 ? 0.95 : 0.85)));
+        order(ws);
+      }
+      return {
+        action: 'new',
+        kind,
+        stages: ws.map((w, k) => ({ w: w > 0 ? w : null, r: reps[k] })),
+        weight: ws[0] > 0 ? ws[0] : null,
+        headline: `${info.name}: ${fmtW(ws.filter((w) => w > 0))}`,
+        reasons: [`First ${info.name.toLowerCase()} for this exercise. Loads are estimated from your best set (~${WT.fmtNum(Math.round(e))} ${u} 1-rep max).`, `${info.verb}; reps ${reps.join(', ')}.`],
+      };
+    }
+    return {
+      action: 'new',
+      kind,
+      stages: reps.map((r) => ({ w: null, r })),
+      weight: null,
+      headline: 'Find your starting weight',
+      reasons: [`No history yet. ${info.verb} (${info.rest}); aim for ${reps.join(', ')} reps. This first ${info.name.toLowerCase()} becomes the baseline.`],
+    };
+  }
 
   /** Conservative per-set rep goals: lift lagging sets toward your best set; +1 when all sets are equal. */
   function repTargets(reps, lo, hi, n) {
@@ -534,7 +730,13 @@
     regular: { name: 'Regular', reps: '8–12 reps', text: 'Classic hypertrophy work — the backbone of most sessions.' },
     burnout: { name: 'Burnout', reps: '12–20+ reps', text: 'Lighter weight, short rest, last set close to failure.' },
     standard: { name: 'Standard', reps: 'As recommended', text: 'The exercise’s own recommended sets and reps. No special designation.' },
+    drop: { name: 'Drop set', reps: '3 stages', text: 'Each set runs through stages at decreasing weight with little or no rest. Counts as one set.' },
+    buildup: { name: 'Build-up set', reps: '3 stages', text: 'Each set climbs through stages at increasing weight, reps falling as the load rises. Rest between stages as needed.' },
   };
+  /** Every set type a user can choose. Generation still only draws from WT.INTENSITIES. */
+  WT.SET_TYPES = ['heavy', 'regular', 'burnout', 'standard', 'drop', 'buildup'];
+  /** Drop / build-up sets need a load to change: weighted, rep-based exercises only. */
+  WT.canStage = (ex) => !!ex && WT.trackType(ex) === 'weight' && ex.unit !== 'sec';
 
   /** Relative odds of each eligible intensity for one exercise (0 = not allowed). */
   WT.intensityWeights = function (ex, opts) {
@@ -607,6 +809,7 @@
 
   /** Closest allowed intensity when an exercise can't take the requested one (used by swaps). */
   WT.nearestIntensity = function (ex, want) {
+    if (WT.STAGED[want]) return WT.canStage(ex) ? want : ex.intensities.includes('regular') ? 'regular' : 'standard';
     const pref = { heavy: ['heavy', 'regular', 'standard'], burnout: ['burnout', 'standard', 'regular'], regular: ['regular', 'standard'], standard: ['standard'] }[want] || ['standard'];
     return pref.find((k) => ex.intensities.includes(k)) || 'standard';
   };
@@ -769,6 +972,12 @@
     const comp = ex.category === 'compound';
     let sets, repMin, repMax, rest, note = '';
     if (tt === 'cardio') return { intensity: 'standard', sets: 1, repMin: ex.repMin, repMax: ex.repMax, rest: 0, note: 'Minutes' };
+    if (WT.STAGED[intensity]) {
+      // Only reached when canStage(ex) — nearestIntensity() maps unsuitable exercises to regular.
+      if (intensity === 'drop')
+        return { intensity, sets: 2, stageCount: 3, stageRest: 0, repMin: 8, repMax: 12, rest: comp ? p.rest.heavy : p.rest.regular, note: 'Drop set — lower the weight each stage, little or no rest' };
+      return { intensity, sets: 2, stageCount: 3, stageRest: 60, repMin: 6, repMax: 12, rest: comp ? p.rest.heavy : p.rest.regular, note: 'Build-up set — add weight each stage, rest as needed' };
+    }
     if (intensity === 'heavy') {
       sets = comp ? 4 : 3;
       if (tt === 'reps') {
@@ -1152,11 +1361,19 @@
       exercises: w.exercises.map((i) => WT.sessionItem(i.exId, i)),
     };
   };
+  /** A new, empty set for an exercise item: plain, or staged with one empty stage per planned stage. */
+  WT.newSet = function (item, stageCount) {
+    if (!WT.STAGED[item.intensity]) return { w: '', r: '', done: false };
+    const n = Math.max(1, stageCount || item.stageCount || 3);
+    const reps = WT.stageReps(item.intensity, n, item.repMin, item.repMax);
+    return { type: item.intensity, done: false, stages: reps.map((tr) => ({ w: '', r: '', tr, done: false })) };
+  };
   WT.sessionItem = function (exId, base) {
     const ex = WT.ex(exId);
     const pr = base && base.repMin ? base : WT.prescribe(ex, ex.intensity);
     const nSets = pr.sets || 3;
-    return {
+    const staged = WT.STAGED[pr.intensity] ? { stageCount: pr.stageCount || 3, stageRest: pr.stageRest != null ? pr.stageRest : WT.prescribe(ex, pr.intensity).stageRest } : {};
+    const item = Object.assign({
       uid: WT.uid(),
       exId,
       name: ex.name,
@@ -1170,8 +1387,9 @@
       notes: '',
       effort: null,
       skipped: false,
-      sets: Array.from({ length: nSets }, () => ({ w: '', r: '', done: false })),
-    };
+    }, staged);
+    item.sets = Array.from({ length: nSets }, () => WT.newSet(item));
+    return item;
   };
   /** Rebuild a workout draft from a past session (repeat / template). */
   WT.workoutFromSession = function (s) {
@@ -1188,6 +1406,7 @@
           uid: WT.uid(),
           exId: e.exId,
           intensity: e.intensity,
+          ...(WT.STAGED[e.intensity] ? { stageCount: e.stageCount || Math.max(1, ...(e.sets || []).map((x) => (x.stages || []).length)), stageRest: e.stageRest != null ? e.stageRest : 0 } : {}),
           sets: e.targetSets || Math.max(1, (e.sets || []).length),
           repMin: e.repMin,
           repMax: e.repMax,
@@ -1211,10 +1430,15 @@
       const ex = WT.ex(e.exId);
       const tt = ex ? WT.trackType(ex) : 'weight';
       e.sets = (e.sets || []).filter((s) => s.done);
+      // A staged set keeps only the stages actually performed (sequences can end early).
+      e.sets.forEach((s) => WT.isStagedSet(s) && (s.stages = s.stages.filter((st) => st.done)));
+      e.sets = e.sets.filter((s) => !Array.isArray(s.stages) || s.stages.length);
       if (!e.sets.length) e.skipped = true;
       if (e.skipped || !ex) return;
       const before = WT.personalRecords(e.exId, session.id);
-      const m = sessionMetrics(e.sets.map((s) => ({ w: +s.w || 0, r: +s.r || 0, time: +s.time || 0, dist: +s.dist || 0 })), tt);
+      const parts = [];
+      e.sets.forEach((s) => WT.setParts(s).forEach((x) => parts.push(x)));
+      const m = sessionMetrics(parts.map((s) => ({ w: +s.w || 0, r: +s.r || 0, time: +s.time || 0, dist: +s.dist || 0 })), tt);
       sets += e.sets.length;
       volume += m.volume;
       if (before.count === 0) return; // first time = baseline, not a PR
@@ -1234,7 +1458,7 @@
     const ss = WT.sessions();
     const now = new Date();
     const totalSets = ss.reduce((a, s) => a + s.exercises.reduce((b, e) => b + (e.skipped ? 0 : (e.sets || []).filter((x) => x.done).length), 0), 0);
-    const totalVolume = ss.reduce((a, s) => a + s.exercises.reduce((b, e) => b + (e.sets || []).filter((x) => x.done).reduce((c, x) => c + (+x.w || 0) * (+x.r || 0), 0), 0), 0);
+    const totalVolume = ss.reduce((a, s) => a + s.exercises.reduce((b, e) => b + (e.sets || []).filter((x) => x.done).reduce((c, x) => c + WT.setVolume(x), 0), 0), 0);
     const totalTime = ss.reduce((a, s) => a + (s.durationSec || 0), 0);
     // Weekly buckets (last 12 weeks)
     const weeks = [];

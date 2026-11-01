@@ -60,6 +60,8 @@
   --accent-soft: rgba(47, 107, 79, 0.09);
   --heavy: #b4542f;
   --burn: #a37500;
+  --drop: #3f6f8f;
+  --build: #6b5a9e;
   --danger: #c0412c;
   --shadow-sm: 0 1px 2px rgba(20, 20, 16, 0.05);
   --shadow-panel: 0 0 0 1px var(--line), 0 1px 2px rgba(20, 20, 16, 0.04), 0 8px 24px -12px rgba(20, 20, 16, 0.08);
@@ -83,6 +85,8 @@
   --accent-soft: rgba(125, 181, 146, 0.12);
   --heavy: #df8a68;
   --burn: #d5ab4f;
+  --drop: #86b4d3;
+  --build: #ab9ddc;
   --danger: #ea7a64;
   --shadow-sm: none;
   --shadow-panel: 0 0 0 1px var(--line);
@@ -873,6 +877,12 @@ button.li {
 .int.burnout {
   color: var(--burn);
 }
+.int.drop {
+  color: var(--drop);
+}
+.int.buildup {
+  color: var(--build);
+}
 .int.regular::before {
   background: transparent;
   box-shadow: inset 0 0 0 1.5px currentColor;
@@ -1492,6 +1502,64 @@ button.set-line:hover {
 }
 .editor .complete {
   margin-top: var(--sp-3);
+}
+/* Multi-stage sets (drop / build-up): the stage list reuses .set-line, slightly tighter */
+.stage-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: -4px 0 var(--sp-2);
+  font-size: 12.5px;
+  font-weight: 560;
+}
+.editor.drop .stage-hint,
+.editor.drop .set-line .dir {
+  color: var(--drop);
+}
+.editor.buildup .stage-hint,
+.editor.buildup .set-line .dir {
+  color: var(--build);
+}
+.sets.stages {
+  margin-top: 0;
+}
+.set-line.stage {
+  height: 40px;
+}
+.set-line .dir {
+  display: inline-flex;
+  vertical-align: -2px;
+  margin-right: 6px;
+}
+.stage-warn {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: var(--sp-2);
+  font-size: 12.5px;
+  color: var(--burn);
+}
+.stage-warn svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.stage-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 4px;
+  margin: var(--sp-2) -10px 0;
+}
+.table tr.stage-row td {
+  padding-top: 4px;
+  padding-bottom: 4px;
+  border-top: 0;
+  font-size: 14px;
+}
+.table tr.stage-row svg {
+  display: inline;
+  vertical-align: -1px;
+  margin-right: 4px;
+  color: var(--text-3);
 }
 .cur-foot {
   margin-top: var(--sp-4);
