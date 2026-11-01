@@ -6,7 +6,7 @@
   WT.A = {}; // click actions:  data-act="name"
   WT.I = {}; // input handlers: data-in="name"
   WT.V = {}; // views
-  WT.ui = { route: 'dashboard', param: null, gen: null, lib: { q: '', group: '', equip: '', cat: '', diff: '', intensity: '', avail: 'mine', fav: false }, prog: { ex: null, metric: 'e1rm' } };
+  WT.ui = { open: {}, route: 'dashboard', param: null, gen: null, lib: { q: '', group: '', equip: '', cat: '', diff: '', intensity: '', avail: 'mine', fav: false }, prog: { ex: null, metric: 'e1rm' } };
   const I = WT.icon;
   const esc = WT.esc;
 
@@ -343,6 +343,32 @@
     seg(options, current, act, key, cls) {
       return `<div class="seg ${cls || ''}" role="group">${options.map(([v, l]) => `<button class="${String(v) === String(current) ? 'on' : ''}" data-act="${act}" data-k="${key || ''}" data-v="${v}" aria-pressed="${String(v) === String(current)}">${l}</button>`).join('')}</div>`;
     },
+    /**
+     * Exercise demonstration (two-frame illustration played as a loop).
+     * size: 'sm' thumbnail · 'md' active workout · 'lg' detail / viewer.
+     * opts.static: render as a non-interactive element (inside other buttons).
+     * Images load lazily and only animate while on screen — see mountDemos().
+     */
+    demo(exId, size, opts) {
+      opts = opts || {};
+      const ex = WT.ex(exId);
+      const d = WT.demoFor(exId);
+      const name = ex ? esc(ex.name) : '';
+      if (!d) {
+        if (size === 'sm') return `<span class="demo demo-sm none" aria-hidden="true">${I('dumbbell', 16)}</span>`;
+        return `<div class="demo demo-${size} none"><span>${I('dumbbell', 18)}No demonstration for this exercise</span></div>`;
+      }
+      const imgs = `<img class="fa" data-src="${d.a}" alt="" decoding="async" draggable="false"><img class="fb" data-src="${d.b}" alt="" decoding="async" draggable="false">`;
+      if (opts.static) return `<span class="demo demo-${size}" role="img" aria-label="${name} demonstration">${imgs}</span>`;
+      return `<button type="button" class="demo demo-${size}" data-act="openDemo" data-id="${exId}" aria-label="Show ${name} demonstration">${imgs}</button>`;
+    },
+    demoCredit() {
+      return `<p class="demo-credit">Illustration: <a href="${WT.MEDIA.sourceUrl}" target="_blank" rel="noopener">Everkinetic</a> · <a href="${WT.MEDIA.licenseUrl}" target="_blank" rel="noopener">${WT.MEDIA.license}</a></p>`;
+    },
+    /** Attributes for a <details> whose open/closed state should survive re-renders. */
+    keepOpen(key) {
+      return `data-keep="${key}" ${WT.ui.open[key] ? 'open' : ''}`;
+    },
     oddsBar(odds) {
       const keys = ['heavy', 'regular', 'burnout', 'standard'];
       const tot = keys.reduce((a, k) => a + Math.max(0, +odds[k] || 0), 0) || 1;
@@ -359,6 +385,51 @@
     },
   };
 
+  /* ───────── Exercise demonstrations: lazy load, pause offscreen, fallbacks ───────── */
+  let demoIO = null;
+  function demoVisible(el, on) {
+    if (on && !el.dataset.loaded) {
+      el.dataset.loaded = '1';
+      const imgs = el.querySelectorAll('img');
+      let n = 0;
+      imgs.forEach((img) => {
+        img.onload = () => ++n === imgs.length && el.classList.add('ready');
+        img.onerror = () => el.classList.add('failed');
+        img.src = img.dataset.src; // browser + service-worker cache: each file is fetched once
+      });
+    }
+    el.classList.toggle('playing', on);
+  }
+  WT.mountDemos = function (root) {
+    const list = (root || document).querySelectorAll('.demo:not(.none):not([data-mounted])');
+    if (!list.length) return;
+    if (!demoIO && 'IntersectionObserver' in window)
+      demoIO = new IntersectionObserver((entries) => entries.forEach((en) => demoVisible(en.target, en.isIntersecting)), { rootMargin: '200px 0px' });
+    list.forEach((el) => {
+      el.dataset.mounted = '1';
+      if (demoIO) demoIO.observe(el);
+      else demoVisible(el, true);
+    });
+  };
+  /** Pre-cache the demonstrations for a workout so they're available offline at the gym. */
+  WT.warmDemos = function (exIds) {
+    if (!('fetch' in window)) return;
+    exIds.forEach((id) => {
+      const d = WT.demoFor(id);
+      if (d) [d.a, d.b].forEach((u) => fetch(u).catch(() => {}));
+    });
+  };
+  WT.A.openDemo = (d) => {
+    const ex = WT.ex(d.id);
+    if (!ex) return;
+    WT.openSheet(() => ({
+      eyebrow: WT.muscleName(ex.primary),
+      title: esc(ex.name),
+      body: `${WT.h.demo(ex.id, 'lg', { static: true })}${WT.h.demoCredit()}${ex.cue ? `<p class="mt16" style="line-height:1.6">${esc(ex.cue)}</p>` : ''}`,
+      foot: `<a class="btn btn-plain btn-sm" href="${esc(WT.videoUrl(ex))}" target="_blank" rel="noopener">${I('play', 14)}Video tutorial</a><span class="grow"></span><button class="btn btn-secondary btn-sm" data-act="exDetail" data-id="${ex.id}">Details</button>`,
+    }), { wide: true });
+  };
+
   /* ───────── Boot ───────── */
   WT.boot = function () {
     WT.load();
@@ -367,6 +438,12 @@
     document.addEventListener('click', onClick);
     document.addEventListener('input', onInput);
     document.addEventListener('change', onInput);
+    // <details> panels are re-created on every re-render, so their open state must live in UI state.
+    // 'toggle' doesn't bubble, hence the capture-phase listener. See WT.h.keepOpen().
+    document.addEventListener('toggle', (e) => {
+      const el = e.target;
+      if (el && el.tagName === 'DETAILS' && el.dataset.keep) WT.ui.open[el.dataset.keep] = el.open;
+    }, true);
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && sheets.length) WT.closeSheet();
       if (e.key === 'Enter' && e.target.classList.contains('set-input')) {
@@ -383,6 +460,8 @@
       }
     });
     window.addEventListener('hashchange', () => WT.render());
+    // Views and sheets are re-rendered with innerHTML; wire up any new demonstrations as they appear.
+    new MutationObserver(() => WT.mountDemos()).observe(document.body, { childList: true, subtree: true });
     window.addEventListener('beforeunload', () => WT.flush());
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) WT.flush();

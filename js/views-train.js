@@ -154,7 +154,7 @@
     const reg = Math.max(0, g.count - (+g.heavy || 0) - (+g.burnout || 0));
 
     const advanced = `
-      <details class="adv mt24" ${WT.ui.genAdvOpen ? 'open' : ''} data-in="advToggle"><summary>${I('chevR', 14)}More options</summary>
+      <details class="adv mt24" ${H.keepOpen('genAdv')}><summary>${I('chevR', 14)}More options</summary>
         <div class="adv-body">
           <div class="adv-block"><span class="label">Intensity</span>
             <div class="row between wrap" style="gap:12px">${H.seg([['random', 'Randomized'], ['manual', 'Fixed']], random ? 'random' : 'manual', 'genSet', 'intensityMode')}
@@ -201,7 +201,6 @@
       ${plan}
     </div>`;
   };
-  WT.I.advToggle = (el) => (WT.ui.genAdvOpen = el.open);
 
   function planRows(d) {
     let n = 0;
@@ -218,6 +217,7 @@
     const load = WT.suggestedLoad(ex.id, it);
     return `<div class="ex-row ${it.locked ? 'locked' : ''}">
       <span class="n">${it.locked ? I('lock', 13).replace('<svg', '<svg style="margin:0 auto"') : n}</span>
+      ${H.demo(ex.id, 'sm')}
       <div style="min-width:0">
         <button class="nm" data-act="exDetail" data-id="${ex.id}">${esc(ex.name)}</button>
         <div class="meta"><span>${WT.muscleName(ex.primary)}</span><span class="rx">${H.target(it, ex)}</span>${load ? `<span>${load}</span>` : ''}${it.intensity !== 'standard' ? H.intensity(it.intensity, 'pickIntensity', it.uid, 'draft') : ''}${ss ? `<span class="ss-tag">Superset ${ss}</span>` : ''}</div>
@@ -396,6 +396,7 @@
     if (!d || !d.exercises.length) return WT.toast('Generate a workout first', 'error');
     const begin = () => {
       WT.db.active = WT.sessionFromWorkout(d);
+      WT.warmDemos(d.exercises.map((e) => e.exId));
       WT.db.draft = null;
       WT.unlockAudio();
       WT.save(true);
@@ -453,7 +454,7 @@
           ${doneCount ? `<div class="callout warn mt12">${I('info', 15)}<span>${plural(doneCount, 'logged set')} on this exercise will be cleared.</span></div>` : ''}
           <div class="list inset mt16">${
             alts.length
-              ? alts.map((a) => H.li({ act: 'doSwap', attrs: `data-id="${a.ex.id}"`, title: esc(a.ex.name) + (WT.db.profile.favorites.includes(a.ex.id) ? ' <span class="star on">★</span>' : ''), sub: `${WT.muscleName(a.ex.primary)} · ${a.ex.equipment.map((q) => WT.EQUIPMENT[q]).join(', ')}` })).join('')
+              ? alts.map((a) => H.li({ act: 'doSwap', attrs: `data-id="${a.ex.id}"`, lead: H.demo(a.ex.id, 'sm', { static: true }), title: esc(a.ex.name) + (WT.db.profile.favorites.includes(a.ex.id) ? ' <span class="star on">★</span>' : ''), sub: `${WT.muscleName(a.ex.primary)} · ${a.ex.equipment.map((q) => WT.EQUIPMENT[q]).join(', ')}` })).join('')
               : `<div class="li"><div class="grow su">No alternatives with your equipment and exclusions.</div></div>`
           }</div>
           <p class="footnote t3 mt12">Keeps its place, set count and intensity where suitable. <button class="btn-link" data-act="excludeFromSwap" data-id="${cur.id}">Never suggest ${esc(cur.name)}</button></p>`,
@@ -508,7 +509,7 @@
         title: 'Add exercise',
         body: `<div class="search"><span>${I('search', 16)}</span><input class="input" id="addSearch" placeholder="Search" value="${esc(state.q)}" data-in="addSearch" autocomplete="off"></div>
           <div class="row between mt12"><span class="footnote t2">Only what I can do</span>${H.toggle(state.mine, 'addMine')}</div>
-          <div class="list inset mt12">${list.map((ex) => H.li({ act: 'doAdd', attrs: `data-id="${ex.id}"`, title: esc(ex.name), sub: WT.muscleName(ex.primary), trail: `<span class="t3">${I('plus', 16)}</span>` })).join('') || '<div class="li"><div class="su">No matches.</div></div>'}</div>`,
+          <div class="list inset mt12">${list.map((ex) => H.li({ act: 'doAdd', attrs: `data-id="${ex.id}"`, lead: H.demo(ex.id, 'sm', { static: true }), title: esc(ex.name), sub: WT.muscleName(ex.primary), trail: `<span class="t3">${I('plus', 16)}</span>` })).join('') || '<div class="li"><div class="su">No matches.</div></div>'}</div>`,
         after: (sheet) => {
           const inp = sheet.querySelector('#addSearch');
           if (state.focus && inp) {
@@ -708,6 +709,7 @@
           <button class="icon-btn" data-act="openSwap" data-ctx="active" data-uid="${it.uid}" title="Swap" aria-label="Swap exercise">${I('swap', 18)}</button>
           <button class="icon-btn" data-act="woMenu" data-uid="${it.uid}" aria-label="More options">${I('more', 19)}</button>
         </div></div>
+      ${WT.db.profile.trainDemos !== false ? `<div class="cur-demo">${H.demo(ex.id, 'md')}${WT.demoFor(ex.id) ? H.demoCredit() : ''}</div>` : ''}
       ${advice}
       <div class="sets">${setLines}</div>
       ${editor}
@@ -943,6 +945,7 @@
           ${H.li({ act: 'woAddSet', attrs: u, title: 'Add a set' })}
           ${it.sets.length > 1 ? H.li({ act: 'woRemoveSet', attrs: u, title: 'Remove a set' }) : ''}
           ${H.li({ act: 'woNoteToggle', attrs: u, title: 'Add a note' })}
+          ${H.li({ act: 'toggleTrainDemos', title: WT.db.profile.trainDemos !== false ? 'Hide demonstrations' : 'Show demonstrations', sub: 'While training' })}
           ${idx > 0 ? H.li({ act: 'woMove', attrs: `${u} data-d="-1"`, title: 'Move up' }) : ''}
           ${idx < a.exercises.length - 1 ? H.li({ act: 'woMove', attrs: `${u} data-d="1"`, title: 'Move down' }) : ''}
           ${it.superset ? H.li({ act: 'woUnpair', attrs: u, title: 'Split superset' }) : ''}
@@ -952,6 +955,12 @@
           ${H.li({ act: 'woRemove', attrs: u, title: 'Remove from workout', cls: 'danger' })}
         </div>`,
     }));
+  };
+  A.toggleTrainDemos = () => {
+    WT.db.profile.trainDemos = WT.db.profile.trainDemos === false;
+    WT.save();
+    WT.closeSheet(true);
+    WT.rerender();
   };
   A.woMove = (d) => {
     const a = WT.db.active;

@@ -52,6 +52,9 @@ A quiet, precise interface in the spirit of Apple, Linear and Things: generous w
 - **Restrictions:** no conventional deadlifts, no Romanian deadlifts (including DB and single-leg), no reverse-grip dumbbell pressing.
 - **Favorites:** Sissy Squat and Pull-Up. The generator prefers them.
 
+### Exercise demonstrations
+73 exercises show an animated two-frame demonstration in the plan, in the active workout, in the library, in exercise details and when swapping. The illustrations come from [Everkinetic](https://github.com/everkinetic/data) (CC BY-SA 4.0; attribution appears in the app). Each one was matched to its exercise by hand and checked visually; exercises without an exact match show a placeholder. The files are bundled under `media/everkinetic/`. They load lazily, play only while on screen, and are cached once by the service worker so they work offline. See `media/everkinetic/README.md` for the licensing notes.
+
 ### About the videos
 No video IDs are hard-coded, because they can't be checked offline and they break over time. Each exercise opens a **YouTube search** for that exercise's form tutorial. If you find a video you like, paste its link into the exercise (Library → exercise → paste link, or Edit). After that it **plays embedded** inside the app.
 
@@ -83,6 +86,7 @@ Netlify Drop (drag the folder onto app.netlify.com/drop) and Cloudflare Pages al
 ```bash
 node tests/engine.test.js                          # generator, intensity statistics over 3,200 workouts, progression, PRs, import/export (≈37k assertions)
 python3 -m http.server 8765 & node tests/e2e.test.js   # full browser flow (needs Playwright)
+node tests/features.test.js                         # exercise demonstrations + More options panel
 ```
 The end-to-end test generates every workout type, swaps exercises, logs a full session, refreshes mid-workout, saves, and checks that the next session shows previous weights and an increase recommendation that is only applied on approval. It also checks the v1 → v2 data upgrade, intensity variety across repeated generations through the UI, the intensity picker, PR detection, the charts, export → wipe → import, persistence after refresh, the theme toggle and offline loading.
 

@@ -32,7 +32,7 @@
       .map((ex) => {
         const fav = p.favorites.includes(ex.id);
         const excl = p.excluded.includes(ex.id) || WT.isRestricted(ex);
-        return `<div class="li lib-row"><button class="grow" style="text-align:left;min-width:0" data-act="exDetail" data-id="${ex.id}">
+        return `<div class="li lib-row">${H.demo(ex.id, 'sm')}<button class="grow" style="text-align:left;min-width:0" data-act="exDetail" data-id="${ex.id}">
             <div class="ti ellipsis">${esc(ex.name)}</div>
             <div class="su ellipsis">${WT.muscleName(ex.primary)} · ${ex.equipment.map((q) => WT.EQUIPMENT[q]).join(', ')}${excl ? ' · <span style="color:var(--danger)">Excluded</span>' : ''}</div></button>
           <button class="icon-btn sm star ${fav ? 'on' : ''}" data-act="favToggle" data-id="${ex.id}" aria-pressed="${fav}" aria-label="Favorite">${starSvg(fav)}</button></div>`;
@@ -102,7 +102,7 @@
           ? `<div class="video"><iframe src="https://www.youtube-nocookie.com/embed/${vid}?rel=0&modestbranding=1&playsinline=1" title="${esc(ex.name)} tutorial" allow="accelerometer; encrypted-media; gyroscope; picture-in-picture; fullscreen" allowfullscreen loading="lazy"></iframe></div>
              <div class="row mt8" style="gap:16px"><a class="btn-link footnote" href="https://www.youtube.com/watch?v=${vid}" target="_blank" rel="noopener">Open on YouTube</a><a class="btn-link footnote" href="${WT.videoUrl(Object.assign({}, ex, { video: null }))}" target="_blank" rel="noopener">Other tutorials</a></div>`
           : `<a class="watch" href="${esc(WT.videoUrl(ex))}" target="_blank" rel="noopener"><span class="play">${I('play', 16).replace('fill="none"', 'fill="currentColor"')}</span><div class="grow"><div class="strong">Watch tutorial</div><div class="footnote t2">${ex.video ? 'Your saved video on YouTube' : 'Opens YouTube search'}</div></div><span class="t3">${I('ext', 16)}</span></a>
-             <details class="adv mt8"><summary>${I('chevR', 13)}Embed a specific video</summary><div class="row mt8" style="gap:8px"><input class="input" id="vidUrl" placeholder="Paste a YouTube link"><button class="btn btn-secondary" data-act="saveVideo" data-id="${id}">Save</button></div></details>`;
+             <details class="adv mt8" ${H.keepOpen('embedVideo')}><summary>${I('chevR', 13)}Embed a specific video</summary><div class="row mt8" style="gap:8px"><input class="input" id="vidUrl" placeholder="Paste a YouTube link"><button class="btn btn-secondary" data-act="saveVideo" data-id="${id}">Save</button></div></details>`;
         const unitTxt = tt === 'time' || ex.unit === 'sec' ? ' sec' : tt === 'cardio' ? ' min' : '';
         const historyHtml = hist.length
           ? `<div class="section-title mt32"><h2>Your history</h2><span class="footnote t3">${plural(hist.length, 'session')}</span></div>
@@ -114,7 +114,7 @@
           eyebrow: `${WT.muscleName(ex.primary)}${ex.secondary.length ? ' · ' + ex.secondary.slice(0, 2).map(WT.muscleName).join(', ') : ''}`,
           title: esc(ex.name),
           headExtra: `<button class="icon-btn star ${fav ? 'on' : ''}" data-act="favToggle" data-id="${id}" aria-pressed="${fav}" aria-label="Favorite">${starSvg(fav)}</button>`,
-          body: `${video}
+          body: `${H.demo(id, 'lg', { static: true })}${WT.demoFor(id) ? H.demoCredit() : ''}<div class="mt16">${video}</div>
             ${ex.cue ? `<p class="mt24" style="line-height:1.6">${esc(ex.cue)}</p>` : ''}
             <div class="facts mt24">
               <div><div class="k">Recommended</div><div class="v">${ex.sets} × ${ex.repMin}–${ex.repMax}${unitTxt}</div></div>
@@ -359,6 +359,7 @@
     const s = WT.db.history.find((x) => x.id === d.id);
     const begin = () => {
       WT.db.active = WT.sessionFromWorkout(WT.workoutFromSession(s));
+      WT.warmDemos(WT.db.active.exercises.map((e) => e.exId));
       WT.save(true);
       WT.go('workout');
     };
@@ -532,6 +533,10 @@
         ${H.li({ act: 'exportJson', title: 'Export backup', sub: `Last backup: ${p.lastBackup ? WT.fmtRelDay(p.lastBackup) : 'never'}`, trail: `<span class="t3">${I('download', 16)}</span>` })}
         <label class="li" style="cursor:pointer"><div class="grow"><div class="ti">Import or restore</div><div class="su">From a Forge JSON backup</div></div><span class="t3">${I('upload', 16)}</span><input type="file" accept="application/json,.json" data-in="importFile" hidden></label>
         ${H.li({ act: 'resetAll', title: 'Erase all data', cls: 'danger' })}`, `<span id="storageInfo">${plural(WT.db.history.length, 'workout')} stored on this device. No account, no server.</span>`)}
+      ${grp('About', `
+        ${H.li({ title: 'Exercise illustrations', sub: `Everkinetic by Greg Priday and contributors · ${WT.MEDIA.license}. Adapted: minified, cropped and animated. ${Object.keys(WT.MEDIA.map).length} exercises have a verified demonstration.`, trail: `<a class="btn-link footnote" href="${WT.MEDIA.licenseUrl}" target="_blank" rel="noopener">License</a>` })}
+        ${H.li({ title: 'Typeface', sub: 'Inter by Rasmus Andersson · SIL Open Font License' })}
+        ${H.li({ title: 'Demonstrations while training', trail: H.toggle(p.trainDemos !== false, 'pfToggleDemos') })}`)}
       ${grp('Install on iPhone', block(`<p class="t2" style="line-height:1.6">Open the site in Safari, tap Share, then <span class="strong" style="color:var(--text)">Add to Home Screen</span>. It runs full-screen and works offline. The home-screen app keeps its own storage, so export a backup before switching.</p>`))}
     </div>`;
   };
@@ -625,6 +630,11 @@
     P()[d.k] = !P()[d.k];
     WT.save();
     WT.ui.gen = null;
+    WT.rerender();
+  };
+  A.pfToggleDemos = () => {
+    P().trainDemos = P().trainDemos === false;
+    WT.save();
     WT.rerender();
   };
   A.pfMicro = () => {
