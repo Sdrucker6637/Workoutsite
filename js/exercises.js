@@ -8,7 +8,8 @@
  * X(id, name, primary, secondary, equipment, category, pattern, difficulty, intensities,
  *   repRange, restSec, loadType, tags, extra)
  *   category:    c = compound, i = isolation, k = cardio/conditioning
- *   intensities: letters of allowed classes — h = heavy, r = regular, b = burnout (first = default)
+ *   intensities: letters of special classes — h = heavy, r = regular, b = burnout. Every exercise is also
+ *                eligible for "standard" (the exercise's own recommended sets/reps, no designation).
  *   loadType:    db, cable, machine, bb, mb, kb, bw (bodyweight), bwl (bodyweight, loadable),
  *                time (timed hold), cardio (time + distance)
  */
@@ -17,7 +18,16 @@
   const list = [];
   function X(id, name, primary, secondary, equipment, category, pattern, difficulty, intensities, reps, rest, load, tags, extra) {
     const [lo, hi] = String(reps).split('-').map(Number);
-    const intens = intensities.split('').map((c) => ({ h: 'heavy', r: 'regular', b: 'burnout' }[c]));
+    // Eligible intensity classes. "standard" (no special designation) is open to every exercise;
+    // "regular" (8–12 hypertrophy) to all loadable strength work; heavy/burnout only where listed.
+    const L = new Set(intensities.split(''));
+    const intens = [];
+    if (load !== 'cardio') {
+      if (L.has('h')) intens.push('heavy');
+      if (L.has('r') || L.has('h')) intens.push('regular');
+      if (L.has('b')) intens.push('burnout');
+    }
+    intens.push('standard');
     const ex = Object.assign(
       {
         id,
@@ -29,7 +39,7 @@
         pattern,
         difficulty: ['', 'beginner', 'intermediate', 'advanced'][difficulty],
         intensities: intens,
-        intensity: intens.includes('regular') ? 'regular' : intens[0],
+        intensity: 'standard',
         repMin: lo,
         repMax: hi || lo,
         rest,

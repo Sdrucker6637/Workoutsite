@@ -19,38 +19,74 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   const db = () => page.evaluate(() => JSON.parse(JSON.stringify(WT.db)));
   const shot = (n) => page.screenshot({ path: `/tmp/shots/e2e-${n}.png` });
 
+  console.log('Upgrade from v1 data keeps everything');
+  await page.evaluate(() => { WT.flush = WT.save = () => {}; });
+  await page.evaluate(() => localStorage.setItem('wt.data.v1', JSON.stringify({ version: 1, profile: { theme: 'dark', name: 'Old', unit: 'lb', goals: ['Reduce body fat and get leaner and more defined', 'Improve chest development — especially the lower chest', 'Build bigger, more noticeable arms', 'Reduce stomach fat and love handles', 'Maintain balanced overall development'], favorites: ['pullup'], excluded: ['crunch'] },
+    history: [{ id: 'old1', type: 'push', title: 'Push', startedAt: '2026-10-01T17:00:00.000Z', endedAt: '2026-10-01T18:00:00.000Z', durationSec: 3600, totals: { sets: 3, volume: 1200 }, prs: [], exercises: [{ uid: 'u1', exId: 'db-bench-press', name: 'Dumbbell Bench Press', intensity: 'regular', targetSets: 3, repMin: 6, repMax: 10, sets: [{ w: '40', r: '10', done: true }, { w: '40', r: '10', done: true }, { w: '40', r: '10', done: true }] }] }], customExercises: [], overrides: {} })));
+  await page.reload();
+  let m = await db();
+  ok(m.version === 2 && m.history.length === 1 && m.profile.name === 'Old' && m.profile.excluded[0] === 'crunch', 'v1 history and settings preserved');
+  ok(m.profile.theme === 'light' && m.profile.goals[0].startsWith('Reduce overall') && m.profile.intensityRandom === true, 'v2 defaults applied (theme, unedited goals, intensity odds)');
+  ok((await page.evaluate(() => WT.personalRecords('db-bench-press').heaviest.w)) === 40, 'old history feeds records');
+  await page.evaluate(() => { WT.flush = WT.save = () => {}; localStorage.clear(); });
+  await page.reload();
+
   console.log('Generation for every workout type (via UI)');
   await page.goto(URL + '#/generate');
   const types = await page.evaluate(() => WT.WORKOUT_TYPES.map((t) => t.id));
   for (const t of types) {
     await page.click(`[data-act="genType"][data-k="${t}"]`);
-    await page.click('.btn-lg[data-act="generate"]');
-    await page.waitForTimeout(80);
+    await page.click('.gen-controls [data-act="generate"]');
+    await page.waitForTimeout(560);
     const d = (await db()).draft;
-    const n = await page.locator('.plan-item').count();
+    const n = await page.locator('.prow').count();
     ok(d && d.type === t && n === d.exercises.length && n >= 5, `${t}: ${n} exercises rendered`);
   }
 
   console.log('Swap');
   await page.click('[data-act="genType"][data-k="push"]');
-  await page.click('.btn-lg[data-act="generate"]');
+  await page.click('.gen-controls [data-act="generate"]'); await page.waitForTimeout(560);
   const before = (await db()).draft.exercises[0];
-  await page.locator('.swap-btn').first().click();
+  await page.locator('.prow .swap').first().click();
   await page.waitForSelector('[data-act="doSwap"]');
   await shot('swap-sheet');
-  const altName = await page.locator('[data-act="doSwap"] .title').first().innerText();
+  const altName = await page.locator('[data-act="doSwap"] .t').first().innerText();
   await page.locator('[data-act="doSwap"]').first().click();
   const after = (await db()).draft.exercises.find((e) => e.uid === before.uid);
+  const exAfterPre = await page.evaluate((id) => WT.ex(id), after.exId);
   ok(after.exId !== before.exId, `swapped ${before.exId} → ${after.exId} (${altName.trim()})`);
-  ok(after.intensity === before.intensity || true, 'intensity preserved where allowed');
+  ok(after.intensity === before.intensity || !exAfterPre.intensities.includes(before.intensity), 'intensity preserved where eligible');
   const exAfter = await page.evaluate((id) => WT.ex(id), after.exId);
-  ok(exAfter.primary === 'chest', 'swap kept same muscle');
+  const exBefore = await page.evaluate((id) => WT.ex(id), before.exId);
+  ok(exAfter.primary === exBefore.primary || before.slot.m.includes(exAfter.primary), `swap kept same muscle (${exBefore.primary} → ${exAfter.primary})`);
+
+  console.log('Randomised intensity through the UI');
+  const tallies = new Set(); let noSpecial = false;
+  for (let k = 0; k < 18; k++) {
+    await page.click('.gen-controls [data-act="generate"]'); await page.waitForTimeout(500);
+    const ex = (await db()).draft.exercises;
+    const t = ['heavy', 'regular', 'burnout', 'standard'].map((x) => ex.filter((e) => e.intensity === x).length).join('/');
+    tallies.add(t); if (!ex.some((e) => e.intensity === 'heavy' || e.intensity === 'burnout')) noSpecial = true;
+    const elig = await page.evaluate(() => WT.db.draft.exercises.every((e) => WT.ex(e.exId).intensities.includes(e.intensity)));
+    ok(elig, 'every assigned intensity is eligible');
+  }
+  ok(tallies.size >= 5, `intensity mix varies between generations (${tallies.size} distinct in 18: ${[...tallies].join(' ')})`);
+  console.log('    zero heavy+burnout seen in this sample:', noSpecial);
+  await page.locator('.prow-int button').first().click();
+  await page.waitForSelector('[data-act="setIntensity"]');
+  await shot('intensity-picker');
+  const firstUid = (await db()).draft.exercises[0].uid;
+  await page.click('[data-act="setIntensity"][data-k="standard"]');
+  ok((await db()).draft.exercises.find((e) => e.uid === firstUid).intensity === 'standard', 'manual intensity change applied');
+  const before2 = JSON.stringify((await db()).draft.exercises.map((e) => e.exId).sort());
+  await page.click('[data-act="rerollIntensity"]');
+  ok(JSON.stringify((await db()).draft.exercises.map((e) => e.exId).sort()) === before2, 're-roll keeps the same exercises');
 
   console.log('Lock + regenerate keeps locked exercise');
   const lockedUid = (await db()).draft.exercises[1].uid;
   const lockedEx = (await db()).draft.exercises[1].exId;
   await page.locator('[data-act="planLock"]').nth(1).click();
-  await page.click('[data-act="regenerate"]');
+  await page.click('[data-act="regenerate"]'); await page.waitForTimeout(560);
   ok((await db()).draft.exercises.some((e) => e.exId === lockedEx && e.locked), 'locked exercise kept after regenerate');
 
   console.log('Remove + add');
@@ -66,9 +102,9 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   console.log('Workout #1: log a session');
   // Deterministic workout: generate full body then start
   await page.click('[data-act="genType"][data-k="full"]');
-  await page.click('.btn-lg[data-act="generate"]');
-  await page.click('.sticky-actions [data-act="startDraft"]');
-  await page.waitForSelector('.ex-card');
+  await page.click('.gen-controls [data-act="generate"]'); await page.waitForTimeout(560);
+  await page.click('.plan [data-act="startDraft"]');
+  await page.waitForSelector('.xc');
   ok(page.url().includes('#/workout'), 'navigated to active workout');
   let a = (await db()).active;
   const first = a.exercises[0];
@@ -76,7 +112,7 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   const card = page.locator(`#ex-${first.uid}`);
   // log every set of first exercise at top of range
   for (let i = 0; i < first.sets.length; i++) {
-    const row = card.locator('tbody tr').nth(i);
+    const row = card.locator('.set').nth(i);
     if (await row.locator('[data-f="w"]').count()) await row.locator('[data-f="w"]').fill(firstEx.load === 'bwl' ? '0' : '40');
     await row.locator('[data-f="r"]').fill(String(first.repMax));
     await row.locator('.check').click();
@@ -85,6 +121,9 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   ok(a.exercises[0].sets.every((s) => s.done), 'all sets of first exercise checked');
   ok(!!a.timer || a.exercises[0].superset, 'rest timer started after set');
   await shot('active');
+  // Completed exercise collapses to a summary line; expand it again
+  ok(await card.locator('.xc-sum').count() === 1, 'completed exercise collapsed to summary');
+  await card.locator('.xc-sum').click();
   // Add set, notes, effort
   await card.locator('[data-act="woAddSet"]').click();
   ok((await db()).active.exercises[0].sets.length === first.sets.length + 1, 'added extra set');
@@ -106,7 +145,7 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   // log one set on second exercise using placeholders/values
   const c2 = page.locator(`#ex-${swapUid}`);
   const tt2 = await page.evaluate((id) => WT.trackType(WT.ex(id)), swapTo);
-  const r0 = c2.locator('tbody tr').first();
+  const r0 = c2.locator('.set').first();
   if (tt2 === 'weight') await r0.locator('[data-f="w"]').fill('30');
   if (tt2 === 'cardio') await r0.locator('[data-f="time"]').fill('20'); else await r0.locator('[data-f="r"]').fill('10');
   await r0.locator('.check').click();
@@ -114,7 +153,7 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   console.log('Persistence of active workout across reload');
   await page.waitForTimeout(300);
   await page.reload();
-  await page.waitForSelector('.ex-card');
+  await page.waitForSelector('.xc');
   a = (await db()).active;
   ok(a && a.exercises[0].sets.every((s) => s.done) && a.exercises[0].notes === 'Felt strong today', 'active workout restored after refresh');
 
@@ -135,14 +174,14 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   // Backdate session 1 by 3 days so recommendation is realistic
   await page.evaluate(() => { const s = WT.db.history[0]; const t = Date.now() - 3 * 864e5; s.startedAt = new Date(t - 3600e3).toISOString(); s.endedAt = new Date(t).toISOString(); WT.flush(); });
   await page.click('[data-act="histRepeat"]');
-  await page.waitForSelector('.ex-card');
+  await page.waitForSelector('.xc');
   a = (await db()).active;
   const rep1 = page.locator(`#ex-${a.exercises[0].uid}`);
-  const lastLine = await rep1.locator('.last-line').innerText();
+  const lastLine = await rep1.locator('.lastline').innerText();
   ok(lastLine.includes('Last'), 'previous performance shown: ' + lastLine.replace(/\s+/g, ' '));
   const prevCell = await rep1.locator('.set-prev').first().innerText();
   ok(/\d/.test(prevCell), 'previous column filled: ' + prevCell);
-  const recText = await rep1.locator('.rec .h').innerText();
+  const recText = await rep1.locator('.advice .h').innerText();
   const rec = await page.evaluate((it) => WT.recommend(it.exId, { repMin: it.repMin, repMax: it.repMax, sets: it.targetSets, intensity: it.intensity }, WT.db.active.id), a.exercises[0]);
   console.log('    recommendation:', recText, '|', rec.reasons.join(' '));
   if (firstEx.load !== 'bwl' && firstEx.load !== 'bw') {
@@ -157,7 +196,7 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   // Complete with fewer reps to create a second history point, then save
   const it0 = (await db()).active.exercises[0];
   for (let i = 0; i < it0.sets.length; i++) {
-    const row = rep1.locator('tbody tr').nth(i);
+    const row = rep1.locator('.set').nth(i);
     await row.locator('[data-f="r"]').fill(String(it0.repMax));
     await row.locator('.check').click();
   }
@@ -173,7 +212,7 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   console.log('Progress page uses real data');
   await page.goto(URL + '#/progress');
   await page.waitForTimeout(400);
-  const kpi = await page.locator('.stat .v').first().innerText();
+  const kpi = await page.locator('.ledger .figure .v').first().innerText();
   ok(kpi.trim() === '2', 'total workouts KPI = 2');
   ok(await page.locator('#progChart svg circle').count() >= 2, 'exercise progression chart has data points');
   ok(await page.locator('#weeksChart svg path').count() >= 1, 'weekly bar chart rendered');
@@ -183,7 +222,7 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   await page.goto(URL + '#/library');
   await page.fill('#libSearch', 'hammer');
   await page.waitForTimeout(100);
-  ok((await page.locator('#libList .lib-row').count()) >= 3, 'search filters list');
+  ok((await page.locator('#libList .cat-item').count()) >= 3, 'search filters list');
   await page.locator('#libList [data-act="favToggle"]').first().click();
   ok((await db()).profile.favorites.length === 3, 'favorited');
   await page.locator('#libList [data-act="exDetail"]').first().click();
@@ -228,14 +267,18 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   d = await db();
   ok(d.history.length === 2 && d.profile.favorites.length === 3, 'history and settings persist after refresh');
   await page.goto(URL + '#/history');
-  ok((await page.locator('.list-row').count()) === 2, 'history list shows 2 workouts');
+  ok((await page.locator('.log-entry').count()) === 2, 'history list shows 2 workouts');
 
   console.log('Theme toggle');
   await page.goto(URL + '#/settings');
-  await page.click('[data-act="pfTheme"][data-v="light"]');
-  ok((await page.evaluate(() => document.documentElement.dataset.theme)) === 'light', 'light mode');
+  ok((await page.evaluate(() => document.documentElement.dataset.theme)) === 'light', 'ivory (light) theme by default');
+  await page.click('[data-act="pfTheme"][data-v="dark"]');
+  ok((await page.evaluate(() => document.documentElement.dataset.theme)) === 'dark', 'night mode');
   await page.reload();
-  ok((await page.evaluate(() => document.documentElement.dataset.theme)) === 'light', 'theme persists');
+  ok((await page.evaluate(() => document.documentElement.dataset.theme)) === 'dark', 'theme persists');
+  await shot('dark-dashboard');
+  await page.click('[data-act="pfTheme"][data-v="light"]').catch(() => {});
+  await page.goto(URL + '#/settings'); await page.click('[data-act="pfTheme"][data-v="light"]');
   await page.goto(URL + '#/dashboard');
   await page.waitForTimeout(300);
   await shot('light-dashboard');

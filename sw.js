@@ -1,9 +1,11 @@
 /* Service worker: caches the app shell so Forge works fully offline. Bump VERSION on each deploy. */
-const VERSION = 'forge-v1';
+const VERSION = 'forge-v2';
 const ASSETS = [
   './', './index.html', './manifest.webmanifest', './css/app.css',
   './js/exercises.js', './js/core.js', './js/engine.js', './js/icons.js', './js/charts.js',
   './js/ui.js', './js/views-train.js', './js/views-data.js',
+  './fonts/fraunces-latin-full-normal.woff2', './fonts/fraunces-latin-full-italic.woff2',
+  './fonts/instrument-sans-latin-standard-normal.woff2', './fonts/jetbrains-mono-latin-wght-normal.woff2',
   './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png',
 ];
 self.addEventListener('install', (e) => {

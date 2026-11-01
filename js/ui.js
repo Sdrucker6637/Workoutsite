@@ -11,46 +11,59 @@
   const esc = WT.esc;
 
   const NAV = [
-    { id: 'dashboard', name: 'Dashboard', short: 'Home', icon: 'home' },
-    { id: 'generate', name: 'Generate Workout', short: 'Generate', icon: 'sparkles' },
-    { id: 'workout', name: 'Active Workout', short: 'Workout', icon: 'activity' },
-    { id: 'library', name: 'Exercise Library', short: 'Library', icon: 'book' },
-    { id: 'history', name: 'Workout History', short: 'History', icon: 'clock' },
-    { id: 'progress', name: 'Progress & Stats', short: 'Progress', icon: 'chart' },
-    { id: 'settings', name: 'Settings', short: 'Settings', icon: 'settings' },
+    { id: 'dashboard', name: 'Today', icon: 'home' },
+    { id: 'generate', name: 'Generate', icon: 'sparkles' },
+    { id: 'workout', name: 'Train', icon: 'activity' },
+    { id: 'library', name: 'Library', icon: 'book' },
+    { id: 'history', name: 'Log', icon: 'clock' },
+    { id: 'progress', name: 'Progress', icon: 'chart' },
+    { id: 'settings', name: 'Settings', icon: 'settings' },
   ];
   WT.NAV = NAV;
 
   /* ───────── Shell ───────── */
   function shell() {
-    const active = !!WT.db.active;
-    const navItems = NAV.map(
-      (n) => `<a href="#/${n.id}" class="nav-item" data-nav="${n.id}">${I(n.icon, 19)}<span>${n.name}</span>${n.id === 'workout' && active ? '<span class="nav-dot"></span>' : ''}</a>`
-    ).join('');
-    const tabs = NAV.filter((n) => n.id !== 'settings' && n.id !== 'library')
-      .concat([NAV[3]])
-      .map((n) => `<a href="#/${n.id}" class="tab" data-nav="${n.id}">${I(n.icon, 22)}<span>${n.short}</span>${n.id === 'workout' && active ? '<span class="nav-dot"></span>' : ''}</a>`)
+    const navItems = NAV.map((n, i) => `<a href="#/${n.id}" class="nav-item" data-nav="${n.id}"><span class="n">${String(i + 1).padStart(2, '0')}</span><span>${n.name}</span><span class="slot"></span></a>`).join('');
+    const tabs = ['dashboard', 'generate', 'workout', 'history', 'progress']
+      .map((id) => NAV.find((n) => n.id === id))
+      .map((n) => `<a href="#/${n.id}" class="tab" data-nav="${n.id}">${I(n.icon, 22)}<span>${n.name}</span><span class="slot"></span></a>`)
       .join('');
     document.getElementById('app').innerHTML = `
-      <aside class="sidebar">
-        <div class="brand"><div class="brand-mark">${I('dumbbell', 18)}</div>Forge</div>
-        ${navItems}
-        <div class="sidebar-foot">Data stays on this device.<br/>Works offline.</div>
+      <aside class="rail">
+        <a href="#/dashboard" class="wordmark">Forge</a>
+        <div class="eyebrow wordmark-sub">A training journal</div>
+        <nav class="rail-nav" aria-label="Main">${navItems}</nav>
+        <div class="rail-foot" id="railFoot"></div>
       </aside>
-      <header class="topbar"><h1 id="topTitle"></h1><div id="topActions" class="row" style="gap:2px"></div>
-        <a class="icon-btn" href="#/settings" aria-label="Settings">${I('settings', 20)}</a></header>
+      <header class="mbar" id="mbar"></header>
       <main class="main" id="main"></main>
-      <nav class="tabbar">${tabs}</nav>
+      <nav class="tabbar" aria-label="Main">${tabs}</nav>
       <div id="timerHost"></div>
-      <div class="toasts" id="toasts"></div>`;
+      <div class="toasts" id="toasts" role="status" aria-live="polite"></div>`;
   }
   WT.refreshShell = function () {
-    const active = !!WT.db.active;
-    document.querySelectorAll('[data-nav="workout"]').forEach((a) => {
-      const dot = a.querySelector('.nav-dot');
-      if (active && !dot) a.insertAdjacentHTML('beforeend', '<span class="nav-dot"></span>');
-      if (!active && dot) dot.remove();
-    });
+    const a = WT.db.active;
+    document.querySelectorAll('[data-nav="workout"] .slot').forEach((el) => (el.innerHTML = a ? '<span class="live-dot" title="Workout in progress"></span>' : ''));
+    const foot = $('#railFoot');
+    if (foot)
+      foot.innerHTML = a
+        ? `<a class="rail-live" href="#/workout"><div class="eyebrow" style="color:var(--forest)">In session</div><div class="t" id="railClock">${WT.fmtClock((Date.now() - new Date(a.startedAt)) / 1000)}</div><div class="small muted ellipsis">${esc(a.title)}</div></a>`
+        : `<div class="rail-live"><div class="eyebrow">Private by design</div><p class="small faint mt8">Everything stays on this device and works offline.</p></div>`;
+    const focus = WT.ui.route === 'workout' && !!a;
+    document.body.classList.toggle('focus', focus);
+    const mb = $('#mbar');
+    if (mb) {
+      if (focus)
+        mb.innerHTML = `<a class="icon-btn" href="#/dashboard" aria-label="Leave workout screen (keeps running)">${I('chevL', 22)}</a>
+          <div class="grow" style="padding-left:4px"><div class="eyebrow" style="color:var(--forest)">In session</div><div class="mono" id="mbClock" style="font-size:17px;line-height:1.1">${WT.fmtClock((Date.now() - new Date(a.startedAt)) / 1000)}</div></div>
+          <button class="btn btn-primary btn-sm" data-act="woFinish">Finish</button>`;
+      else {
+        const nav = NAV.find((n) => n.id === WT.ui.route) || NAV[0];
+        mb.innerHTML = `<a href="#/dashboard" class="wordmark">Forge</a><span class="eyebrow sec">${WT.ui.route === 'history' && WT.ui.param ? 'Entry' : nav.name}</span><span class="grow"></span>
+          <a class="icon-btn" href="#/library" aria-label="Exercise library" data-nav="library">${I('book', 20)}</a>
+          <a class="icon-btn" href="#/settings" aria-label="Settings" data-nav="settings">${I('settings', 20)}</a>`;
+      }
+    }
   };
 
   /* ───────── Router ───────── */
@@ -76,13 +89,13 @@
       main.firstChild.style.animation = 'none';
       window.scrollTo(0, y);
     } else if (changed) window.scrollTo(0, 0);
-    document.querySelectorAll('[data-nav]').forEach((a) => a.classList.toggle('active', a.dataset.nav === route));
+    main.classList.toggle('calm', !!(keepScroll && !changed));
     const nav = NAV.find((n) => n.id === route);
-    $('#topTitle').textContent = route === 'history' && param ? 'Workout' : nav.short === 'Home' ? greeting() : nav.name;
     document.title = (nav ? nav.name + ' · ' : '') + 'Forge';
     const after = WT.V[route + 'After'];
     if (after) requestAnimationFrame(() => after(param));
     WT.refreshShell();
+    document.querySelectorAll('[data-nav]').forEach((a) => a.classList.toggle('active', a.dataset.nav === route));
     WT.renderTimer();
   };
   WT.rerender = () => WT.render(true);
@@ -131,7 +144,7 @@
     const scroll = sheet.scrollTop;
     const r = entry.renderFn();
     sheet.innerHTML = `<div class="grabber"></div>
-      <div class="sheet-head"><h2>${r.title || ''}</h2>${r.headExtra || ''}<button class="icon-btn" data-act="closeSheet" aria-label="Close">${I('x', 20)}</button></div>
+      <div class="sheet-head"><div class="grow">${r.eyebrow ? `<div class="eyebrow">${r.eyebrow}</div>` : ''}<h2>${r.title || ''}</h2></div>${r.headExtra || ''}<button class="icon-btn" data-act="closeSheet" aria-label="Close">${I('x', 20)}</button></div>
       <div class="sheet-body">${r.body || ''}</div>${r.foot ? `<div class="sheet-foot">${r.foot}</div>` : ''}`;
     sheet.scrollTop = scroll;
     if (r.after) r.after(sheet);
@@ -153,7 +166,7 @@
   WT.confirm = function (title, message, okLabel, onOk, danger) {
     WT.openSheet(() => ({
       title,
-      body: `<p class="muted">${message}</p>`,
+      body: `<p class="lead" style="font-size:18px">${message}</p>`,
       foot: `<button class="btn btn-secondary grow" data-act="closeSheet">Cancel</button><button class="btn ${danger ? 'btn-danger' : 'btn-primary'} grow" data-act="confirmOk">${okLabel}</button>`,
     }));
     WT.A.confirmOk = () => {
@@ -169,6 +182,7 @@
     const t = document.createElement('div');
     t.className = 'toast ' + (kind || '');
     t.innerHTML = (kind === 'good' ? I('check', 16) : kind === 'error' ? I('info', 16) : '') + `<span>${esc(msg)}</span>`;
+    while (host.children.length > 2) host.firstChild.remove();
     host.appendChild(t);
     setTimeout(() => {
       t.style.transition = 'opacity .3s, transform .3s';
@@ -223,17 +237,15 @@
     }
     const left = Math.max(0, Math.ceil((t.end - Date.now()) / 1000));
     const done = left === 0;
-    const C = 2 * Math.PI * 18;
     const f = t.total ? left / t.total : 0;
-    host.innerHTML = `<div class="timer-bar ${done ? 'done' : ''}" role="timer">
-      <svg class="timer-ring" viewBox="0 0 44 44" style="transform:rotate(-90deg)"><circle cx="22" cy="22" r="18" fill="none" stroke="var(--surface-3)" stroke-width="4"/>
-      <circle id="timerArc" cx="22" cy="22" r="18" fill="none" stroke="${done ? 'var(--good)' : 'var(--accent)'}" stroke-width="4" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - f)}"/></svg>
-      <div><div class="t num" id="timerText">${done ? 'Go!' : WT.fmtClock(left)}</div><div class="lbl ellipsis" style="max-width:120px">${esc(t.label)}</div></div>
-      <div class="grow"></div>
-      <button class="btn btn-secondary btn-sm num" data-act="timerAdd" data-s="-15">−15</button>
-      <button class="btn btn-secondary btn-sm num" data-act="timerAdd" data-s="15">+15</button>
-      <button class="btn btn-sm ${done ? 'btn-good' : 'btn-ghost'}" data-act="timerStop">${done ? 'Done' : 'Skip'}</button>
-    </div>`;
+    host.innerHTML = `<div class="dock ${done ? 'done' : ''}" role="timer" aria-live="off">
+      <div class="dock-bar"><i id="timerArc" style="width:${f * 100}%"></i></div>
+      <div class="dock-in"><div style="min-width:0"><div class="dock-lbl ellipsis">${done ? 'Rest complete — next set' : esc(t.label)}</div><div class="dock-time" id="timerText">${done ? '0:00' : WT.fmtClock(left)}</div></div>
+      <div class="dock-btns">
+        <button class="btn btn-secondary btn-sm" data-act="timerAdd" data-s="-15" aria-label="Subtract 15 seconds">−15</button>
+        <button class="btn btn-secondary btn-sm" data-act="timerAdd" data-s="15" aria-label="Add 15 seconds">+15</button>
+        <button class="btn btn-sm ${done ? 'btn-primary' : 'btn-ink'}" data-act="timerStop">${done ? 'Go' : 'Skip'}</button>
+      </div></div></div>`;
   };
   function tick() {
     const a = WT.db && WT.db.active;
@@ -254,10 +266,7 @@
       } else if (txt && left > 0) {
         txt.textContent = WT.fmtClock(left);
         const arc = $('#timerArc');
-        if (arc) {
-          const C = 2 * Math.PI * 18;
-          arc.setAttribute('stroke-dashoffset', C * (1 - left / t.total));
-        }
+        if (arc) arc.style.width = (left / t.total) * 100 + '%';
       }
       if (left === 0 && Date.now() - t.end > 60000) {
         a.timer = null;
@@ -265,8 +274,13 @@
         WT.renderTimer();
       }
     }
-    const clock = $('#woClock');
-    if (clock && a) clock.textContent = WT.fmtClock((Date.now() - new Date(a.startedAt)) / 1000);
+    if (a) {
+      const txt = WT.fmtClock((Date.now() - new Date(a.startedAt)) / 1000);
+      ['#woClock', '#railClock', '#mbClock', '#dashClock'].forEach((sel) => {
+        const el = $(sel);
+        if (el) el.textContent = txt;
+      });
+    }
   }
   WT.A.timerAdd = (d) => {
     const t = WT.db.active && WT.db.active.timer;
@@ -292,19 +306,19 @@
     const theme = t === 'system' ? (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark') : t;
     document.documentElement.dataset.theme = theme;
     const meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.setAttribute('content', theme === 'light' ? '#f4f4f6' : '#0b0b0c');
+    if (meta) meta.setAttribute('content', theme === 'light' ? '#f3efe6' : '#151513');
   };
 
   /* ───────── Shared render helpers ───────── */
   WT.h = {
-    intensity(int, act, uid) {
-      const label = { heavy: 'Heavy', regular: 'Regular', burnout: 'Burnout' }[int] || int;
+    intensity(int, act, uid, ctx) {
+      const label = (WT.INTENSITY_INFO[int] || { name: int }).name;
       return act
-        ? `<button class="badge ${int}" data-act="${act}" data-uid="${uid}" title="Tap to change intensity"><span class="dot"></span>${label}</button>`
-        : `<span class="badge ${int}"><span class="dot"></span>${label}</span>`;
+        ? `<button class="imark ${int}" data-act="${act}" data-uid="${uid}" ${ctx ? `data-ctx="${ctx}"` : ''} title="Change intensity" aria-label="Intensity: ${label}. Change">${label}</button>`
+        : `<span class="imark ${int}">${label}</span>`;
     },
     muscles(ex) {
-      return `${WT.muscleName(ex.primary)}${ex.secondary.length ? `<span class="faint"> · ${ex.secondary.slice(0, 2).map(WT.muscleName).join(', ')}</span>` : ''}`;
+      return `${WT.muscleName(ex.primary)}${ex.secondary.length ? ` · ${ex.secondary.slice(0, 2).map(WT.muscleName).join(', ')}` : ''}`;
     },
     target(item, ex) {
       const tt = WT.trackType(ex);
@@ -313,12 +327,12 @@
       return `${item.sets || item.targetSets} × ${item.repMin}${item.repMax !== item.repMin ? '–' + item.repMax : ''}${unit}`;
     },
     empty(icon, title, text, action) {
-      return `<div class="empty"><div class="avatar">${I(icon, 24)}</div><h3>${title}</h3><p>${text}</p>${action ? `<div class="mt16">${action}</div>` : ''}</div>`;
+      return `<div class="empty"><h3>${title}</h3><p>${text}</p>${action ? `<div class="mt24 row wrap">${action}</div>` : ''}</div>`;
     },
     chipGroup(items, selected, act, extra) {
       const sel = new Set(selected);
       return `<div class="chips">${Object.entries(items)
-        .map(([k, v]) => `<button class="chip ${extra || ''} ${sel.has(k) ? 'on' : ''}" data-act="${act}" data-k="${k}">${esc(v)}</button>`)
+        .map(([k, v]) => `<button class="chip ${extra || ''} ${sel.has(k) ? 'on' : ''}" data-act="${act}" data-k="${k}" aria-pressed="${sel.has(k)}">${esc(v)}</button>`)
         .join('')}</div>`;
     },
     toggle(on, act, extra) {
@@ -327,8 +341,17 @@
     stepper(val, act, key, min, max) {
       return `<div class="stepper"><button data-act="${act}" data-k="${key}" data-d="-1" data-min="${min}" data-max="${max}" aria-label="Decrease">${I('minus', 16)}</button><span class="val">${val}</span><button data-act="${act}" data-k="${key}" data-d="1" data-min="${min}" data-max="${max}" aria-label="Increase">${I('plus', 16)}</button></div>`;
     },
-    seg(options, current, act, key) {
-      return `<div class="seg">${options.map(([v, l]) => `<button class="${String(v) === String(current) ? 'on' : ''}" data-act="${act}" data-k="${key || ''}" data-v="${v}">${l}</button>`).join('')}</div>`;
+    seg(options, current, act, key, cls) {
+      return `<div class="seg ${cls || ''}" role="group">${options.map(([v, l]) => `<button class="${String(v) === String(current) ? 'on' : ''}" data-act="${act}" data-k="${key || ''}" data-v="${v}" aria-pressed="${String(v) === String(current)}">${l}</button>`).join('')}</div>`;
+    },
+    oddsBar(odds) {
+      const keys = ['heavy', 'regular', 'burnout', 'standard'];
+      const tot = keys.reduce((a, k) => a + Math.max(0, +odds[k] || 0), 0) || 1;
+      return `<div class="oddsbar">${keys.map((k) => `<i class="${k}" style="width:${(Math.max(0, +odds[k] || 0) / tot) * 100}%"></i>`).join('')}</div>`;
+    },
+    pct(odds, k) {
+      const tot = ['heavy', 'regular', 'burnout', 'standard'].reduce((a, x) => a + Math.max(0, +odds[x] || 0), 0) || 1;
+      return Math.round((Math.max(0, +odds[k] || 0) / tot) * 100);
     },
   };
 

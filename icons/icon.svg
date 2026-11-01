@@ -1,7 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="112" fill="#0b0b0c"/>
-  <rect x="56" y="56" width="400" height="400" rx="88" fill="#ff7a45"/>
-  <g fill="none" stroke="#1a0a03" stroke-width="34" stroke-linecap="round">
-    <path d="M176 176v160M336 176v160M120 216v80M392 216v80M176 256h160"/>
-  </g>
+  <rect width="512" height="512" rx="115" fill="#2e4a2b"/>
+  <text x="250" y="352" text-anchor="middle" font-family="Fraunces, 'Iowan Old Style', Georgia, serif" font-style="italic" font-weight="330" font-size="358" fill="#f3efe6">F</text>
+  <rect x="113" y="408" width="286" height="7" fill="#f3efe6" opacity=".55"/>
 </svg>

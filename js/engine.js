@@ -289,13 +289,14 @@
     }
 
     if (allMin) {
-      const next = Math.min(lastMax, Math.floor(avgReps) + 1);
+      const targets = repTargets(workSets.map((x) => x.r), lastMin, lastMax, targetSets);
       return {
         action: 'hold',
         weight: topW,
-        reps: `${next}+`,
-        headline: `${WT.fmtNum(topW)} ${u} — aim for ${next}+ reps`,
-        reasons: [`Last time ${when}: ${lastStr}. All sets were in range but not all at ${lastMax}.`, `Keep the weight and add a rep where you can. Increase once every set reaches ${lastMax}.`],
+        reps: targets.join(', '),
+        repTargets: targets,
+        headline: `Maintain ${WT.fmtNum(topW)} ${u} — aim for ${targets.join(', ')}`,
+        reasons: [`Last time ${when}: ${lastStr}. Every set was in the ${lastMin}–${lastMax} range, but not all at the top.`, `Keep the weight and bring each set up by about a rep. Once all ${targetSets} sets reach ${lastMax}, the next step is a weight increase.`],
         basis,
       };
     }
@@ -307,20 +308,32 @@
         action: 'decrease',
         weight: step.w,
         reps: `${lastMin}–${lastMax}`,
-        headline: `${WT.fmtNum(step.w)} ${u} × ${lastMin}–${lastMax}`,
+        headline: `Drop to ${WT.fmtNum(step.w)} ${u} × ${lastMin}–${lastMax}`,
         reasons: [`You fell short of ${lastMin} reps at ${WT.fmtNum(topW)} ${u} in your last two sessions (latest: ${repsStr}).`, `Drop to ${WT.fmtNum(step.w)} ${u}, own the full range for a couple of sessions, then build back up.`],
         basis,
       };
     }
+    const targets = repTargets(workSets.map((x) => x.r), lastMin, lastMax, targetSets).map((r) => Math.max(lastMin, r));
     return {
       action: 'hold',
       weight: topW,
-      reps: `${lastMin}–${lastMax}`,
-      headline: `Repeat ${WT.fmtNum(topW)} ${u}`,
+      reps: targets.join(', '),
+      repTargets: targets,
+      headline: `Maintain ${WT.fmtNum(topW)} ${u} — aim for ${targets.join(', ')}`,
       reasons: [`Last time ${when}: ${lastStr} — some sets fell short of ${lastMin} reps${workSets.length < targetSets ? ` and only ${workSets.length} of ${targetSets} sets were completed` : ''}.`, 'Repeat this weight and aim to hit the minimum on every set. If it happens again, the app will suggest backing off.'],
       basis,
     };
   };
+
+  /** Conservative per-set rep goals: lift lagging sets toward your best set; +1 when all sets are equal. */
+  function repTargets(reps, lo, hi, n) {
+    const r = reps.slice(0, n);
+    while (r.length < n) r.push(r[r.length - 1] || lo);
+    const best = Math.max(...r);
+    const allEqual = r.every((x) => x === best);
+    return r.map((x) => Math.max(lo, Math.min(hi, allEqual ? x + 1 : Math.max(x, Math.min(best, x + 1)))));
+  }
+  WT.repTargets = repTargets;
 
   WT.fmtPace = (minPerMile) => {
     const m = Math.floor(minPerMile);
@@ -509,19 +522,94 @@
   }
   WT.templateFor = templateFor;
 
-  function autoIntensity(type, n, targets) {
+  /* ───────── Intensity model ─────────
+   * Four classes: heavy (5–8), regular (8–12), burnout (12–20+), standard (exercise's own
+   * recommendation, no designation). By default each exercise is drawn INDEPENDENTLY from
+   * configurable odds, weighted by how suitable the exercise is for each class. There is no
+   * fixed per-workout formula: 0 heavy / 0 burnout / all-regular / 3 heavy… are all possible.
+   */
+  WT.INTENSITIES = ['heavy', 'regular', 'burnout', 'standard'];
+  WT.INTENSITY_INFO = {
+    heavy: { name: 'Heavy', reps: '5–8 reps', text: 'Higher load, longer rest. Reserved for movements that load safely.' },
+    regular: { name: 'Regular', reps: '8–12 reps', text: 'Classic hypertrophy work — the backbone of most sessions.' },
+    burnout: { name: 'Burnout', reps: '12–20+ reps', text: 'Lighter weight, short rest, last set close to failure.' },
+    standard: { name: 'Standard', reps: 'As recommended', text: 'The exercise’s own recommended sets and reps. No special designation.' },
+  };
+
+  /** Relative odds of each eligible intensity for one exercise (0 = not allowed). */
+  WT.intensityWeights = function (ex, opts) {
+    opts = opts || {};
     const p = WT.db.profile;
-    let heavy;
-    if (type === 'cardio' || type === 'core') heavy = 0;
-    else if (['arms', 'biceps', 'triceps', 'shoulders'].includes(type)) heavy = 1;
-    else if (type === 'custom' && targets && targets.every((t) => t === 'core' || t === 'cardio')) heavy = 0;
-    else heavy = n >= 5 ? 2 : 1;
-    if (n <= 2) heavy = Math.min(heavy, 1);
-    let burnout = p.burnouts && type !== 'cardio' && n >= 4 ? 1 : 0;
-    if (p.burnouts && ['arms', 'biceps', 'triceps'].includes(type) && n >= 7) burnout = 2;
+    const odds = p.intensityOdds || {};
+    const comp = ex.category === 'compound';
+    const tt = WT.trackType(ex);
+    const w = {};
+    ex.intensities.forEach((k) => {
+      let v = Math.max(0, +odds[k] || 0);
+      if (k === 'heavy') {
+        v *= comp ? 1 : 0.35; // heavy loading belongs on compounds
+        if (tt !== 'weight') v *= 0.6; // bodyweight / timed work is called "heavy" less often
+        if (ex.difficulty === 'advanced') v *= 0.6;
+        if (p.experience === 'beginner') v *= 0.5;
+        if (opts.fatigued) v *= 0.4; // muscle hammered in the last 48h
+        if (opts.position != null) v *= opts.position < 0.5 ? 1.25 : 0.7; // early in the session → heavier
+      } else if (k === 'burnout') {
+        if (!p.burnouts) v = 0;
+        v *= comp ? 0.35 : 1; // burnouts favour safer isolation / bodyweight work
+        if (ex.tags.includes('spinal-load')) v = 0;
+        if (opts.position != null) v *= opts.position >= 0.5 ? 1.3 : 0.6; // finishers come late
+      }
+      w[k] = v;
+    });
+    return w;
+  };
+  function drawWeighted(w, rnd) {
+    const keys = Object.keys(w).filter((k) => w[k] > 0);
+    if (!keys.length) return 'standard';
+    const total = keys.reduce((a, k) => a + w[k], 0);
+    let r = (rnd || Math.random)() * total;
+    for (const k of keys) {
+      r -= w[k];
+      if (r <= 0) return k;
+    }
+    return keys[keys.length - 1];
+  }
+  WT.drawWeighted = drawWeighted;
+
+  /** Independently randomise intensities for a list of workout items (locked items keep theirs). */
+  WT.randomizeIntensities = function (items, ctx, rnd) {
+    const n = items.length;
+    // Safety rails only — they rarely bind with default odds, and never force a minimum.
+    const cap = { heavy: Math.max(1, Math.ceil(n / 2)), burnout: Math.max(1, Math.ceil(n / 3)) };
+    const used = { heavy: 0, burnout: 0 };
+    items.forEach((i) => i.locked && i.intensity && used[i.intensity] != null && used[i.intensity]++);
+    const order = WT.shuffle(items.filter((i) => !(i.locked && i.intensity)));
+    order.forEach((i) => {
+      const ex = WT.ex(i.exId);
+      const pos = n > 1 ? items.indexOf(i) / (n - 1) : 0;
+      const fatigued = ctx && ctx.fatigue ? (ctx.fatigue[ex.primary] || 0) >= 8 : false;
+      const w = WT.intensityWeights(ex, { position: i.slot && i.slot.heavy ? 0 : pos, fatigued });
+      ['heavy', 'burnout'].forEach((k) => used[k] >= cap[k] && (w[k] = 0));
+      i.intensity = drawWeighted(w, rnd);
+      if (used[i.intensity] != null) used[i.intensity]++;
+    });
+    return items;
+  };
+
+  /** Default counts for manual (non-random) mode. */
+  function autoIntensity(type, n) {
+    const f = WT.db.profile.intensityFixed || { heavy: 2, burnout: 1 };
+    const heavy = Math.min(n, type === 'cardio' ? 0 : +f.heavy || 0);
+    const burnout = Math.min(n - heavy, type === 'cardio' ? 0 : +f.burnout || 0);
     return { heavy, burnout, regular: Math.max(0, n - heavy - burnout) };
   }
   WT.autoIntensity = autoIntensity;
+
+  /** Closest allowed intensity when an exercise can't take the requested one (used by swaps). */
+  WT.nearestIntensity = function (ex, want) {
+    const pref = { heavy: ['heavy', 'regular', 'standard'], burnout: ['burnout', 'standard', 'regular'], regular: ['regular', 'standard'], standard: ['standard'] }[want] || ['standard'];
+    return pref.find((k) => ex.intensities.includes(k)) || 'standard';
+  };
 
   WT.defaultSettings = function (type) {
     const p = WT.db.profile;
@@ -531,9 +619,9 @@
       autoCount: false,
       duration: p.defaultDuration,
       equipment: p.equipment.slice(),
-      intensityMode: 'auto',
-      heavy: 2,
-      burnout: 1,
+      intensityMode: p.intensityRandom === false ? 'manual' : 'random',
+      heavy: (p.intensityFixed || {}).heavy != null ? +p.intensityFixed.heavy : 2,
+      burnout: (p.intensityFixed || {}).burnout != null ? +p.intensityFixed.burnout : 1,
       prioritize: p.prioritize.slice(),
       avoidMuscles: p.avoidMuscles.slice(),
       supersets: p.supersets,
@@ -677,10 +765,10 @@
   WT.prescribe = function (ex, intensity) {
     const p = WT.db.profile;
     const tt = WT.trackType(ex);
-    if (!ex.intensities.includes(intensity)) intensity = ex.intensity;
+    if (!ex.intensities.includes(intensity)) intensity = WT.nearestIntensity(ex, intensity);
     const comp = ex.category === 'compound';
     let sets, repMin, repMax, rest, note = '';
-    if (tt === 'cardio') return { intensity: 'regular', sets: 1, repMin: ex.repMin, repMax: ex.repMax, rest: 0, note: 'Minutes' };
+    if (tt === 'cardio') return { intensity: 'standard', sets: 1, repMin: ex.repMin, repMax: ex.repMax, rest: 0, note: 'Minutes' };
     if (intensity === 'heavy') {
       sets = comp ? 4 : 3;
       if (tt === 'reps') {
@@ -710,9 +798,20 @@
         repMax = repMin + (repMin === 15 ? 5 : 10);
       }
       rest = p.rest.burnout;
-      note = 'Burnout — final set to failure';
-    } else {
+      note = 'Burnout — final set close to failure';
+    } else if (intensity === 'regular') {
       sets = 3;
+      if (tt === 'weight' && ex.unit !== 'sec' && ex.repMin <= 12) {
+        repMin = 8;
+        repMax = 12;
+      } else {
+        repMin = ex.repMin;
+        repMax = ex.repMax;
+      }
+      rest = comp ? p.rest.regular : Math.round((p.rest.regular * 0.75) / 5) * 5;
+    } else {
+      // standard — the exercise's own recommendation
+      sets = ex.sets || 3;
       repMin = ex.repMin;
       repMax = ex.repMax;
       rest = Math.round(((ex.rest || 75) * p.rest.regular) / 90 / 5) * 5;
@@ -903,7 +1002,8 @@
       notes.push(`Recently trained hard (last 48h): ${hot.map(([m, v]) => `${WT.muscleName(m)} (${WT.fmtNum(v)} sets)`).join(', ')}. Exercises for these muscles were de-prioritized.`);
 
     // Intensity plan
-    const plan = settings.intensityMode === 'manual' ? { heavy: +settings.heavy || 0, burnout: +settings.burnout || 0 } : autoIntensity(type, n, settings.targets);
+    const randomMode = settings.intensityMode !== 'manual';
+    const plan = randomMode ? null : { heavy: +settings.heavy || 0, burnout: +settings.burnout || 0 };
 
     // Fill slots
     const used = new Set();
@@ -932,7 +1032,8 @@
       if (!items.find((i) => i.uid === k.uid) && WT.ex(k.exId)) items.push(Object.assign({}, k));
     });
 
-    assignIntensities(items, plan);
+    if (randomMode) WT.randomizeIntensities(items, ctx);
+    else assignIntensities(items, plan);
     items.forEach((i) => {
       if (i.locked && i.sets) return;
       Object.assign(i, WT.prescribe(WT.ex(i.exId), i.intensity));
@@ -950,11 +1051,17 @@
       title: type === 'custom' ? 'Custom: ' + (settings.targets || []).map((t) => WT.CUSTOM_TARGETS[t]).join(', ') : WT.typeName(type),
       createdAt: new Date().toISOString(),
       settings,
-      plan,
+      plan: WT.intensityTally(arranged),
+      intensityMode: randomMode ? 'random' : 'manual',
       notes,
       exercises: arranged,
       estimatedMin: WT.estimateMinutes(arranged),
     };
+  };
+  WT.intensityTally = (items) => {
+    const t = { heavy: 0, regular: 0, burnout: 0, standard: 0 };
+    items.forEach((i) => (t[i.intensity] = (t[i.intensity] || 0) + 1));
+    return t;
   };
   const stripSlot = (s) => ({ label: s.label, m: s.m, p: s.p, tag: s.tag, cardio: s.cardio, core: s.core, heavy: s.heavy });
 
@@ -987,7 +1094,7 @@
     fresh.forEach((i) => {
       if (!i.intensity) {
         const ex = exOf(i);
-        i.intensity = ex.intensities.includes('regular') ? 'regular' : ex.intensities[0];
+        i.intensity = ex.intensities.includes('regular') ? 'regular' : 'standard';
       }
     });
   }
@@ -1023,7 +1130,7 @@
     const ex = WT.ex(newExId);
     item.exId = newExId;
     item.name = ex.name;
-    const intensity = ex.intensities.includes(item.intensity) ? item.intensity : ex.intensity;
+    const intensity = WT.nearestIntensity(ex, item.intensity || 'standard');
     const pr = WT.prescribe(ex, intensity);
     const keepSets = item.sets && typeof item.sets === 'number' ? item.sets : null;
     Object.assign(item, pr);

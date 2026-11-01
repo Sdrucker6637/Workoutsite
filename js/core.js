@@ -138,13 +138,13 @@
   WT.defaultProfile = () => ({
     name: '',
     unit: 'lb',
-    theme: 'dark',
+    theme: 'light',
     goals: [
-      'Reduce body fat and get leaner and more defined',
-      'Improve chest development — especially the lower chest',
-      'Build bigger, more noticeable arms',
-      'Reduce stomach fat and love handles',
-      'Maintain balanced overall development',
+      'Reduce overall body fat and achieve a leaner physique',
+      'Improve chest development — particularly the lower chest',
+      'Build more noticeable arms',
+      'Improve overall muscular definition',
+      'Maintain balanced development',
     ],
     strengthPerWeek: 3,
     runsPerWeek: 2,
@@ -153,9 +153,13 @@
     defaultDuration: 60,
     supersets: true,
     burnouts: true,
+    // Intensity: probability-based randomisation (default) or fixed counts
+    intensityRandom: true,
+    intensityOdds: { heavy: 22, regular: 30, burnout: 16, standard: 32 },
+    intensityFixed: { heavy: 2, burnout: 1 },
     experience: 'intermediate',
     equipment: ['db', 'bench', 'cable', 'lat', 'row', 'mb', 'bw', 'bar'],
-    dumbbells: { min: 5, max: 60, step: 5, gymMax: 100, microLoad: false },
+    dumbbells: { min: 5, max: 60, step: 5, microLoad: false },
     cableStep: 5,
     prioritize: ['chest', 'biceps', 'triceps', 'abs', 'obliques'],
     emphasisTags: ['lower-chest', 'arm-size', 'love-handles'],
@@ -171,7 +175,7 @@
   /* ───────── Store ───────── */
   const KEY = 'wt.data.v1';
   const fresh = () => ({
-    version: 1,
+    version: 2,
     profile: WT.defaultProfile(),
     customExercises: [],
     overrides: {},
@@ -181,12 +185,27 @@
     createdAt: new Date().toISOString(),
   });
 
+  const V1_GOALS = [
+    'Reduce body fat and get leaner and more defined',
+    'Improve chest development — especially the lower chest',
+    'Build bigger, more noticeable arms',
+    'Reduce stomach fat and love handles',
+    'Maintain balanced overall development',
+  ];
   function migrate(d) {
     const base = fresh();
     const out = Object.assign(base, d || {});
     out.profile = Object.assign(WT.defaultProfile(), (d && d.profile) || {});
     out.profile.dumbbells = Object.assign(WT.defaultProfile().dumbbells, out.profile.dumbbells || {});
     out.profile.rest = Object.assign(WT.defaultProfile().rest, out.profile.rest || {});
+    out.profile.intensityOdds = Object.assign(WT.defaultProfile().intensityOdds, out.profile.intensityOdds || {});
+    out.profile.intensityFixed = Object.assign(WT.defaultProfile().intensityFixed, out.profile.intensityFixed || {});
+    // v1 → v2: new art direction defaults to the ivory theme; refresh goal wording only if never edited.
+    if (d && (d.version || 1) < 2) {
+      if (out.profile.theme === 'dark') out.profile.theme = 'light';
+      if (JSON.stringify(out.profile.goals) === JSON.stringify(V1_GOALS)) out.profile.goals = WT.defaultProfile().goals;
+      out.version = 2;
+    }
     out.history = Array.isArray(out.history) ? out.history : [];
     out.customExercises = Array.isArray(out.customExercises) ? out.customExercises : [];
     out.overrides = out.overrides || {};
@@ -265,6 +284,10 @@
     const db = WT.db;
     const all = WT.BUILTIN_EXERCISES.map((e) => Object.assign({}, e, db.overrides[e.id] || {}));
     db.customExercises.forEach((e) => all.push(Object.assign({ custom: true }, e)));
+    all.forEach((e) => {
+      if (!e.intensities.includes('standard')) e.intensities = e.intensities.concat('standard');
+      if (!e.intensities.includes(e.intensity)) e.intensity = 'standard';
+    });
     WT.exercises = all;
     WT.exMap = Object.fromEntries(all.map((e) => [e.id, e]));
   };

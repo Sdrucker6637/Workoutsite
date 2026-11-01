@@ -46,12 +46,58 @@ for (const t of WT.WORKOUT_TYPES) {
   console.log(`\n${t.name} (~${w.estimatedMin} min) plan=${JSON.stringify(w.plan)}`);
   w.exercises.forEach(i => console.log(`  ${i.superset ? i.superset + ' ' : '  '}${i.intensity.padEnd(8)} ${i.sets}x${i.repMin}-${i.repMax} r${i.rest}  ${WT.ex(i.exId).name}  [${i.slot && i.slot.label}]`));
 }
-// Intensity distribution 6 → 2/3/1
-const w6 = WT.generate(WT.defaultSettings('full'));
-const cnt = k => w6.exercises.filter(i => i.intensity === k).length;
-ok(cnt('heavy') === 2 && cnt('burnout') === 1 && cnt('regular') === 3, 'full 6 = 2 heavy/3 reg/1 burnout got ' + [cnt('heavy'), cnt('regular'), cnt('burnout')]);
+// ── Randomised intensity: no fixed formula, genuine variety, suitability respected ──
+{
+  const combos = {}; let zeroHeavy = 0, zeroBurn = 0, zeroSpecial = 0, multiHeavy = 0, multiBurn = 0, N = 0;
+  let heavyComp = 0, heavyIso = 0, burnComp = 0, burnIso = 0;
+  const allRegularReachable = [];
+  for (const t of ['full', 'push', 'pull', 'legs', 'chest', 'back', 'arms', 'shoulders']) {
+    for (let k = 0; k < 400; k++) {
+      const w = WT.generate(WT.defaultSettings(t)); N++;
+      const tally = WT.intensityTally(w.exercises);
+      combos[`${tally.heavy}h/${tally.burnout}b/${tally.regular}r/${tally.standard}s`] = 1;
+      if (!tally.heavy) zeroHeavy++; if (!tally.burnout) zeroBurn++; if (!tally.heavy && !tally.burnout) zeroSpecial++;
+      if (tally.heavy >= 2) multiHeavy++; if (tally.burnout >= 2) multiBurn++;
+      ok(tally.heavy <= Math.ceil(w.exercises.length / 2), 'heavy safety cap');
+      w.exercises.forEach((i) => {
+        const ex = WT.ex(i.exId);
+        ok(ex.intensities.includes(i.intensity), `${ex.id} got ineligible ${i.intensity}`);
+        if (i.intensity === 'burnout') ok(!ex.tags.includes('spinal-load'), 'burnout on spinal-load ' + ex.id);
+        if (i.intensity === 'heavy') ex.category === 'compound' ? heavyComp++ : heavyIso++;
+        if (i.intensity === 'burnout') ex.category === 'compound' ? burnComp++ : burnIso++;
+      });
+      if (k < 20) allRegularReachable.push(w.exercises.every((i) => WT.ex(i.exId).intensities.includes('regular')));
+    }
+  }
+  const nCombos = Object.keys(combos).length;
+  console.log(`\nIntensity over ${N} workouts: ${nCombos} distinct combos; 0 heavy ${(100*zeroHeavy/N).toFixed(0)}%, 0 burnout ${(100*zeroBurn/N).toFixed(0)}%, neither ${(100*zeroSpecial/N).toFixed(0)}%, 2+ heavy ${(100*multiHeavy/N).toFixed(0)}%, 2+ burnout ${(100*multiBurn/N).toFixed(0)}%`);
+  console.log(`  heavy on compounds ${heavyComp} vs isolation ${heavyIso}; burnout on isolation ${burnIso} vs compound ${burnComp}`);
+  ok(nCombos >= 15, 'many distinct intensity combinations');
+  ok(zeroHeavy > 0 && zeroBurn > 0 && zeroSpecial > 0, 'zero-heavy / zero-burnout / neither workouts occur');
+  ok(multiHeavy > 0 && multiBurn > 0, 'multiple heavy / multiple burnout workouts occur');
+  ok(heavyComp > heavyIso * 1.5, 'heavy favours compounds');
+  ok(burnIso > burnComp, 'burnout favours isolation');
+  ok(allRegularReachable.filter(Boolean).length > 10, 'all-regular workouts are reachable (every exercise eligible for regular)');
+  // Force an all-regular draw by fixing the RNG to the regular band: proves no minimum heavy/burnout is enforced
+  const w = WT.generate(WT.defaultSettings('full'));
+  w.exercises.forEach((i) => (i.intensity = null));
+  const odds = WT.db.profile.intensityOdds; const saved = Object.assign({}, odds);
+  Object.assign(odds, { heavy: 0, burnout: 0, standard: 0, regular: 1 });
+  WT.randomizeIntensities(w.exercises);
+  ok(w.exercises.every((i) => i.intensity === 'regular' || !WT.ex(i.exId).intensities.includes('regular')), 'all-regular workout produced when odds allow it (ineligible exercises fall back to standard)');
+  Object.assign(odds, saved);
+  // Burnouts disabled → never burnout
+  WT.db.profile.burnouts = false;
+  for (let k = 0; k < 100; k++) WT.generate(WT.defaultSettings('arms')).exercises.forEach((i) => ok(i.intensity !== 'burnout', 'burnouts disabled'));
+  WT.db.profile.burnouts = true;
+  // Same type twice in a row should usually differ
+  let diff = 0; for (let k = 0; k < 50; k++) { const a = WT.intensityTally(WT.generate(WT.defaultSettings('full')).exercises), b = WT.intensityTally(WT.generate(WT.defaultSettings('full')).exercises); if (JSON.stringify(a) !== JSON.stringify(b)) diff++; }
+  ok(diff > 30, `consecutive generations differ (${diff}/50)`);
+}
+// Manual mode still honours fixed counts
 // Manual intensity
 const wm = WT.generate(Object.assign(WT.defaultSettings('push'), { intensityMode: 'manual', heavy: 3, burnout: 2 }));
+ok(wm.intensityMode === 'manual', 'manual mode flag');
 ok(wm.exercises.filter(i => i.intensity === 'heavy').length === 3 && wm.exercises.filter(i => i.intensity === 'burnout').length === 2, 'manual intensity');
 // Equipment restriction: bodyweight only
 const wb = WT.generate(Object.assign(WT.defaultSettings('full'), { equipment: ['bw'] }));
@@ -75,21 +121,25 @@ ok(wauto.estimatedMin <= 40, 'auto 30 min fits');
 /* ── Progression ── */
 function addSession(daysAgo, exId, sets, extra) {
   const d = new Date(Date.now() - daysAgo * 864e5);
-  const ex = WT.ex(exId); const pr = WT.prescribe(ex, (extra && extra.intensity) || 'regular');
+  const ex = WT.ex(exId); const pr = WT.prescribe(ex, (extra && extra.intensity) || 'standard');
   WT.db.history.push({ id: WT.uid(), type: 'full', title: 'T', startedAt: d.toISOString(), endedAt: d.toISOString(), durationSec: 3000,
     exercises: [Object.assign({ uid: WT.uid(), exId, intensity: pr.intensity, targetSets: sets.length, repMin: pr.repMin, repMax: pr.repMax, sets: sets.map(([w, r]) => ({ w, r, done: true })) }, extra || {})] });
 }
-const plan = id => { const p = WT.prescribe(WT.ex(id), 'regular'); return { repMin: p.repMin, repMax: p.repMax, sets: p.sets, intensity: 'regular' }; };
+const plan = id => { const p = WT.prescribe(WT.ex(id), 'standard'); return { repMin: p.repMin, repMax: p.repMax, sets: p.sets, intensity: 'standard' }; };
 let r = WT.recommend('db-incline-press', plan('db-incline-press')); ok(r.action === 'new', 'no history → new');
 addSession(5, 'db-incline-press', [[40, 10], [40, 10], [40, 10]]);
 r = WT.recommend('db-incline-press', plan('db-incline-press')); console.log('\nincline all top →', r.headline, '|', r.reasons.join(' '));
 ok(r.action === 'increase' && r.weight === 45, 'upper db +5 → 45');
 addSession(2, 'db-incline-press', [[45, 9], [45, 8], [45, 8]]);
-r = WT.recommend('db-incline-press', plan('db-incline-press')); console.log('in range →', r.headline); ok(r.action === 'hold' && r.weight === 45, 'hold 45');
+r = WT.recommend('db-incline-press', plan('db-incline-press')); console.log('in range →', r.headline); ok(r.action === 'hold' && r.weight === 45 && r.headline.includes('aim for'), 'hold 45');
 addSession(1, 'db-incline-press', [[45, 7], [45, 6], [45, 6]]);
 r = WT.recommend('db-incline-press', plan('db-incline-press')); console.log('struggle once →', r.headline); ok(r.action === 'hold', 'struggle once hold');
 addSession(0, 'db-incline-press', [[45, 6], [45, 6], [45, 5]]);
 r = WT.recommend('db-incline-press', plan('db-incline-press')); console.log('struggle twice →', r.headline); ok(r.action === 'decrease' && r.weight === 40, 'struggle twice → 40');
+// The brief's example: 30 × 10, 10, 9 → maintain 30, aim 10, 10, 10
+addSession(4, 'cable-fly', [[30, 10], [30, 10], [30, 9]], { intensity: 'regular' });
+r = WT.recommend('cable-fly', { repMin: 8, repMax: 12, sets: 3, intensity: 'regular' }); console.log('30x10,10,9 →', r.headline);
+ok(r.action === 'hold' && r.weight === 30 && r.repTargets.join() === '10,10,10', 'maintain 30 lb, aim 10,10,10');
 // Lower body
 addSession(3, 'goblet-squat', [[50, 12], [50, 12], [50, 12]]);
 r = WT.recommend('goblet-squat', plan('goblet-squat')); console.log('goblet →', r.headline); ok(r.action === 'increase' && r.weight === 55, 'lower +5 → 55');

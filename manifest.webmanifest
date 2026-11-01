@@ -1,13 +1,13 @@
 {
-  "name": "Forge — Workout Generator & Tracker",
+  "name": "Forge — a training journal",
   "short_name": "Forge",
   "description": "Smart workout generation, set tracking and progressive overload. Free and offline.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#0b0b0c",
-  "theme_color": "#0b0b0c",
+  "background_color": "#f3efe6",
+  "theme_color": "#f3efe6",
   "icons": [
     { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
     { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
