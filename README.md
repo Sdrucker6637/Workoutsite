@@ -1,7 +1,5 @@
 # Forge: a training journal
 
-A free, private, offline-first workout generator and tracker.
-
 A free, private, offline-first workout app. It generates workouts from your goals, equipment and recent training, tracks every set, and recommends progressive overload from your logged numbers.
 
 - **No accounts, no servers, no paid APIs.** Your data lives in your browser's local storage.
