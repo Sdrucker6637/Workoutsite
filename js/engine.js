@@ -204,7 +204,7 @@
       const pace = m.dist > 0 && m.time > 0 ? m.time / m.dist : null;
       return {
         action: 'info',
-        headline: `Last: ${WT.fmtNum(m.time)} min${m.dist ? ' · ' + WT.fmtNum(m.dist) + ' mi' : ''}`,
+        headline: `Last: ${m.time ? WT.fmtRunTime(m.time) : '—'}${m.dist ? ' · ' + WT.fmtNum(m.dist) + ' mi' : ''}`,
         reasons: [
           pace ? `Average pace ${WT.fmtPace(pace)} /mi ${when}.` : `Logged ${when}.`,
           'Progress runs gradually: add ~5–10% total distance per week, or one extra interval.',

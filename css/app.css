@@ -1497,6 +1497,29 @@ button.set-line:hover {
   color: var(--text-3);
   pointer-events: none;
 }
+/* Run time: minutes : seconds in one field */
+.field-num.time .hms {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding-bottom: 12px;
+  font-size: 30px;
+  font-weight: 640;
+  letter-spacing: -0.03em;
+}
+.field-num.time .hms input {
+  width: 3ch;
+  padding: 0;
+  text-align: right;
+}
+.field-num.time .hms input[data-part='s'] {
+  width: 2ch;
+  text-align: left;
+}
+.field-num.time .colon {
+  color: var(--text-3);
+  margin: 0 1px;
+}
 .field-num:focus-within {
   box-shadow: 0 0 0 1.5px var(--accent), 0 0 0 4px var(--accent-soft);
 }

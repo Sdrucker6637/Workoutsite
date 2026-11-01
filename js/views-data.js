@@ -328,7 +328,7 @@
               const head = `<tr class="staged-head"><td class="n">${i + 1}</td><td>${info.name} · ${st.stages.length} stage${st.stages.length === 1 ? '' : 's'}</td></tr>`;
               return head + st.stages.map((x, k) => `<tr class="stage-row"><td class="n"></td><td><span class="t3">Stage ${k + 1}</span> ${k ? I(st.type === 'drop' ? 'trendDown' : 'trendUp', 12) : ''}${WT.fmtNum(+x.w)} ${u} × ${x.r}${x.tr ? `<span class="t3"> / ${x.tr}</span>` : ''}</td></tr>`).join('');
             }
-            const v = tt === 'cardio' ? `${st.time || '—'} min${st.dist ? ' · ' + st.dist + ' mi' : ''}` : tt === 'time' ? `${st.r} sec` : `${+st.w ? WT.fmtNum(+st.w) + ' ' + u : tt === 'reps' ? 'Bodyweight' : '—'} × ${st.r}${sec ? ' sec' : ''}`;
+            const v = tt === 'cardio' ? `${WT.fmtRunTime(st.time) || '—'}${st.dist ? ' · ' + st.dist + ' mi' : ''}` : tt === 'time' ? `${st.r} sec` : `${+st.w ? WT.fmtNum(+st.w) + ' ' + u : tt === 'reps' ? 'Bodyweight' : '—'} × ${st.r}${sec ? ' sec' : ''}`;
             return `<tr><td class="n">${i + 1}</td><td>${v}</td></tr>`;
           })
           .join('');

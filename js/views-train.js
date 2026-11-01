@@ -761,7 +761,7 @@
     const secUnit = tt === 'time' || ex.unit === 'sec';
     const allDone = it.sets.length && it.sets.every((s) => s.done);
     const fmt = (s, d) => {
-      if (tt === 'cardio') return `${val(s, 'time', d) || '–'} min${val(s, 'dist', d) ? ' · ' + val(s, 'dist', d) + ' mi' : ''}`;
+      if (tt === 'cardio') return `${WT.fmtRunTime(val(s, 'time', d)) || '–'}${val(s, 'dist', d) ? ' · ' + val(s, 'dist', d) + ' mi' : ''}`;
       if (tt === 'time') return `${val(s, 'r', d)} s`;
       const w = +val(s, 'w', d);
       if (tt === 'reps') return `${w ? '+' + WT.fmtNum(w) + ' ' + u + ' × ' : ''}${val(s, 'r', d)} reps`;
@@ -799,7 +799,17 @@
           <span class="u">${label}</span>
           <button data-act="adj" data-uid="${it.uid}" data-i="${ei}" data-f="${f}" data-d="1" aria-label="Increase ${label}">${I('plus', 20)}</button></div>`;
       let fields;
-      if (tt === 'cardio') fields = `<div class="fields">${field('time', 'minutes')}${field('dist', 'miles')}</div>`;
+      if (tt === 'cardio') {
+        const tv = val(s, 'time', d);
+        const secs = tv === '' || tv == null ? null : Math.round(+tv * 60);
+        const part = (p, v, label) => `<input type="text" inputmode="numeric" data-in="runTime" data-part="${p}" data-uid="${it.uid}" data-i="${ei}" value="${v}" aria-label="${label}" autocomplete="off">`;
+        const time = `<div class="field-num time">
+            <button data-act="adj" data-uid="${it.uid}" data-i="${ei}" data-f="time" data-d="-1" aria-label="One minute less">${I('minus', 20)}</button>
+            <div class="hms">${part('m', secs == null ? '' : Math.floor(secs / 60), 'Minutes')}<span class="colon">:</span>${part('s', secs == null ? '' : String(secs % 60).padStart(2, '0'), 'Seconds')}</div>
+            <span class="u">min : sec</span>
+            <button data-act="adj" data-uid="${it.uid}" data-i="${ei}" data-f="time" data-d="1" aria-label="One minute more">${I('plus', 20)}</button></div>`;
+        fields = `<div class="fields one">${time}${field('dist', 'miles')}</div>`;
+      }
       else if (tt === 'time') fields = `<div class="fields one">${field('r', 'seconds', 1, 'numeric')}</div>`;
       else if (ex.load === 'bw') fields = `<div class="fields one">${field('r', 'reps', 1, 'numeric')}</div>`;
       else fields = `<div class="fields">${field('w', tt === 'reps' ? 'added ' + u : u)}${field('r', secUnit ? 'seconds' : 'reps', 1, 'numeric')}</div>`;
@@ -856,7 +866,7 @@
       const staged = groups.map((g) => g.map((s) => `${WT.fmtNum(s.w)}×${s.r}`).join(' → ')).join(' · ');
       return plain.length ? fmtSets(plain, tt, ex) + ' · ' + staged : staged;
     }
-    if (tt === 'cardio') return sets.map((s) => `${s.time || 0} min${s.dist ? ' · ' + s.dist + ' mi' : ''}`).join(', ');
+    if (tt === 'cardio') return sets.map((s) => `${WT.fmtRunTime(s.time) || '–'}${s.dist ? ' · ' + s.dist + ' mi' : ''}`).join(', ');
     if (tt === 'time' || (ex && ex.unit === 'sec' && !sets.some((s) => s.w))) return sets.map((s) => s.r + 's').join(', ');
     const allSameW = sets.every((s) => s.w === sets[0].w);
     if (!sets[0].w && allSameW) return sets.map((s) => s.r).join(', ') + ' reps';
@@ -870,7 +880,7 @@
   function stepValue(ex, f, v, dir) {
     v = +v || 0;
     if (f === 'r') return Math.max(0, v + dir * (WT.trackType(ex) === 'time' ? 5 : 1));
-    if (f === 'time') return Math.max(0, v + dir);
+    if (f === 'time') return Math.max(0, WT.round(v + dir, 4));
     if (f === 'dist') return Math.max(0, WT.round(v + dir * 0.1, 1));
     if (ex.load === 'db') {
       const ws = WT.dumbbellWeights();
@@ -901,6 +911,18 @@
     const k = el.dataset.k;
     const target = k != null && k !== '' && WT.isStagedSet(set) ? set.stages[+k] : set;
     if (target) target[el.dataset.f] = v;
+    WT.save();
+  };
+  /** Run time typed as minutes and seconds; stored as decimal minutes (unchanged data format). */
+  WT.I.runTime = (el) => {
+    const it = actItem(el.dataset.uid);
+    if (!it) return;
+    const v = el.value.replace(/[^0-9]/g, '');
+    if (v !== el.value) el.value = v;
+    const wrap = el.closest('.hms');
+    const m = wrap.querySelector('[data-part="m"]').value, sec = wrap.querySelector('[data-part="s"]').value;
+    const set = it.sets[+el.dataset.i];
+    set.time = m === '' && sec === '' ? '' : String(WT.round(((+m || 0) * 60 + (+sec || 0)) / 60, 4));
     WT.save();
   };
   WT.I.exNotes = (el) => {

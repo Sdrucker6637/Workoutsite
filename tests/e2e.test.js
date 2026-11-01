@@ -111,7 +111,7 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
     if (tt0 === 'weight' && i === 0) await wIn.fill('40');
     const rIn = page.locator('.field-num input[data-f="r"]');
     if (await rIn.count()) await rIn.fill(String(cur0.repMax));
-    if (tt0 === 'cardio') await page.locator('.field-num input[data-f="time"]').fill('20');
+    if (tt0 === 'cardio') await page.locator('.field-num input[data-part="m"]').fill('20');
     await page.click(`[data-act="woCheck"][data-uid="${cur0.uid}"]`);
     if (i === 0) { await shot('train-after-set'); ok(!!(await db()).active.timer || !!cur0.superset, 'rest timer starts (or superset partner) after a set'); }
     // superset partner may take focus; bring this exercise back
@@ -244,6 +244,24 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   await page.reload(); await page.waitForTimeout(300);
   ok((await page.locator('.tabs').count()) === 1, 'loads offline from service-worker cache');
   await ctx.setOffline(false);
+
+  console.log('Run time in minutes and seconds');
+  await page.evaluate(() => { WT.db.active = null; WT.db.history.push({ id: 'run-old', type: 'cardio', title: 'Run', startedAt: '2026-10-20T07:00:00Z', endedAt: '2026-10-20T07:30:00Z', durationSec: 1800, totals: { sets: 1, volume: 0 }, prs: [], exercises: [{ uid: 'r0', exId: 'outdoor-run', name: 'Outdoor Run', intensity: 'standard', targetSets: 1, repMin: 20, repMax: 40, sets: [{ w: '', r: '', time: '30', dist: '3', done: true }] }] }); WT.save(true); });
+  await page.goto(URL + '#/workout'); await page.waitForTimeout(200);
+  await page.click('[data-act="logRun"]'); await page.waitForTimeout(300);
+  ok((await page.locator('[data-part="m"]').inputValue()) === '30' && (await page.locator('[data-part="s"]').inputValue()) === '00', 'old whole-minute run pre-fills as 30:00');
+  await page.locator('[data-part="m"]').fill('25'); await page.locator('[data-part="s"]').fill('30');
+  await page.locator('.field-num input[data-f="dist"]').fill('3.1');
+  ok((await db()).active.exercises[0].sets[0].time === '25.5', 'minutes and seconds stored as decimal minutes (25:30 → 25.5)');
+  await page.click('[data-act="adj"][data-f="time"][data-d="1"]');
+  ok((await page.locator('[data-part="m"]').inputValue()) === '26' && (await page.locator('[data-part="s"]').inputValue()) === '30', '+ adds a minute and keeps the seconds');
+  await page.click('[data-act="adj"][data-f="time"][data-d="-1"]');
+  await page.click('[data-act="woCheck"]'); await page.waitForTimeout(100);
+  ok((await page.locator('.cur .set-line').first().innerText()).includes('25:30 · 3.1 mi'), 'logged run shows 25:30');
+  await page.click('button.btn-block[data-act="woFinish"]'); await page.waitForTimeout(300); await page.click('[data-act="woSave"]'); await page.waitForTimeout(400);
+  ok((await page.locator('main table').innerText()).includes('25:30'), 'history shows the run as 25:30');
+  ok(await page.evaluate(() => WT.recommend('outdoor-run').reasons[0].includes('8:14')), 'pace still calculated (8:14 /mi)');
+  ok(JSON.stringify(await page.evaluate(() => [WT.fmtRunTime(30), WT.fmtRunTime(65.25), WT.fmtRunTime(25 + 7 / 60)])) === '["30:00","1:05:15","25:07"]', 'formats m:ss and h:mm:ss');
 
   ok(errors.length === 0, 'no console errors' + (errors.length ? ': ' + errors.join(' | ') : ''));
   console.log(`\n${pass} passed, ${fail} failed`);

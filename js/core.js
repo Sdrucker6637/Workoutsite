@@ -367,6 +367,13 @@
       s = sec % 60;
     return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(s).padStart(2, '0');
   };
+  /** Run / cardio time. Stored as (decimal) minutes; shown as m:ss, or h:mm:ss from an hour. */
+  WT.fmtRunTime = function (min) {
+    const t = Math.round((+min || 0) * 60);
+    if (!(t > 0)) return '';
+    const h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), s = t % 60;
+    return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(s).padStart(2, '0');
+  };
   WT.fmtDate = (d, opts) => new Date(d).toLocaleDateString(undefined, opts || { month: 'short', day: 'numeric', year: 'numeric' });
   WT.fmtRelDay = function (d) {
     const days = WT.daysBetween(d, new Date());
