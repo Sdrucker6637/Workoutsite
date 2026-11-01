@@ -2342,12 +2342,81 @@ button.demo:active {
 .li .demo-sm {
   margin: -2px 0;
 }
-/* Dark theme: invert the line drawings so they sit on a dark plate */
+/* Dark theme: invert the Everkinetic line drawings so they sit on a dark plate */
 [data-theme='dark'] .demo:not(.none):not(.failed) {
   background: #1a1a1a;
 }
-[data-theme='dark'] .demo img {
+[data-theme='dark'] .demo.src-ek img {
   filter: invert(0.9) hue-rotate(180deg);
+}
+
+/* Multi-frame sources (Workout Guide, Open Exercise Illustrations): frames are not opaque
+   plates, so exactly one frame is shown at a time. 2 frames cross-fade; 3 frames ping-pong
+   start → middle → end → middle. Single-frame holds stay still. */
+.demo.ready.n1 img.f1 {
+  opacity: 1;
+}
+.demo.ready.n2 img.f1,
+.demo.ready.n2 img.f2 {
+  animation: demoAlt2 2.8s var(--ease) infinite;
+}
+.demo.ready.n2 img.f2 {
+  animation-delay: -1.4s;
+}
+.demo.ready.n3 img.f1 {
+  animation: demoPP1 3.6s linear infinite;
+}
+.demo.ready.n3 img.f2 {
+  animation: demoPP2 3.6s linear infinite;
+}
+.demo.ready.n3 img.f3 {
+  animation: demoPP3 3.6s linear infinite;
+}
+.demo.ready:not(.src-ek) img {
+  transition: none;
+  animation-play-state: paused;
+}
+.demo.ready.playing:not(.src-ek) img {
+  animation-play-state: running;
+}
+@keyframes demoAlt2 {
+  0%, 38% { opacity: 1; }
+  50%, 88% { opacity: 0; }
+  100% { opacity: 1; }
+}
+@keyframes demoPP1 {
+  0%, 20% { opacity: 1; }
+  25%, 95% { opacity: 0; }
+  100% { opacity: 1; }
+}
+@keyframes demoPP2 {
+  0%, 20% { opacity: 0; }
+  25%, 45% { opacity: 1; }
+  50%, 70% { opacity: 0; }
+  75%, 95% { opacity: 1; }
+  100% { opacity: 0; }
+}
+@keyframes demoPP3 {
+  0%, 45% { opacity: 0; }
+  50%, 70% { opacity: 1; }
+  75%, 100% { opacity: 0; }
+}
+/* Workout Guide: white line art on transparent → black lines on white (light), as-is on dark */
+.demo.src-wg img {
+  filter: invert(1);
+}
+[data-theme='dark'] .demo.src-wg img {
+  filter: none;
+}
+/* Open Exercise Illustrations: studio renders on near-black, shown on a matching plate */
+.demo.src-oei:not(.failed),
+[data-theme='dark'] .demo.src-oei:not(.failed) {
+  background: #090909;
+}
+.demo.src-oei img {
+  inset: 0;
+  width: 100%;
+  height: 100%;
 }
 @media (max-width: 860px) {
   .ex-row {
@@ -2360,5 +2429,13 @@ button.demo:active {
 @media (prefers-reduced-motion: reduce) {
   .demo img.fb {
     animation: none !important;
+  }
+  /* Show the start frame only */
+  .demo.ready:not(.src-ek) img {
+    animation: none !important;
+    opacity: 0;
+  }
+  .demo.ready:not(.src-ek) img.f1 {
+    opacity: 1;
   }
 }

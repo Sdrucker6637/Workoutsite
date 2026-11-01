@@ -82,6 +82,20 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   ok(integ.missingEx.length === 0, `all ${integ.n} mapped ids are real exercises`);
   ok(integ.bad.length === 0, `all ${integ.files} illustration files exist`);
   console.log(`    ${integ.n} exercises with demonstrations, ${integ.unmapped} use the placeholder`);
+  const shape = await page.evaluate(() => {
+    const bad = [];
+    for (const [id, [src, , n]] of Object.entries(WT.MEDIA.map)) {
+      const d = WT.demoFor(id);
+      const el = document.createElement('div'); el.innerHTML = WT.h.demo(id, 'md');
+      const demo = el.firstElementChild;
+      if (d.frames.length !== n || demo.querySelectorAll('img').length !== n || !demo.classList.contains('src-' + src)) bad.push(id);
+      if (!WT.h.demoCredit(id).includes(d.source.licenseUrl)) bad.push(id + ' (credit)');
+      if (d.alsoEk && !WT.h.demoCredit(id).includes('Everkinetic')) bad.push(id + ' (EK credit)');
+    }
+    return { bad, counts: WT.MEDIA.counts() };
+  });
+  ok(shape.bad.length === 0, 'every mapping renders its frames, source class and license credit' + (shape.bad.length ? ': ' + shape.bad.join(', ') : ''));
+  console.log('    per source:', JSON.stringify(shape.counts));
 
   console.log('Generated workout');
   await page.goto(URL + '#/generate');
@@ -93,7 +107,7 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   await page.locator('.ex-row button.demo').first().tap();
   await page.waitForSelector('.sheet .demo-lg.ready');
   ok(await page.locator('.sheet .demo-lg.playing').count() === 1, 'tapping a thumbnail opens a large, playing demonstration');
-  ok(await page.locator('.sheet .demo-credit a[href*="creativecommons.org/licenses/by-sa/4.0"]').count() === 1, 'large view shows CC BY-SA attribution');
+  ok(await page.locator('.sheet .demo-credit a[href*="creativecommons.org/"]').count() === 1, 'large view shows license attribution');
   await page.screenshot({ path: '/tmp/shots/feat-viewer.png' });
   await page.tap('.sheet-head [data-act="closeSheet"]');
 
@@ -131,14 +145,14 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   await page.tap('.sheet [data-act="toggleTrainDemos"]');
   ok(await page.locator('.cur .demo').count() === 1, '…and shown again');
   // placeholder for an unmapped exercise
-  await page.evaluate(() => { const it = WT.db.active.exercises[0]; it.exId = 'goblet-squat'; WT.db.active.focus = it.uid; WT.rerender(); });
+  await page.evaluate(() => { const it = WT.db.active.exercises[0]; it.exId = 'bayesian-curl'; WT.db.active.focus = it.uid; WT.rerender(); });
   ok(await page.locator('.cur .demo-md.none').count() === 1 && (await page.locator('.cur .demo-md.none').innerText()).includes('No demonstration'), 'unmapped exercise shows a clean placeholder, not a wrong animation');
   ok(await page.locator('.cur img').count() === 0, 'no image for an unmapped exercise');
 
   console.log('Exercise library & detail');
   await page.goto(URL + '#/library'); await page.waitForTimeout(600);
   const total = await page.locator('#libList .demo:not(.none)').count();
-  const loaded = await page.evaluate(() => document.querySelectorAll('#libList .demo img[src]').length / 2);
+  const loaded = await page.evaluate(() => document.querySelectorAll('#libList .demo[data-loaded]').length);
   ok(total > 40 && loaded < total, `lazy loading: ${loaded} of ${total} thumbnails loaded on first screen`);
   const firstThumb = page.locator('#libList .demo:not(.none)').first();
   ok(await firstThumb.evaluate((el) => el.classList.contains('playing')), 'on-screen thumbnail is playing');
@@ -157,6 +171,49 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   await page.screenshot({ path: '/tmp/shots/feat-detail.png' });
   await page.tap('.sheet-head [data-act="closeSheet"]');
 
+  console.log('Multi-frame sources');
+  const seq = async (id) => page.evaluate((id) => new Promise((res) => {
+    const wrap = document.createElement('div');
+    wrap.innerHTML = WT.h.demo(id, 'lg', { static: true });
+    document.getElementById('main').prepend(wrap);
+    const el = wrap.firstElementChild;
+    WT.mountDemos(wrap);
+    const seen = [], maxVis = [];
+    const t0 = Date.now();
+    const iv = setInterval(() => {
+      if (!el.classList.contains('ready')) return;
+      const op = [...el.querySelectorAll('img')].map((i) => +getComputedStyle(i).opacity);
+      maxVis.push(op.filter((o) => o > 0.95).length);
+      const top = op.indexOf(Math.max(...op));
+      if (Math.max(...op) > 0.95 && seen[seen.length - 1] !== top) seen.push(top);
+      if (Date.now() - t0 > 4600) { clearInterval(iv); wrap.remove(); res({ seen, maxTogether: Math.max(...maxVis), ready: true }); }
+    }, 60);
+  }), id);
+  const wg = await seq('goblet-squat');
+  ok(wg.maxTogether === 1, 'transparent frames are never shown on top of each other');
+  const wgs = wg.seen.join('');
+  ok(new Set(wg.seen).size === 3 && !/02|20/.test(wgs), `3 frames ping-pong start → middle → end → middle, never jumping end → start (${wgs})`);
+  const oei = await seq('arnold-press');
+  ok(oei.seen.length >= 2 && new Set(oei.seen).size === 2, `2-frame source alternates (${oei.seen.join('')})`);
+  const one = await seq('hollow-hold');
+  ok(new Set(one.seen).size === 1, 'single-frame hold stays still');
+  await page.goto(URL + '#/library'); await page.fill('#libSearch', 'goblet'); await page.waitForTimeout(500);
+  await page.locator('#libList button.demo.src-wg').first().tap();
+  await page.waitForSelector('.sheet .demo-lg.src-wg.ready');
+  ok((await page.locator('.sheet .demo-credit').innerText()).includes('Bryl Lim'), 'Workout Guide credit names the creator');
+  await page.screenshot({ path: '/tmp/shots/feat-wg.png' });
+  await page.tap('.sheet-head [data-act="closeSheet"]');
+  await page.fill('#libSearch', 'arnold'); await page.waitForTimeout(500);
+  await page.locator('#libList button.demo.src-oei').first().tap();
+  await page.waitForSelector('.sheet .demo-lg.src-oei.ready');
+  const oc = await page.locator('.sheet .demo-credit').innerText();
+  ok(oc.includes('CC0') && oc.includes('AI-generated'), 'AI-generated source is labelled as such, with CC0');
+  await page.screenshot({ path: '/tmp/shots/feat-oei.png' });
+  await page.tap('.sheet-head [data-act="closeSheet"]');
+  await page.goto(URL + '#/settings'); await page.waitForTimeout(300);
+  const about = await page.locator('main').innerText();
+  ok(['Everkinetic', 'Workout Guide', 'Open Exercise Illustrations', 'CC BY-SA 4.0', 'CC0'].every((t) => about.includes(t)) && about.includes(`${integ.n} of `), 'Settings credits every illustration source');
+
   console.log('Caching & fallbacks');
   await page.evaluate(() => navigator.serviceWorker.ready);
   await page.reload(); await page.waitForTimeout(500); // page now controlled by the service worker
@@ -171,6 +228,8 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   await ctx.setOffline(true);
   await page.goto(URL + '#/library'); await page.fill('#libSearch', 'hammer curl'); await page.waitForTimeout(600);
   ok((await page.locator('#libList .demo.ready').count()) >= 1 && (await page.locator('#libList .demo.failed').count()) === 0, 'cached demonstrations work offline');
+  await page.fill('#libSearch', 'goblet'); await page.waitForTimeout(600);
+  ok((await page.locator('#libList .demo.src-wg.ready').count()) >= 1 && (await page.locator('#libList .demo.failed').count()) === 0, 'cached Workout Guide frames work offline');
   await ctx.setOffline(false);
   // a file that cannot load degrades to the fallback (no broken-image icon)
   const failed = await page.evaluate(() => new Promise((res) => {

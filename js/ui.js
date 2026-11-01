@@ -344,7 +344,8 @@
       return `<div class="seg ${cls || ''}" role="group">${options.map(([v, l]) => `<button class="${String(v) === String(current) ? 'on' : ''}" data-act="${act}" data-k="${key || ''}" data-v="${v}" aria-pressed="${String(v) === String(current)}">${l}</button>`).join('')}</div>`;
     },
     /**
-     * Exercise demonstration (two-frame illustration played as a loop).
+     * Exercise demonstration: the illustration's frames played as a calm loop
+     * (two frames cross-fade; three frames ping-pong start → middle → end → middle).
      * size: 'sm' thumbnail · 'md' active workout · 'lg' detail / viewer.
      * opts.static: render as a non-interactive element (inside other buttons).
      * Images load lazily and only animate while on screen — see mountDemos().
@@ -358,12 +359,23 @@
         if (size === 'sm') return `<span class="demo demo-sm none" aria-hidden="true">${I('dumbbell', 16)}</span>`;
         return `<div class="demo demo-${size} none"><span>${I('dumbbell', 18)}No demonstration for this exercise</span></div>`;
       }
-      const imgs = `<img class="fa" data-src="${d.a}" alt="" decoding="async" draggable="false"><img class="fb" data-src="${d.b}" alt="" decoding="async" draggable="false">`;
-      if (opts.static) return `<span class="demo demo-${size}" role="img" aria-label="${name} demonstration">${imgs}</span>`;
-      return `<button type="button" class="demo demo-${size}" data-act="openDemo" data-id="${exId}" aria-label="Show ${name} demonstration">${imgs}</button>`;
+      // Everkinetic pairs keep their original start/end classes (fa/fb); other sources use f1…fN.
+      const cls = (i) => (d.src === 'ek' ? (i ? 'fb' : 'fa') : 'f' + (i + 1));
+      const imgs = d.frames.map((u, i) => `<img class="${cls(i)}" data-src="${u}" alt="" decoding="async" draggable="false">`).join('');
+      const c = `demo demo-${size} src-${d.src} n${d.frames.length}`;
+      if (opts.static) return `<span class="${c}" role="img" aria-label="${name} demonstration">${imgs}</span>`;
+      return `<button type="button" class="${c}" data-act="openDemo" data-id="${exId}" aria-label="Show ${name} demonstration">${imgs}</button>`;
     },
-    demoCredit() {
-      return `<p class="demo-credit">Illustration: <a href="${WT.MEDIA.sourceUrl}" target="_blank" rel="noopener">Everkinetic</a> · <a href="${WT.MEDIA.licenseUrl}" target="_blank" rel="noopener">${WT.MEDIA.license}</a></p>`;
+    /** Attribution line for the illustration shown for an exercise (required by CC BY-SA). */
+    demoCredit(exId) {
+      const d = WT.demoFor(exId);
+      if (!d) return '';
+      const a = (href, t) => `<a href="${href}" target="_blank" rel="noopener">${t}</a>`;
+      const s = d.source;
+      const ek = WT.MEDIA.sources.ek;
+      const who = d.src === 'ek' ? a(s.url, 'Everkinetic') : `${a(s.url, s.name)} by ${s.by}`;
+      const also = d.alsoEk ? `, adapted in part from ${a(ek.url, 'Everkinetic')}` : '';
+      return `<p class="demo-credit">Illustration: ${who}${also} · ${a(s.licenseUrl, s.license)}</p>`;
     },
     /** Attributes for a <details> whose open/closed state should survive re-renders. */
     keepOpen(key) {
@@ -416,7 +428,7 @@
     if (!('fetch' in window)) return;
     exIds.forEach((id) => {
       const d = WT.demoFor(id);
-      if (d) [d.a, d.b].forEach((u) => fetch(u).catch(() => {}));
+      if (d) d.frames.forEach((u) => fetch(u).catch(() => {}));
     });
   };
   WT.A.openDemo = (d) => {
@@ -425,7 +437,7 @@
     WT.openSheet(() => ({
       eyebrow: WT.muscleName(ex.primary),
       title: esc(ex.name),
-      body: `${WT.h.demo(ex.id, 'lg', { static: true })}${WT.h.demoCredit()}${ex.cue ? `<p class="mt16" style="line-height:1.6">${esc(ex.cue)}</p>` : ''}`,
+      body: `${WT.h.demo(ex.id, 'lg', { static: true })}${WT.h.demoCredit(ex.id)}${ex.cue ? `<p class="mt16" style="line-height:1.6">${esc(ex.cue)}</p>` : ''}`,
       foot: `<a class="btn btn-plain btn-sm" href="${esc(WT.videoUrl(ex))}" target="_blank" rel="noopener">${I('play', 14)}Video tutorial</a><span class="grow"></span><button class="btn btn-secondary btn-sm" data-act="exDetail" data-id="${ex.id}">Details</button>`,
     }), { wide: true });
   };

@@ -709,7 +709,7 @@
           <button class="icon-btn" data-act="openSwap" data-ctx="active" data-uid="${it.uid}" title="Swap" aria-label="Swap exercise">${I('swap', 18)}</button>
           <button class="icon-btn" data-act="woMenu" data-uid="${it.uid}" aria-label="More options">${I('more', 19)}</button>
         </div></div>
-      ${WT.db.profile.trainDemos !== false ? `<div class="cur-demo">${H.demo(ex.id, 'md')}${WT.demoFor(ex.id) ? H.demoCredit() : ''}</div>` : ''}
+      ${WT.db.profile.trainDemos !== false ? `<div class="cur-demo">${H.demo(ex.id, 'md')}${H.demoCredit(ex.id)}</div>` : ''}
       ${advice}
       <div class="sets">${setLines}</div>
       ${editor}
