@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Forge — Workout Generator & Tracker</title>
+  <meta name="description" content="Generate smart workouts, track every set, and get progressive-overload recommendations. Free, offline, private." />
+  <meta name="theme-color" content="#0b0b0c" />
+  <meta name="color-scheme" content="dark light" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Forge" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" type="image/svg+xml" href="icons/icon.svg" />
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+  <link rel="stylesheet" href="css/app.css" />
+  <script>
+    // Apply saved theme before first paint to avoid a flash
+    try {
+      var t = (JSON.parse(localStorage.getItem('wt.data.v1')) || {}).profile;
+      t = t && t.theme;
+      if (t === 'system') t = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+      if (t) document.documentElement.dataset.theme = t;
+    } catch (e) {}
+  </script>
+</head>
+<body>
+  <div id="app" class="app"></div>
+  <noscript><p style="padding:24px">Forge needs JavaScript enabled.</p></noscript>
+  <script src="js/exercises.js"></script>
+  <script src="js/core.js"></script>
+  <script src="js/engine.js"></script>
+  <script src="js/icons.js"></script>
+  <script src="js/charts.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/views-train.js"></script>
+  <script src="js/views-data.js"></script>
+  <script>WT.boot();</script>
+</body>
+</html>
