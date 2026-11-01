@@ -1,5 +1,5 @@
 /* Service worker: caches the app shell so Forge works fully offline. Bump VERSION on each deploy. */
-const VERSION = 'forge-v5';
+const VERSION = 'forge-v6';
 // Exercise illustrations live in their own cache: it survives app updates, so a demo is
 // downloaded once and then always served locally. Bump only if the media files change.
 const MEDIA = 'forge-media-v1';

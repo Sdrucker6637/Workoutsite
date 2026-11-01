@@ -6,6 +6,9 @@
  *  ek   Everkinetic — Greg Priday & contributors · CC BY-SA 4.0 · SVG start/end pairs
  *  wg   Workout Guide — Bryl Lim · CC BY-SA 4.0 (a few frames adapted from Everkinetic) · 3 WebP frames
  *  oei  Open Exercise Illustrations — Hitman Repo · CC0 1.0 · AI-generated, each frame reviewed · WebP
+ *  rdb  RepDB free tier — RepDB (Sergei Argutin) · RepDB Free Tier License v1.0 (in-app use with the
+ *       visible credit "Exercise data by RepDB (repdb.co)"; not for reuse outside Forge) · AI-generated,
+ *       each frame reviewed · WebP start/peak pairs or a single pose
  */
 (function () {
   const WT = (globalThis.WT = globalThis.WT || {});
@@ -24,6 +27,12 @@
       name: 'Open Exercise Illustrations', by: 'Hitman Repo (AI-generated)', license: 'CC0 1.0',
       licenseUrl: 'https://creativecommons.org/publicdomain/zero/1.0/', url: 'https://github.com/hitmanrepo/open-exercise-illustrations',
       base: 'media/open-exercise-illustrations/', frames: (id, n) => Array.from({ length: n }, (_, i) => id + '-' + (i + 1) + '.webp'),
+    },
+    rdb: {
+      name: 'RepDB', by: 'RepDB (AI-generated)', license: 'RepDB Free Tier License',
+      licenseUrl: 'https://github.com/RepDB/exercise-dataset/blob/main/LICENSE-DATA.md', url: 'https://repdb.co',
+      credit: 'Exercise data by RepDB (repdb.co)',
+      base: 'media/repdb/', frames: (id, n) => Array.from({ length: n }, (_, i) => id + '-' + (i + 1) + '.webp'),
     },
   };
   // Workout Guide drawings whose frames are partly adapted from Everkinetic (credited to both).
@@ -192,6 +201,16 @@
     'seated-db-calf-raise': ['oei', 'seated-calf-raise', 2], // Seated Calf Raise
     'slider-leg-curl': ['oei', 'sliding-hamstring-curl', 2], // Sliding Hamstring Curl
     'suitcase-carry': ['oei', 'suitcase-carry', 2], // Suitcase Carry
+    // ── RepDB (free tier)
+    'db-front-squat': ['rdb', 'dumbbell-front-squat', 2], // Dumbbell Front Squat
+    'db-snatch': ['rdb', 'dumbbell-snatch', 2], // Dumbbell Snatch (one rep of the alternating snatch)
+    'interval-run': ['rdb', 'running', 1], // Running (single pose)
+    'mb-rotational-toss': ['rdb', 'medicine-ball-side-throw', 2], // Medicine Ball Side Throw
+    'neutral-pullup': ['rdb', 'neutral-grip-pull-ups', 2], // Neutral Grip Pull-Ups
+    'outdoor-run': ['rdb', 'running', 1], // Running (single pose)
+    'seated-lateral-raise': ['rdb', 'seated-dumbbell-lateral-raise', 2], // Seated Dumbbell Lateral Raise
+    'single-arm-pulldown': ['rdb', 'one-arm-lat-pulldown', 2], // One-Arm Lat Pulldown
+    'wide-cable-row': ['rdb', 'wide-grip-seated-cable-row', 2], // Wide-Grip Seated Cable Row
   };
 
   WT.MEDIA = {

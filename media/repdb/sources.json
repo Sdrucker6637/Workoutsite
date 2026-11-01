@@ -1,0 +1,49 @@
+{
+ "neutral-grip-pull-ups": {
+  "frames": [
+   "https://github.com/RepDB/exercise-dataset/blob/main/images/flat/neutral-grip-pull-ups-start.webp",
+   "https://github.com/RepDB/exercise-dataset/blob/main/images/flat/neutral-grip-pull-ups-peak.webp"
+  ]
+ },
+ "one-arm-lat-pulldown": {
+  "frames": [
+   "https://github.com/RepDB/exercise-dataset/blob/main/images/flat/one-arm-lat-pulldown-start.webp",
+   "https://github.com/RepDB/exercise-dataset/blob/main/images/flat/one-arm-lat-pulldown-peak.webp"
+  ]
+ },
+ "wide-grip-seated-cable-row": {
+  "frames": [
+   "https://github.com/RepDB/exercise-dataset/blob/main/images/flat/wide-grip-seated-cable-row-start.webp",
+   "https://github.com/RepDB/exercise-dataset/blob/main/images/flat/wide-grip-seated-cable-row-peak.webp"
+  ]
+ },
+ "seated-dumbbell-lateral-raise": {
+  "frames": [
+   "https://github.com/RepDB/exercise-dataset/blob/main/images/flat/seated-dumbbell-lateral-raise-start.webp",
+   "https://github.com/RepDB/exercise-dataset/blob/main/images/flat/seated-dumbbell-lateral-raise-peak.webp"
+  ]
+ },
+ "dumbbell-front-squat": {
+  "frames": [
+   "https://github.com/RepDB/exercise-dataset/blob/main/images/flat/dumbbell-front-squat-start.webp",
+   "https://github.com/RepDB/exercise-dataset/blob/main/images/flat/dumbbell-front-squat-peak.webp"
+  ]
+ },
+ "medicine-ball-side-throw": {
+  "frames": [
+   "https://github.com/RepDB/exercise-dataset/blob/main/images/flat/medicine-ball-side-throw-start.webp",
+   "https://github.com/RepDB/exercise-dataset/blob/main/images/flat/medicine-ball-side-throw-peak.webp"
+  ]
+ },
+ "dumbbell-snatch": {
+  "frames": [
+   "https://github.com/RepDB/exercise-dataset/blob/main/images/flat/dumbbell-snatch-start.webp",
+   "https://github.com/RepDB/exercise-dataset/blob/main/images/flat/dumbbell-snatch-peak.webp"
+  ]
+ },
+ "running": {
+  "frames": [
+   "https://github.com/RepDB/exercise-dataset/blob/main/images/flat/running-main.webp"
+  ]
+ }
+}

@@ -361,10 +361,13 @@
       }
       // Everkinetic pairs keep their original start/end classes (fa/fb); other sources use f1…fN.
       const cls = (i) => (d.src === 'ek' ? (i ? 'fb' : 'fa') : 'f' + (i + 1));
-      const imgs = d.frames.map((u, i) => `<img class="${cls(i)}" data-src="${u}" alt="" decoding="async" draggable="false">`).join('');
+      // A single frame is a still reference image, labelled as such rather than presented as motion.
+      const still = d.frames.length === 1;
+      const tag = still && size !== 'sm' ? '<span class="demo-tag">Still image</span>' : '';
+      const imgs = d.frames.map((u, i) => `<img class="${cls(i)}" data-src="${u}" alt="" decoding="async" draggable="false">`).join('') + tag;
       const c = `demo demo-${size} src-${d.src} n${d.frames.length}`;
-      if (opts.static) return `<span class="${c}" role="img" aria-label="${name} demonstration">${imgs}</span>`;
-      return `<button type="button" class="${c}" data-act="openDemo" data-id="${exId}" aria-label="Show ${name} demonstration">${imgs}</button>`;
+      if (opts.static) return `<span class="${c}" role="img" aria-label="${name} ${still ? 'reference image' : 'demonstration'}">${imgs}</span>`;
+      return `<button type="button" class="${c}" data-act="openDemo" data-id="${exId}" aria-label="Show ${name} ${still ? 'reference image' : 'demonstration'}">${imgs}</button>`;
     },
     /** Attribution line for the illustration shown for an exercise (required by CC BY-SA). */
     demoCredit(exId) {
@@ -373,6 +376,7 @@
       const a = (href, t) => `<a href="${href}" target="_blank" rel="noopener">${t}</a>`;
       const s = d.source;
       const ek = WT.MEDIA.sources.ek;
+      if (d.src === 'rdb') return `<p class="demo-credit">Exercise data by ${a(s.url, 'RepDB (repdb.co)')} · AI-generated · ${a(s.licenseUrl, s.license)}</p>`;
       const who = d.src === 'ek' ? a(s.url, 'Everkinetic') : `${a(s.url, s.name)} by ${s.by}`;
       const also = d.alsoEk ? `, adapted in part from ${a(ek.url, 'Everkinetic')}` : '';
       return `<p class="demo-credit">Illustration: ${who}${also} · ${a(s.licenseUrl, s.license)}</p>`;

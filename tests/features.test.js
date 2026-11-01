@@ -210,9 +210,26 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   ok(oc.includes('CC0') && oc.includes('AI-generated'), 'AI-generated source is labelled as such, with CC0');
   await page.screenshot({ path: '/tmp/shots/feat-oei.png' });
   await page.tap('.sheet-head [data-act="closeSheet"]');
+  // RepDB free tier: required credit wording + link, start/peak pair and labelled still image
+  await page.fill('#libSearch', 'wide-grip seated cable row'); await page.waitForTimeout(500);
+  await page.locator('#libList button.demo.src-rdb').first().tap();
+  await page.waitForSelector('.sheet .demo-lg.src-rdb.n2.ready');
+  const rc = page.locator('.sheet .demo-credit');
+  ok((await rc.innerText()).includes('Exercise data by RepDB (repdb.co)') && (await rc.locator('a[href="https://repdb.co"]').count()) === 1, 'RepDB demonstration carries the required "Exercise data by RepDB (repdb.co)" link');
+  ok(await page.locator('.sheet .demo-tag').count() === 0, 'start/peak pair is not labelled as a still');
+  await page.screenshot({ path: '/tmp/shots/feat-rdb.png' });
+  await page.tap('.sheet-head [data-act="closeSheet"]');
+  await page.fill('#libSearch', 'outdoor run'); await page.waitForTimeout(500);
+  await page.locator('#libList button.demo.src-rdb').first().tap();
+  await page.waitForSelector('.sheet .demo-lg.n1.ready');
+  ok(await page.locator('.sheet .demo-lg .demo-tag').innerText() === 'Still image', 'single-pose reference is labelled "Still image", not shown as an animation');
+  ok((await page.locator('.sheet .demo-lg').getAttribute('aria-label')).includes('reference image'), 'still image has an accurate accessible label');
+  await page.screenshot({ path: '/tmp/shots/feat-rdb-still.png' });
+  await page.tap('.sheet-head [data-act="closeSheet"]');
   await page.goto(URL + '#/settings'); await page.waitForTimeout(300);
   const about = await page.locator('main').innerText();
-  ok(['Everkinetic', 'Workout Guide', 'Open Exercise Illustrations', 'CC BY-SA 4.0', 'CC0'].every((t) => about.includes(t)) && about.includes(`${integ.n} of `), 'Settings credits every illustration source');
+  ok(['Everkinetic', 'Workout Guide', 'Open Exercise Illustrations', 'RepDB', 'CC BY-SA 4.0', 'CC0', 'Exercise data by RepDB (repdb.co)'].every((t) => about.includes(t)) && about.includes(`${integ.n} of `), 'Settings credits every illustration source');
+  ok(await page.locator('main a[href="https://repdb.co"]').count() >= 1, 'Settings has a visible RepDB link');
 
   console.log('Caching & fallbacks');
   await page.evaluate(() => navigator.serviceWorker.ready);
@@ -230,6 +247,8 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   ok((await page.locator('#libList .demo.ready').count()) >= 1 && (await page.locator('#libList .demo.failed').count()) === 0, 'cached demonstrations work offline');
   await page.fill('#libSearch', 'goblet'); await page.waitForTimeout(600);
   ok((await page.locator('#libList .demo.src-wg.ready').count()) >= 1 && (await page.locator('#libList .demo.failed').count()) === 0, 'cached Workout Guide frames work offline');
+  await page.fill('#libSearch', 'outdoor run'); await page.waitForTimeout(600);
+  ok((await page.locator('#libList .demo.src-rdb.ready').count()) >= 1 && (await page.locator('#libList .demo.failed').count()) === 0, 'cached RepDB frames work offline');
   await ctx.setOffline(false);
   // a file that cannot load degrades to the fallback (no broken-image icon)
   const failed = await page.evaluate(() => new Promise((res) => {

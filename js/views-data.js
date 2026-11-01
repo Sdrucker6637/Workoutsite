@@ -536,10 +536,10 @@
       ${grp('About', `
         ${(() => {
           const M = WT.MEDIA, n = M.counts(), S = M.sources, total = Object.keys(M.map).length;
-          const notes = { ek: 'Adapted: minified, cropped and animated.', wg: 'Some frames adapted from Everkinetic. Adapted: cropped, resized and animated.', oei: 'AI-generated; each frame reviewed before use. Adapted: resized and animated.' };
+          const notes = { ek: 'Adapted: minified, cropped and animated.', wg: 'Some frames adapted from Everkinetic. Adapted: cropped, resized and animated.', oei: 'AI-generated; each frame reviewed before use. Adapted: resized and animated.', rdb: 'Exercise data by <a class="btn-link" href="https://repdb.co" target="_blank" rel="noopener">RepDB (repdb.co)</a>. AI-generated; each frame reviewed before use. Adapted: resized and animated. Used in-app under the free tier.' };
           const lic = (s) => `<a class="btn-link footnote" href="${s.licenseUrl}" target="_blank" rel="noopener">License</a>`;
           return H.li({ title: 'Exercise illustrations', sub: `${total} of ${WT.BUILTIN_EXERCISES.length} built-in exercises have a verified demonstration. The rest show a placeholder.` }) +
-            ['ek', 'wg', 'oei'].map((k) => H.li({ title: `<a class="btn-link" href="${S[k].url}" target="_blank" rel="noopener">${S[k].name}</a>`, sub: `${S[k].by} · ${S[k].license} · ${n[k] || 0} exercises. ${notes[k]}`, trail: lic(S[k]) })).join('');
+            ['ek', 'wg', 'oei', 'rdb'].map((k) => H.li({ title: `<a class="btn-link" href="${S[k].url}" target="_blank" rel="noopener">${S[k].name}</a>`, sub: `${S[k].by} · ${S[k].license} · ${n[k] || 0} exercises. ${notes[k]}`, trail: lic(S[k]) })).join('');
         })()}
         ${H.li({ title: 'Typeface', sub: 'Inter by Rasmus Andersson · SIL Open Font License' })}
         ${H.li({ title: 'Demonstrations while training', trail: H.toggle(p.trainDemos !== false, 'pfToggleDemos') })}`)}
