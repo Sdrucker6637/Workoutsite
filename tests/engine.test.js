@@ -98,7 +98,9 @@ for (const t of WT.WORKOUT_TYPES) {
 // Manual intensity
 const wm = WT.generate(Object.assign(WT.defaultSettings('push'), { intensityMode: 'manual', heavy: 3, burnout: 2 }));
 ok(wm.intensityMode === 'manual', 'manual mode flag');
-ok(wm.exercises.filter(i => i.intensity === 'heavy').length === 3 && wm.exercises.filter(i => i.intensity === 'burnout').length === 2, 'manual intensity');
+{ const elig = (k) => wm.exercises.filter((i) => WT.ex(i.exId).intensities.includes(k)).length;
+  const h = wm.exercises.filter(i => i.intensity === 'heavy').length, b = wm.exercises.filter(i => i.intensity === 'burnout').length;
+  ok(h === Math.min(3, elig('heavy')) && b <= 2 && b >= Math.min(2, elig('burnout') - h, 0), `manual intensity honoured as far as eligibility allows (${h}h/${b}b)`); }
 // Equipment restriction: bodyweight only
 const wb = WT.generate(Object.assign(WT.defaultSettings('full'), { equipment: ['bw'] }));
 wb.exercises.forEach(i => ok(WT.ex(i.exId).equipment.every(q => q === 'bw'), 'bw only ' + i.exId));

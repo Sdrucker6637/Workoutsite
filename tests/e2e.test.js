@@ -13,11 +13,10 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
-  await page.goto(URL);
-  await page.evaluate(() => localStorage.clear());
-  await page.reload();
   const db = () => page.evaluate(() => JSON.parse(JSON.stringify(WT.db)));
-  const shot = (n) => page.screenshot({ path: `/tmp/shots/e2e-${n}.png` });
+  const shot = (n) => page.screenshot({ path: `/tmp/shots/e2e-${n}.png` }).catch(() => {});
+  const gen = async () => { await page.click('[data-act="generate"]'); await page.waitForTimeout(520); };
+  await page.goto(URL);
 
   console.log('Upgrade from v1 data keeps everything');
   await page.evaluate(() => { WT.flush = WT.save = () => {}; });
@@ -26,214 +25,184 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   await page.reload();
   let m = await db();
   ok(m.version === 2 && m.history.length === 1 && m.profile.name === 'Old' && m.profile.excluded[0] === 'crunch', 'v1 history and settings preserved');
-  ok(m.profile.theme === 'light' && m.profile.goals[0].startsWith('Reduce overall') && m.profile.intensityRandom === true, 'v2 defaults applied (theme, unedited goals, intensity odds)');
+  ok(m.profile.theme === 'light' && m.profile.goals[0].startsWith('Reduce overall') && m.profile.intensityRandom === true, 'new defaults applied (theme, unedited goals, intensity odds)');
   ok((await page.evaluate(() => WT.personalRecords('db-bench-press').heaviest.w)) === 40, 'old history feeds records');
   await page.evaluate(() => { WT.flush = WT.save = () => {}; localStorage.clear(); });
   await page.reload();
 
-  console.log('Generation for every workout type (via UI)');
-  await page.goto(URL + '#/generate');
-  const types = await page.evaluate(() => WT.WORKOUT_TYPES.map((t) => t.id));
-  for (const t of types) {
-    await page.click(`[data-act="genType"][data-k="${t}"]`);
-    await page.click('.gen-controls [data-act="generate"]');
-    await page.waitForTimeout(560);
-    const d = (await db()).draft;
-    const n = await page.locator('.prow').count();
-    ok(d && d.type === t && n === d.exercises.length && n >= 5, `${t}: ${n} exercises rendered`);
+  console.log('Navigation');
+  ok((await page.locator('.tabs .tab').count()) === 5, 'compact 5-tab bar on mobile');
+  for (const r of ['dashboard', 'generate', 'workout', 'library', 'history', 'progress', 'settings']) {
+    await page.goto(URL + '#/' + r); await page.waitForTimeout(120);
+    const over = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth);
+    ok(!over, `${r}: no horizontal overflow`);
   }
 
-  console.log('Swap');
-  await page.click('[data-act="genType"][data-k="push"]');
-  await page.click('.gen-controls [data-act="generate"]'); await page.waitForTimeout(560);
-  const before = (await db()).draft.exercises[0];
-  await page.locator('.prow .swap').first().click();
-  await page.waitForSelector('[data-act="doSwap"]');
-  await shot('swap-sheet');
-  const altName = await page.locator('[data-act="doSwap"] .t').first().innerText();
-  await page.locator('[data-act="doSwap"]').first().click();
-  const after = (await db()).draft.exercises.find((e) => e.uid === before.uid);
-  const exAfterPre = await page.evaluate((id) => WT.ex(id), after.exId);
-  ok(after.exId !== before.exId, `swapped ${before.exId} → ${after.exId} (${altName.trim()})`);
-  ok(after.intensity === before.intensity || !exAfterPre.intensities.includes(before.intensity), 'intensity preserved where eligible');
-  const exAfter = await page.evaluate((id) => WT.ex(id), after.exId);
-  const exBefore = await page.evaluate((id) => WT.ex(id), before.exId);
-  ok(exAfter.primary === exBefore.primary || before.slot.m.includes(exAfter.primary), `swap kept same muscle (${exBefore.primary} → ${exAfter.primary})`);
+  console.log('Generation for every type (via UI)');
+  await page.goto(URL + '#/generate');
+  for (const t of ['full', 'push', 'pull', 'legs', 'chest', 'back', 'shoulders', 'arms', 'core', 'cardio', 'custom']) {
+    await page.click(`[data-act="genType"][data-k="${t}"]`);
+    await gen();
+    const d = (await db()).draft;
+    const n = await page.locator('.ex-row').count();
+    ok(d && d.type === t && n === d.exercises.length && n >= 5, `${t}: ${n} exercises`);
+  }
+  ok((await page.locator('.ex-row a[href*="youtube.com"]').count()) >= 5, 'each exercise has a video link');
+  await shot('generate');
 
   console.log('Randomised intensity through the UI');
+  await page.click('[data-act="genType"][data-k="full"]');
   const tallies = new Set(); let noSpecial = false;
   for (let k = 0; k < 18; k++) {
-    await page.click('.gen-controls [data-act="generate"]'); await page.waitForTimeout(500);
+    await gen();
     const ex = (await db()).draft.exercises;
-    const t = ['heavy', 'regular', 'burnout', 'standard'].map((x) => ex.filter((e) => e.intensity === x).length).join('/');
-    tallies.add(t); if (!ex.some((e) => e.intensity === 'heavy' || e.intensity === 'burnout')) noSpecial = true;
-    const elig = await page.evaluate(() => WT.db.draft.exercises.every((e) => WT.ex(e.exId).intensities.includes(e.intensity)));
-    ok(elig, 'every assigned intensity is eligible');
+    tallies.add(['heavy', 'regular', 'burnout', 'standard'].map((x) => ex.filter((e) => e.intensity === x).length).join('/'));
+    if (!ex.some((e) => e.intensity === 'heavy' || e.intensity === 'burnout')) noSpecial = true;
+    ok(await page.evaluate(() => WT.db.draft.exercises.every((e) => WT.ex(e.exId).intensities.includes(e.intensity))), 'assigned intensities are eligible');
   }
-  ok(tallies.size >= 5, `intensity mix varies between generations (${tallies.size} distinct in 18: ${[...tallies].join(' ')})`);
-  console.log('    zero heavy+burnout seen in this sample:', noSpecial);
-  await page.locator('.prow-int button').first().click();
-  await page.waitForSelector('[data-act="setIntensity"]');
-  await shot('intensity-picker');
+  ok(tallies.size >= 5, `intensity mix varies (${tallies.size} distinct in 18)`);
+  console.log('    a workout with no heavy/burnout seen in this sample:', noSpecial);
+  // Manual intensity change via the row menu
   const firstUid = (await db()).draft.exercises[0].uid;
+  await page.locator('.ex-row [data-act="planMenu"]').first().click();
+  await page.click('.sheet [data-act="pickIntensity"]');
   await page.click('[data-act="setIntensity"][data-k="standard"]');
   ok((await db()).draft.exercises.find((e) => e.uid === firstUid).intensity === 'standard', 'manual intensity change applied');
-  const before2 = JSON.stringify((await db()).draft.exercises.map((e) => e.exId).sort());
+  const ids = JSON.stringify((await db()).draft.exercises.map((e) => e.exId).sort());
   await page.click('[data-act="rerollIntensity"]');
-  ok(JSON.stringify((await db()).draft.exercises.map((e) => e.exId).sort()) === before2, 're-roll keeps the same exercises');
+  ok(JSON.stringify((await db()).draft.exercises.map((e) => e.exId).sort()) === ids, 're-roll keeps the same exercises');
 
-  console.log('Lock + regenerate keeps locked exercise');
-  const lockedUid = (await db()).draft.exercises[1].uid;
-  const lockedEx = (await db()).draft.exercises[1].exId;
-  await page.locator('[data-act="planLock"]').nth(1).click();
-  await page.click('[data-act="regenerate"]'); await page.waitForTimeout(560);
-  ok((await db()).draft.exercises.some((e) => e.exId === lockedEx && e.locked), 'locked exercise kept after regenerate');
-
-  console.log('Remove + add');
+  console.log('Swap, lock, remove, add');
+  const before = (await db()).draft.exercises[0];
+  await page.locator('.ex-row [data-act="openSwap"]').first().click();
+  await page.waitForSelector('[data-act="doSwap"]');
+  await shot('swap');
+  await page.locator('[data-act="doSwap"]').first().click();
+  const after = (await db()).draft.exercises.find((e) => e.uid === before.uid);
+  const [exB, exA] = await page.evaluate(([a, b]) => [WT.ex(a), WT.ex(b)], [before.exId, after.exId]);
+  ok(after.exId !== before.exId, `swapped ${before.exId} → ${after.exId}`);
+  ok(exA.primary === exB.primary || before.slot.m.includes(exA.primary), 'swap kept the muscle group');
+  ok(after.intensity === before.intensity || !exA.intensities.includes(before.intensity), 'swap kept intensity where eligible');
+  const lockEx = (await db()).draft.exercises[1].exId;
+  await page.locator('.ex-row [data-act="planMenu"]').nth(1).click();
+  await page.click('.sheet [data-act="planLock"]');
+  await page.click('[data-act="regenerate"]'); await page.waitForTimeout(520);
+  ok((await db()).draft.exercises.some((e) => e.exId === lockEx && e.locked), 'locked exercise survives regenerate');
   const cnt = (await db()).draft.exercises.length;
-  await page.locator('[data-act="planRemove"]').last().click();
+  await page.locator('.ex-row [data-act="planMenu"]').last().click();
+  await page.click('.sheet [data-act="planRemove"]');
   ok((await db()).draft.exercises.length === cnt - 1, 'removed exercise');
-  await page.click('[data-act="openAdd"]');
-  await page.fill('#addSearch', 'sissy');
-  await page.waitForTimeout(100);
+  await page.click('[data-act="openAdd"][data-ctx="draft"]');
+  await page.fill('#addSearch', 'sissy'); await page.waitForTimeout(80);
   await page.locator('[data-act="doAdd"]').first().click();
-  ok((await db()).draft.exercises.some((e) => e.exId === 'sissy-squat'), 'added Sissy Squat manually');
+  ok((await db()).draft.exercises.some((e) => e.exId === 'sissy-squat'), 'added Sissy Squat');
 
-  console.log('Workout #1: log a session');
-  // Deterministic workout: generate full body then start
-  await page.click('[data-act="genType"][data-k="full"]');
-  await page.click('.gen-controls [data-act="generate"]'); await page.waitForTimeout(560);
-  await page.click('.plan [data-act="startDraft"]');
-  await page.waitForSelector('.xc');
-  ok(page.url().includes('#/workout'), 'navigated to active workout');
+  console.log('Workout 1: log sets with the editor');
+  await page.click('[data-act="genType"][data-k="full"]'); await gen();
+  await page.click('.sticky-cta [data-act="startDraft"]');
+  await page.waitForSelector('.cur');
+  ok(await page.evaluate(() => document.body.classList.contains('focus')), 'focus mode hides navigation while training');
   let a = (await db()).active;
-  const first = a.exercises[0];
-  const firstEx = await page.evaluate((id) => WT.ex(id), first.exId);
-  const card = page.locator(`#ex-${first.uid}`);
-  // log every set of first exercise at top of range
-  for (let i = 0; i < first.sets.length; i++) {
-    const row = card.locator('.set').nth(i);
-    if (await row.locator('[data-f="w"]').count()) await row.locator('[data-f="w"]').fill(firstEx.load === 'bwl' ? '0' : '40');
-    await row.locator('[data-f="r"]').fill(String(first.repMax));
-    await row.locator('.check').click();
+  const cur0 = await page.evaluate(() => WT.currentItem(WT.db.active));
+  const ex0 = await page.evaluate((id) => WT.ex(id), cur0.exId);
+  const tt0 = await page.evaluate((id) => WT.trackType(WT.ex(id)), cur0.exId);
+  for (let i = 0; i < cur0.sets.length; i++) {
+    const wIn = page.locator('.field-num input[data-f="w"]');
+    if (tt0 === 'weight' && i === 0) await wIn.fill('40');
+    const rIn = page.locator('.field-num input[data-f="r"]');
+    if (await rIn.count()) await rIn.fill(String(cur0.repMax));
+    if (tt0 === 'cardio') await page.locator('.field-num input[data-f="time"]').fill('20');
+    await page.click(`[data-act="woCheck"][data-uid="${cur0.uid}"]`);
+    if (i === 0) { await shot('train-after-set'); ok(!!(await db()).active.timer || !!cur0.superset, 'rest timer starts (or superset partner) after a set'); }
+    // superset partner may take focus; bring this exercise back
+    if (i < cur0.sets.length - 1) await page.click(`[data-act="woFocus"][data-uid="${cur0.uid}"]`);
   }
   a = (await db()).active;
-  ok(a.exercises[0].sets.every((s) => s.done), 'all sets of first exercise checked');
-  ok(!!a.timer || a.exercises[0].superset, 'rest timer started after set');
-  await shot('active');
-  // Completed exercise collapses to a summary line; expand it again
-  ok(await card.locator('.xc-sum').count() === 1, 'completed exercise collapsed to summary');
-  await card.locator('.xc-sum').click();
-  // Add set, notes, effort
-  await card.locator('[data-act="woAddSet"]').click();
-  ok((await db()).active.exercises[0].sets.length === first.sets.length + 1, 'added extra set');
-  await card.locator('[data-act="woRemoveSet"]').click();
-  await card.locator('[data-act="woNoteToggle"]').click();
-  await card.locator('[data-in="exNotes"]').fill('Felt strong today');
-  await card.locator('[data-act="woEffort"][data-v="good"]').click();
-  // Skip one exercise
-  const skipUid = a.exercises[a.exercises.length - 1].uid;
-  await page.locator(`#ex-${skipUid} [data-act="woMenu"]`).click();
+  const done0 = a.exercises.find((e) => e.uid === cur0.uid);
+  ok(done0.sets.every((s) => s.done), 'all sets of first exercise completed');
+  if (tt0 === 'weight') ok(done0.sets.every((s) => s.w === '40'), 'weight carried forward to every set');
+  // − / + controls
+  const cur1 = await page.evaluate(() => WT.currentItem(WT.db.active));
+  if (cur1 && (await page.locator('.field-num input[data-f="r"]').count())) {
+    const r0 = +(await page.locator('.field-num input[data-f="r"]').inputValue());
+    await page.click('[data-act="adj"][data-f="r"][data-d="1"]');
+    ok(+(await page.locator('.field-num input[data-f="r"]').inputValue()) === r0 + 1, '+ increases reps');
+  }
+  // edit a completed set
+  await page.click(`[data-act="woFocus"][data-uid="${cur0.uid}"]`);
+  await page.click(`[data-act="woEditSet"][data-uid="${cur0.uid}"][data-i="0"]`);
+  ok(await page.locator('[data-act="woUndoSet"]').count() === 1, 'tapping a done set opens it for editing');
+  await page.click(`[data-act="woCheck"][data-uid="${cur0.uid}"]`);
+  // effort, skip, replace
+  if ((await db()).active.askEffort) { await page.click('[data-act="woEffort"][data-v="good"]'); ok((await db()).active.exercises.find((e) => e.uid === cur0.uid).effort === 'good', 'effort recorded'); }
+  const lastUid = a.exercises[a.exercises.length - 1].uid;
+  await page.click(`[data-act="woFocus"][data-uid="${lastUid}"]`);
+  await page.click(`.cur [data-act="woMenu"]`);
   await page.click('.sheet [data-act="woSkip"]');
-  ok((await db()).active.exercises.find((e) => e.uid === skipUid).skipped, 'skipped an exercise');
-  // Replace exercise during active workout
-  const swapUid = a.exercises[1].uid, swapFrom = a.exercises[1].exId;
-  await page.locator(`#ex-${swapUid} [data-act="openSwap"]`).last().click();
+  ok((await db()).active.exercises.find((e) => e.uid === lastUid).skipped, 'skipped an exercise');
+  const swapIt = (await page.evaluate(() => WT.currentItem(WT.db.active)));
+  await page.click('.cur [data-act="openSwap"]');
   await page.locator('[data-act="doSwap"]').first().click();
-  const swapTo = (await db()).active.exercises.find((e) => e.uid === swapUid).exId;
-  ok(swapTo !== swapFrom, `replaced during workout ${swapFrom} → ${swapTo}`);
-  // log one set on second exercise using placeholders/values
-  const c2 = page.locator(`#ex-${swapUid}`);
-  const tt2 = await page.evaluate((id) => WT.trackType(WT.ex(id)), swapTo);
-  const r0 = c2.locator('.set').first();
-  if (tt2 === 'weight') await r0.locator('[data-f="w"]').fill('30');
-  if (tt2 === 'cardio') await r0.locator('[data-f="time"]').fill('20'); else await r0.locator('[data-f="r"]').fill('10');
-  await r0.locator('.check').click();
+  ok((await db()).active.exercises.find((e) => e.uid === swapIt.uid).exId !== swapIt.exId, 'replaced an exercise mid-workout');
+  await page.fill('[data-in="sessionNotes"]', 'Felt strong today');
 
-  console.log('Persistence of active workout across reload');
+  console.log('Persistence mid-workout');
   await page.waitForTimeout(300);
-  await page.reload();
-  await page.waitForSelector('.xc');
+  await page.reload(); await page.waitForSelector('.cur');
   a = (await db()).active;
-  ok(a && a.exercises[0].sets.every((s) => s.done) && a.exercises[0].notes === 'Felt strong today', 'active workout restored after refresh');
+  ok(a && a.exercises.find((e) => e.uid === cur0.uid).sets.every((s) => s.done) && a.notes === 'Felt strong today', 'active workout restored after refresh');
 
   console.log('Finish & save');
-  await page.locator('[data-act="woFinish"]').first().click();
-  await page.click('[data-act="woSave"]');
-  await page.waitForTimeout(300);
+  await page.click('.mtop [data-act="woFinish"]');
+  await page.click('[data-act="woSave"]'); await page.waitForTimeout(300);
   let d = await db();
-  ok(d.history.length === 1 && !d.active, 'workout saved to history');
-  ok(page.url().includes('#/history/' + d.history[0].id), 'opened history detail');
-  await shot('saved');
+  ok(d.history.length === 1 && !d.active, 'workout saved');
+  ok(page.url().includes('#/history/' + d.history[0].id), 'opened history entry');
   await page.click('.sheet [data-act="closeSheet"]');
-  const saved = d.history[0];
-  ok(saved.exercises.find((e) => e.uid === skipUid).skipped, 'skipped exercise recorded as skipped');
-  ok(saved.exercises[0].sets.length === first.sets.length && saved.exercises[0].effort === 'good', 'sets/effort saved');
+  ok(d.history[0].exercises.find((e) => e.uid === lastUid).skipped, 'skipped exercise recorded');
 
-  console.log('Historical weights + progression recommendation in next session');
-  // Backdate session 1 by 3 days so recommendation is realistic
+  console.log('History → next session uses real data');
   await page.evaluate(() => { const s = WT.db.history[0]; const t = Date.now() - 3 * 864e5; s.startedAt = new Date(t - 3600e3).toISOString(); s.endedAt = new Date(t).toISOString(); WT.flush(); });
-  await page.click('[data-act="histRepeat"]');
-  await page.waitForSelector('.xc');
-  a = (await db()).active;
-  const rep1 = page.locator(`#ex-${a.exercises[0].uid}`);
-  const lastLine = await rep1.locator('.lastline').innerText();
-  ok(lastLine.includes('Last'), 'previous performance shown: ' + lastLine.replace(/\s+/g, ' '));
-  const prevCell = await rep1.locator('.set-prev').first().innerText();
-  ok(/\d/.test(prevCell), 'previous column filled: ' + prevCell);
-  const recText = await rep1.locator('.advice .h').innerText();
-  const rec = await page.evaluate((it) => WT.recommend(it.exId, { repMin: it.repMin, repMax: it.repMax, sets: it.targetSets, intensity: it.intensity }, WT.db.active.id), a.exercises[0]);
-  console.log('    recommendation:', recText, '|', rec.reasons.join(' '));
-  if (firstEx.load !== 'bwl' && firstEx.load !== 'bw') {
-    ok(rec.action === 'increase' && rec.weight > 40, 'hit top of range → increase recommended (' + rec.weight + ')');
-    const placeholder = await rep1.locator('[data-f="w"]').first().getAttribute('placeholder');
-    ok(placeholder === '40', 'weight NOT auto-increased (placeholder = last weight 40)');
-    await rep1.locator('[data-act="woApplyRec"]').click();
-    const w = (await db()).active.exercises[0].sets[0].w;
-    ok(+w === rec.weight, 'Apply sets recommended weight only after approval: ' + w);
-  } else ok(['progress', 'reps'].includes(rec.action), 'bodyweight progression');
-  await shot('recommendation');
-  // Complete with fewer reps to create a second history point, then save
-  const it0 = (await db()).active.exercises[0];
-  for (let i = 0; i < it0.sets.length; i++) {
-    const row = rep1.locator('.set').nth(i);
-    await row.locator('[data-f="r"]').fill(String(it0.repMax));
-    await row.locator('.check').click();
+  await page.click('[data-act="histRepeat"]'); await page.waitForSelector('.cur');
+  await page.click(`[data-act="woFocus"][data-uid="${(await db()).active.exercises.find((e) => e.exId === cur0.exId).uid}"]`);
+  const it = (await db()).active.exercises.find((e) => e.exId === cur0.exId);
+  ok((await page.locator('.editor-label').innerText()).includes('Last time'), 'editor shows last time: ' + (await page.locator('.editor-label').innerText()).replace(/\s+/g, ' '));
+  const rec = await page.evaluate((x) => WT.recommend(x.exId, { repMin: x.repMin, repMax: x.repMax, sets: x.targetSets, intensity: x.intensity }, WT.db.active.id), it);
+  console.log('    recommendation:', rec.headline, '|', rec.reasons.join(' '));
+  if (tt0 === 'weight') {
+    ok(rec.action === 'increase' && rec.weight > 40, `top of range → increase (${rec.weight})`);
+    ok(+(await page.locator('.field-num input[data-f="w"]').inputValue()) === 40, 'weight NOT auto-increased (shows last weight 40)');
+    await page.click('[data-act="woApplyRec"]');
+    ok(+(await page.locator('.field-num input[data-f="w"]').inputValue()) === rec.weight, 'Apply sets recommended weight only on approval');
+    for (let i = 0; i < it.sets.length; i++) { await page.click(`[data-act="woCheck"][data-uid="${it.uid}"]`); if (i < it.sets.length - 1) await page.click(`[data-act="woFocus"][data-uid="${it.uid}"]`); }
+    await shot('train-progress');
   }
-  await page.locator('[data-act="woFinish"]').first().click();
-  await page.click('[data-act="woSave"]');
-  await page.waitForTimeout(300);
+  await page.click('.mtop [data-act="woFinish"]'); await page.click('[data-act="woSave"]'); await page.waitForTimeout(300);
   d = await db();
   ok(d.history.length === 2, 'second workout saved');
-  const prs = d.history[1].prs;
-  if (firstEx.load !== 'bwl' && firstEx.load !== 'bw') ok(prs.some((p) => p.exId === it0.exId), 'PR detected for heavier weight');
+  if (tt0 === 'weight') ok(d.history[1].prs.some((p) => p.exId === cur0.exId), 'PR detected');
   await page.click('.sheet [data-act="closeSheet"]');
 
-  console.log('Progress page uses real data');
-  await page.goto(URL + '#/progress');
-  await page.waitForTimeout(400);
-  const kpi = await page.locator('.ledger .figure .v').first().innerText();
-  ok(kpi.trim() === '2', 'total workouts KPI = 2');
-  ok(await page.locator('#progChart svg circle').count() >= 2, 'exercise progression chart has data points');
-  ok(await page.locator('#weeksChart svg path').count() >= 1, 'weekly bar chart rendered');
-  await shot('progress');
+  console.log('Progress');
+  await page.goto(URL + '#/progress'); await page.waitForTimeout(350);
+  ok((await page.locator('#progChart svg').count()) === 1, 'one chart at a time (strength)');
+  await page.click('[data-act="progTab"][data-v="frequency"]'); await page.waitForTimeout(250);
+  ok((await page.locator('#weeksChart svg').count()) === 1 && (await page.locator('#progChart').count()) === 0, 'frequency tab swaps the chart');
+  await page.click('[data-act="progTab"][data-v="volume"]'); await page.waitForTimeout(250);
+  ok((await page.locator('#volChart svg').count()) === 1, 'volume chart');
 
-  console.log('Library: search, favorite, exclude, custom exercise, video link');
+  console.log('Exercises');
   await page.goto(URL + '#/library');
-  await page.fill('#libSearch', 'hammer');
-  await page.waitForTimeout(100);
-  ok((await page.locator('#libList .cat-item').count()) >= 3, 'search filters list');
+  await page.fill('#libSearch', 'hammer'); await page.waitForTimeout(80);
+  ok((await page.locator('#libList .lib-row').count()) >= 3, 'search filters list');
+  const favBefore = (await db()).profile.favorites.length;
   await page.locator('#libList [data-act="favToggle"]').first().click();
-  ok((await db()).profile.favorites.length === 3, 'favorited');
+  ok((await db()).profile.favorites.length === favBefore + 1, 'favorited');
   await page.locator('#libList [data-act="exDetail"]').first().click();
-  await page.waitForSelector('.video-cta');
-  const href = await page.locator('.video-cta').getAttribute('href');
-  ok(href.startsWith('https://www.youtube.com/results?search_query='), 'YouTube link: ' + href);
-  await page.fill('#vidUrl', 'not a link');
-  await page.click('[data-act="saveVideo"]');
-  ok(!(await db()).overrides['hammer-curl'], 'invalid video URL rejected');
+  await page.waitForSelector('.watch');
+  ok((await page.locator('.watch').getAttribute('href')).startsWith('https://www.youtube.com/results?search_query='), 'YouTube tutorial link');
   await page.click('.sheet [data-act="exExclude"]');
-  ok((await db()).profile.excluded.length === 1, 'excluded from generation');
+  ok((await db()).profile.excluded.length === 1, 'excluded');
   await page.click('.sheet-head [data-act="closeSheet"]');
   await page.click('[data-act="exEdit"]');
   await page.fill('[data-in="exf"][data-k="name"]', 'Landmine Press');
@@ -247,52 +216,33 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   await dl.saveAs(file);
   const exported = JSON.parse(fs.readFileSync(file, 'utf8'));
   ok(exported.data.history.length === 2 && exported.data.customExercises.length === 1, 'export contains history + custom exercises');
-  // wipe then import
-  await page.evaluate(() => { WT.resetAll(); });
-  await page.reload();
+  await page.evaluate(() => WT.resetAll()); await page.reload();
   ok((await db()).history.length === 0, 'data wiped');
   await page.goto(URL + '#/settings');
   await page.setInputFiles('[data-in="importFile"]', file);
-  await page.waitForSelector('[data-act="doImport"][data-mode="replace"]');
   await page.click('[data-act="doImport"][data-mode="replace"]');
   d = await db();
   ok(d.history.length === 2 && d.customExercises.length === 1 && d.profile.excluded.length === 1, 'import restored everything');
-  // merge doesn't duplicate
   await page.setInputFiles('[data-in="importFile"]', file);
   await page.click('[data-act="doImport"][data-mode="merge"]');
   ok((await db()).history.length === 2, 'merge import does not duplicate');
-
-  console.log('Persistence after refresh');
   await page.reload();
-  d = await db();
-  ok(d.history.length === 2 && d.profile.favorites.length === 3, 'history and settings persist after refresh');
+  ok((await db()).history.length === 2, 'data persists after refresh');
   await page.goto(URL + '#/history');
-  ok((await page.locator('.log-entry').count()) === 2, 'history list shows 2 workouts');
+  ok((await page.locator('[data-entry]').count()) === 2, 'history lists both workouts');
 
-  console.log('Theme toggle');
+  console.log('Theme & offline');
   await page.goto(URL + '#/settings');
-  ok((await page.evaluate(() => document.documentElement.dataset.theme)) === 'light', 'ivory (light) theme by default');
   await page.click('[data-act="pfTheme"][data-v="dark"]');
-  ok((await page.evaluate(() => document.documentElement.dataset.theme)) === 'dark', 'night mode');
   await page.reload();
-  ok((await page.evaluate(() => document.documentElement.dataset.theme)) === 'dark', 'theme persists');
-  await shot('dark-dashboard');
-  await page.click('[data-act="pfTheme"][data-v="light"]').catch(() => {});
+  ok((await page.evaluate(() => document.documentElement.dataset.theme)) === 'dark', 'dark theme persists');
+  await page.goto(URL + '#/dashboard'); await page.waitForTimeout(300); await shot('dark-home');
   await page.goto(URL + '#/settings'); await page.click('[data-act="pfTheme"][data-v="light"]');
-  await page.goto(URL + '#/dashboard');
-  await page.waitForTimeout(300);
-  await shot('light-dashboard');
-  await page.click('[data-act="quickGen"][data-k="arms"]').catch(() => {});
-
-  console.log('Service worker / offline');
-  await page.goto(URL);
   await page.evaluate(() => navigator.serviceWorker.ready);
-  await page.reload();
-  await page.waitForTimeout(500);
+  await page.reload(); await page.waitForTimeout(400);
   await ctx.setOffline(true);
-  await page.reload();
-  await page.waitForTimeout(300);
-  ok((await page.locator('.tabbar').count()) === 1, 'app loads offline from service-worker cache');
+  await page.reload(); await page.waitForTimeout(300);
+  ok((await page.locator('.tabs').count()) === 1, 'loads offline from service-worker cache');
   await ctx.setOffline(false);
 
   ok(errors.length === 0, 'no console errors' + (errors.length ? ': ' + errors.join(' | ') : ''));

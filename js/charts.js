@@ -87,17 +87,17 @@
       seen.add(label);
       node(c.svg, 'text', { x: X(p.x), y: H - 8, 'text-anchor': xl.length === 1 ? 'middle' : i === 0 ? 'start' : i === xl.length - 1 ? 'end' : 'middle', class: 'axis-text' }, label);
     });
-    const color = opts.color || 'var(--forest)';
+    const color = opts.color || 'var(--accent)';
     const d = pts.map((p, i) => (i ? 'L' : 'M') + X(p.x).toFixed(1) + ' ' + Y(p.y).toFixed(1)).join(' ');
     if (pts.length > 1) {
       const area = d + ` L${X(pts[pts.length - 1].x).toFixed(1)} ${Y(yMin)} L${X(pts[0].x).toFixed(1)} ${Y(yMin)} Z`;
       node(c.svg, 'path', { d: area, fill: color, opacity: 0.07 });
       node(c.svg, 'path', { d, fill: 'none', stroke: color, 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' });
     }
-    pts.forEach((p) => node(c.svg, 'circle', { cx: X(p.x), cy: Y(p.y), r: 4, fill: color, stroke: 'var(--paper)', 'stroke-width': 2 }));
+    pts.forEach((p) => node(c.svg, 'circle', { cx: X(p.x), cy: Y(p.y), r: 4, fill: color, stroke: 'var(--surface)', 'stroke-width': 2 }));
     // Hover layer
     const cross = node(c.svg, 'line', { y1: pad.t, y2: H - pad.b, stroke: 'var(--text-3)', 'stroke-width': 1, opacity: 0 });
-    const hl = node(c.svg, 'circle', { r: 6, fill: color, stroke: 'var(--paper)', 'stroke-width': 2, opacity: 0 });
+    const hl = node(c.svg, 'circle', { r: 6, fill: color, stroke: 'var(--surface)', 'stroke-width': 2, opacity: 0 });
     const hit = node(c.svg, 'rect', { x: pad.l, y: 0, width: c.w - pad.l - pad.r, height: H, fill: 'transparent' });
     const move = (ev) => {
       const r = c.svg.getBoundingClientRect();
@@ -150,7 +150,7 @@
         const x = cx - bw / 2, yb = H - pad.b;
         node(c.svg, 'path', {
           d: `M${x} ${yb} L${x} ${y + r} Q${x} ${y} ${x + r} ${y} L${x + bw - r} ${y} Q${x + bw} ${y} ${x + bw} ${y + r} L${x + bw} ${yb} Z`,
-          fill: b.highlight ? 'var(--forest)' : opts.color || 'var(--paper-3)',
+          fill: b.highlight ? 'var(--accent)' : opts.color || 'color-mix(in srgb, var(--accent) 32%, var(--surface))',
         });
       }
       if (b.label && (bars.length <= 12 || i % 2 === 0)) node(c.svg, 'text', { x: cx, y: H - 8, 'text-anchor': 'middle', class: 'axis-text' }, b.label);
@@ -177,8 +177,8 @@
     const C = 2 * Math.PI * r;
     const f = Math.min(1, max ? value / max : 0);
     return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" style="transform:rotate(-90deg)">
-      <circle cx="${size / 2}" cy="${size / 2}" r="${r}" fill="none" stroke="var(--paper-3)" stroke-width="${sw}"/>
-      <circle cx="${size / 2}" cy="${size / 2}" r="${r}" fill="none" stroke="${color || 'var(--forest)'}" stroke-width="${sw}" stroke-linecap="round"
+      <circle cx="${size / 2}" cy="${size / 2}" r="${r}" fill="none" stroke="var(--bg-3)" stroke-width="${sw}"/>
+      <circle cx="${size / 2}" cy="${size / 2}" r="${r}" fill="none" stroke="${color || 'var(--accent)'}" stroke-width="${sw}" stroke-linecap="round"
         stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - f)}" style="transition:stroke-dashoffset .8s var(--ease)"/>
     </svg>`;
   };

@@ -11,11 +11,11 @@
   const esc = WT.esc;
 
   const NAV = [
-    { id: 'dashboard', name: 'Today', icon: 'home' },
+    { id: 'dashboard', name: 'Home', icon: 'home' },
     { id: 'generate', name: 'Generate', icon: 'sparkles' },
     { id: 'workout', name: 'Train', icon: 'activity' },
-    { id: 'library', name: 'Library', icon: 'book' },
-    { id: 'history', name: 'Log', icon: 'clock' },
+    { id: 'library', name: 'Exercises', icon: 'book' },
+    { id: 'history', name: 'History', icon: 'clock' },
     { id: 'progress', name: 'Progress', icon: 'chart' },
     { id: 'settings', name: 'Settings', icon: 'settings' },
   ];
@@ -23,47 +23,47 @@
 
   /* ───────── Shell ───────── */
   function shell() {
-    const navItems = NAV.map((n, i) => `<a href="#/${n.id}" class="nav-item" data-nav="${n.id}"><span class="n">${String(i + 1).padStart(2, '0')}</span><span>${n.name}</span><span class="slot"></span></a>`).join('');
+    const navLink = (n) => `<a href="#/${n.id}" class="nav" data-nav="${n.id}">${I(n.icon, 17)}<span>${n.name}</span><span class="slot"></span></a>`;
     const tabs = ['dashboard', 'generate', 'workout', 'history', 'progress']
       .map((id) => NAV.find((n) => n.id === id))
-      .map((n) => `<a href="#/${n.id}" class="tab" data-nav="${n.id}">${I(n.icon, 22)}<span>${n.name}</span><span class="slot"></span></a>`)
+      .map((n) => `<a href="#/${n.id}" class="tab" data-nav="${n.id}">${I(n.icon, 23)}<span>${n.name}</span><span class="slot"></span></a>`)
       .join('');
     document.getElementById('app').innerHTML = `
-      <aside class="rail">
-        <a href="#/dashboard" class="wordmark">Forge</a>
-        <div class="eyebrow wordmark-sub">A training journal</div>
-        <nav class="rail-nav" aria-label="Main">${navItems}</nav>
-        <div class="rail-foot" id="railFoot"></div>
+      <aside class="side">
+        <a href="#/dashboard" class="brand"><span class="brand-mark">${I('dumbbell', 15)}</span>Forge</a>
+        ${NAV.filter((n) => n.id !== 'settings').map(navLink).join('')}
+        <div class="side-spacer"></div>
+        ${navLink(NAV[6])}
       </aside>
-      <header class="mbar" id="mbar"></header>
+      <header class="mtop" id="mtop"></header>
       <main class="main" id="main"></main>
-      <nav class="tabbar" aria-label="Main">${tabs}</nav>
+      <nav class="tabs" aria-label="Main">${tabs}</nav>
       <div id="timerHost"></div>
       <div class="toasts" id="toasts" role="status" aria-live="polite"></div>`;
+    window.addEventListener('scroll', () => {
+      const m = $('#mtop');
+      if (m) m.classList.toggle('scrolled', window.scrollY > 24);
+    }, { passive: true });
   }
   WT.refreshShell = function () {
     const a = WT.db.active;
-    document.querySelectorAll('[data-nav="workout"] .slot').forEach((el) => (el.innerHTML = a ? '<span class="live-dot" title="Workout in progress"></span>' : ''));
-    const foot = $('#railFoot');
-    if (foot)
-      foot.innerHTML = a
-        ? `<a class="rail-live" href="#/workout"><div class="eyebrow" style="color:var(--forest)">In session</div><div class="t" id="railClock">${WT.fmtClock((Date.now() - new Date(a.startedAt)) / 1000)}</div><div class="small muted ellipsis">${esc(a.title)}</div></a>`
-        : `<div class="rail-live"><div class="eyebrow">Private by design</div><p class="small faint mt8">Everything stays on this device and works offline.</p></div>`;
+    document.querySelectorAll('[data-nav="workout"] .slot').forEach((el) => (el.innerHTML = a ? '<span class="live" title="Workout in progress"></span>' : ''));
     const focus = WT.ui.route === 'workout' && !!a;
     document.body.classList.toggle('focus', focus);
-    const mb = $('#mbar');
-    if (mb) {
-      if (focus)
-        mb.innerHTML = `<a class="icon-btn" href="#/dashboard" aria-label="Leave workout screen (keeps running)">${I('chevL', 22)}</a>
-          <div class="grow" style="padding-left:4px"><div class="eyebrow" style="color:var(--forest)">In session</div><div class="mono" id="mbClock" style="font-size:17px;line-height:1.1">${WT.fmtClock((Date.now() - new Date(a.startedAt)) / 1000)}</div></div>
-          <button class="btn btn-primary btn-sm" data-act="woFinish">Finish</button>`;
-      else {
-        const nav = NAV.find((n) => n.id === WT.ui.route) || NAV[0];
-        mb.innerHTML = `<a href="#/dashboard" class="wordmark">Forge</a><span class="eyebrow sec">${WT.ui.route === 'history' && WT.ui.param ? 'Entry' : nav.name}</span><span class="grow"></span>
-          <a class="icon-btn" href="#/library" aria-label="Exercise library" data-nav="library">${I('book', 20)}</a>
-          <a class="icon-btn" href="#/settings" aria-label="Settings" data-nav="settings">${I('settings', 20)}</a>`;
-      }
+    const mb = $('#mtop');
+    if (!mb) return;
+    if (focus)
+      mb.innerHTML = `<a class="icon-btn" href="#/dashboard" aria-label="Leave workout (keeps running)">${I('chevL', 22)}</a>
+        <div class="ttl always"><span class="clock" id="mbClock">${WT.fmtClock((Date.now() - new Date(a.startedAt)) / 1000)}</span></div>
+        <button class="btn btn-primary btn-sm" data-act="woFinish">Finish</button>`;
+    else {
+      const nav = NAV.find((n) => n.id === WT.ui.route) || NAV[0];
+      const back = WT.ui.route === 'history' && WT.ui.param;
+      mb.innerHTML = `${back ? `<a class="icon-btn" href="#/history" aria-label="Back to history">${I('chevL', 22)}</a>` : ''}<span class="ttl ${back ? 'always' : ''}">${back ? 'Workout' : nav.name}</span>
+        <a class="icon-btn" href="#/library" aria-label="Exercises" data-nav="library">${I('book', 20)}</a>
+        <a class="icon-btn" href="#/settings" aria-label="Settings" data-nav="settings">${I('settings', 20)}</a>`;
     }
+    mb.classList.toggle('scrolled', window.scrollY > 24);
   };
 
   /* ───────── Router ───────── */
@@ -127,7 +127,7 @@
   WT.openSheet = function (renderFn, opts) {
     opts = opts || {};
     const ov = document.createElement('div');
-    ov.className = 'overlay';
+    ov.className = 'scrim';
     ov.innerHTML = `<div class="sheet ${opts.wide ? 'wide' : ''}" role="dialog" aria-modal="true"></div>`;
     document.body.appendChild(ov);
     const entry = { ov, renderFn, opts };
@@ -144,7 +144,7 @@
     const scroll = sheet.scrollTop;
     const r = entry.renderFn();
     sheet.innerHTML = `<div class="grabber"></div>
-      <div class="sheet-head"><div class="grow">${r.eyebrow ? `<div class="eyebrow">${r.eyebrow}</div>` : ''}<h2>${r.title || ''}</h2></div>${r.headExtra || ''}<button class="icon-btn" data-act="closeSheet" aria-label="Close">${I('x', 20)}</button></div>
+      <div class="sheet-head"><div class="grow">${r.eyebrow ? `<div class="over">${r.eyebrow}</div>` : ''}<h2>${r.title || ''}</h2></div>${r.headExtra || ''}<button class="icon-btn" data-act="closeSheet" aria-label="Close">${I('x', 19)}</button></div>
       <div class="sheet-body">${r.body || ''}</div>${r.foot ? `<div class="sheet-foot">${r.foot}</div>` : ''}`;
     sheet.scrollTop = scroll;
     if (r.after) r.after(sheet);
@@ -166,7 +166,7 @@
   WT.confirm = function (title, message, okLabel, onOk, danger) {
     WT.openSheet(() => ({
       title,
-      body: `<p class="lead" style="font-size:18px">${message}</p>`,
+      body: `<p class="t2">${message}</p>`,
       foot: `<button class="btn btn-secondary grow" data-act="closeSheet">Cancel</button><button class="btn ${danger ? 'btn-danger' : 'btn-primary'} grow" data-act="confirmOk">${okLabel}</button>`,
     }));
     WT.A.confirmOk = () => {
@@ -238,14 +238,13 @@
     const left = Math.max(0, Math.ceil((t.end - Date.now()) / 1000));
     const done = left === 0;
     const f = t.total ? left / t.total : 0;
-    host.innerHTML = `<div class="dock ${done ? 'done' : ''}" role="timer" aria-live="off">
-      <div class="dock-bar"><i id="timerArc" style="width:${f * 100}%"></i></div>
-      <div class="dock-in"><div style="min-width:0"><div class="dock-lbl ellipsis">${done ? 'Rest complete — next set' : esc(t.label)}</div><div class="dock-time" id="timerText">${done ? '0:00' : WT.fmtClock(left)}</div></div>
-      <div class="dock-btns">
-        <button class="btn btn-secondary btn-sm" data-act="timerAdd" data-s="-15" aria-label="Subtract 15 seconds">−15</button>
-        <button class="btn btn-secondary btn-sm" data-act="timerAdd" data-s="15" aria-label="Add 15 seconds">+15</button>
-        <button class="btn btn-sm ${done ? 'btn-primary' : 'btn-ink'}" data-act="timerStop">${done ? 'Go' : 'Skip'}</button>
-      </div></div></div>`;
+    host.innerHTML = `<div class="timer ${done ? 'done' : ''}" role="timer" aria-live="off">
+      <div class="bar"><i id="timerArc" style="width:${f * 100}%"></i></div>
+      <div class="timer-in"><div class="grow"><div class="t" id="timerText">${done ? 'Go' : WT.fmtClock(left)}</div><div class="lbl ellipsis">${done ? 'Rest complete' : esc(t.label)}</div></div>
+        <button class="btn btn-plain btn-sm tnum" data-act="timerAdd" data-s="-15" aria-label="Subtract 15 seconds">−15</button>
+        <button class="btn btn-plain btn-sm tnum" data-act="timerAdd" data-s="15" aria-label="Add 15 seconds">+15</button>
+        <button class="btn btn-sm ${done ? 'btn-primary' : 'btn-secondary'}" data-act="timerStop">${done ? 'Done' : 'Skip'}</button>
+      </div></div>`;
   };
   function tick() {
     const a = WT.db && WT.db.active;
@@ -276,7 +275,7 @@
     }
     if (a) {
       const txt = WT.fmtClock((Date.now() - new Date(a.startedAt)) / 1000);
-      ['#woClock', '#railClock', '#mbClock', '#dashClock'].forEach((sel) => {
+      ['#woClock', '#mbClock', '#dashClock'].forEach((sel) => {
         const el = $(sel);
         if (el) el.textContent = txt;
       });
@@ -306,7 +305,7 @@
     const theme = t === 'system' ? (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark') : t;
     document.documentElement.dataset.theme = theme;
     const meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.setAttribute('content', theme === 'light' ? '#f3efe6' : '#151513');
+    if (meta) meta.setAttribute('content', theme === 'light' ? '#f6f6f3' : '#121211');
   };
 
   /* ───────── Shared render helpers ───────── */
@@ -314,8 +313,8 @@
     intensity(int, act, uid, ctx) {
       const label = (WT.INTENSITY_INFO[int] || { name: int }).name;
       return act
-        ? `<button class="imark ${int}" data-act="${act}" data-uid="${uid}" ${ctx ? `data-ctx="${ctx}"` : ''} title="Change intensity" aria-label="Intensity: ${label}. Change">${label}</button>`
-        : `<span class="imark ${int}">${label}</span>`;
+        ? `<button class="int ${int}" data-act="${act}" data-uid="${uid}" ${ctx ? `data-ctx="${ctx}"` : ''} aria-label="Intensity: ${label}. Change">${label}</button>`
+        : `<span class="int ${int}">${label}</span>`;
     },
     muscles(ex) {
       return `${WT.muscleName(ex.primary)}${ex.secondary.length ? ` · ${ex.secondary.slice(0, 2).map(WT.muscleName).join(', ')}` : ''}`;
@@ -326,8 +325,8 @@
       const unit = tt === 'time' || ex.unit === 'sec' ? 's' : '';
       return `${item.sets || item.targetSets} × ${item.repMin}${item.repMax !== item.repMin ? '–' + item.repMax : ''}${unit}`;
     },
-    empty(icon, title, text, action) {
-      return `<div class="empty"><h3>${title}</h3><p>${text}</p>${action ? `<div class="mt24 row wrap">${action}</div>` : ''}</div>`;
+    empty(title, text, action) {
+      return `<div class="empty"><h3>${title}</h3><p>${text}</p>${action ? `<div class="mt16 row wrap">${action}</div>` : ''}</div>`;
     },
     chipGroup(items, selected, act, extra) {
       const sel = new Set(selected);
@@ -339,7 +338,7 @@
       return `<button class="toggle ${on ? 'on' : ''}" role="switch" aria-checked="${!!on}" data-act="${act}" ${extra || ''}></button>`;
     },
     stepper(val, act, key, min, max) {
-      return `<div class="stepper"><button data-act="${act}" data-k="${key}" data-d="-1" data-min="${min}" data-max="${max}" aria-label="Decrease">${I('minus', 16)}</button><span class="val">${val}</span><button data-act="${act}" data-k="${key}" data-d="1" data-min="${min}" data-max="${max}" aria-label="Increase">${I('plus', 16)}</button></div>`;
+      return `<div class="stepper"><button data-act="${act}" data-k="${key}" data-d="-1" data-min="${min}" data-max="${max}" aria-label="Decrease">${I('minus', 15)}</button><span class="val">${val}</span><button data-act="${act}" data-k="${key}" data-d="1" data-min="${min}" data-max="${max}" aria-label="Increase">${I('plus', 15)}</button></div>`;
     },
     seg(options, current, act, key, cls) {
       return `<div class="seg ${cls || ''}" role="group">${options.map(([v, l]) => `<button class="${String(v) === String(current) ? 'on' : ''}" data-act="${act}" data-k="${key || ''}" data-v="${v}" aria-pressed="${String(v) === String(current)}">${l}</button>`).join('')}</div>`;
@@ -352,6 +351,11 @@
     pct(odds, k) {
       const tot = ['heavy', 'regular', 'burnout', 'standard'].reduce((a, x) => a + Math.max(0, +odds[x] || 0), 0) || 1;
       return Math.round((Math.max(0, +odds[k] || 0) / tot) * 100);
+    },
+    li(o) {
+      // Generic list row: {tag, attrs, title, sub, lead, trail, chev, cls}
+      const tag = o.tag || (o.href ? 'a' : o.act ? 'button' : 'div');
+      return `<${tag} class="li ${o.cls || ''}" ${o.href ? `href="${o.href}"` : ''} ${o.act ? `data-act="${o.act}"` : ''} ${o.attrs || ''}>${o.lead || ''}<div class="grow"><div class="ti">${o.title}</div>${o.sub ? `<div class="su">${o.sub}</div>` : ''}</div>${o.trail || ''}${o.chev ? `<span class="chev">${I('chevR', 16)}</span>` : ''}</${tag}>`;
     },
   };
 

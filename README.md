@@ -1,4 +1,4 @@
-# Forge: a training journal
+# Forge
 
 A free, private, offline-first workout app. It generates workouts from your goals, equipment and recent training, tracks every set, and recommends progressive overload from your logged numbers.
 
@@ -9,22 +9,27 @@ A free, private, offline-first workout app. It generates workouts from your goal
 
 ## Design
 
-It is art-directed as a training journal: warm ivory paper, charcoal ink and one forest-green accent. Structure comes from hairline rules and typography, not stacks of cards.
+A quiet, precise interface in the spirit of Apple, Linear and Things: generous whitespace, one typeface, one accent, and very few containers.
 
-**Type** (all OFL-licensed and bundled in `fonts/`, so they work offline):
-- [Fraunces](https://github.com/undercasetype/Fraunces): editorial display serif for headings.
-- [Instrument Sans](https://github.com/Instrument/instrument-sans): interface text.
-- [JetBrains Mono](https://github.com/JetBrains/JetBrainsMono): every number you lift, plus timers and stats.
+**Look**
+- **Type:** [Inter](https://rsms.me/inter/), bundled in `fonts/` (OFL), with optical sizes so large titles use the tighter Display cut. Every weight, rep, timer and stat uses tabular figures.
+- **Color:** a soft neutral background, near-black text and a single pine-green accent, used only for the primary action and completion. Heavy and burnout appear as small rust and amber dots; nothing else is colored. A dark theme is in Settings.
 
-**Color is reserved for meaning.** Brick marks heavy, ochre marks burnout and forest marks progress or completion. A warm "Night" theme is available in Settings.
+**Navigation**
+- **Desktop:** a quiet sidebar with Home, Generate, Train, Exercises, History, Progress and Settings.
+- **Phone:** a 5-tab bar (Home, Generate, Train, History, Progress). Exercises and Settings sit in the top bar.
 
-**Each page has its own composition:**
-- **Today:** a journal masthead.
-- **Generator:** a typeset type index beside a printed training plan.
-- **Train:** a focus mode with navigation hidden, big monospace inputs, completed exercises that fold into one-line summaries, and a rest dock.
-- **Library:** an A–Z catalog.
-- **Log:** a chronological ledger.
-- **Progress:** restrained charts.
+**Screens**
+- **Home:** one focal "Generate workout" panel, a 7-day strip, the three most recent workouts, and a three-number summary of the last 30 days.
+- **Generate:**
+  - Type chips plus two options (exercise count and duration); everything else sits under *More options*.
+  - The plan is a single list. Each row shows the name, muscle, sets × reps, the suggested weight from your history and a subtle intensity marker, with video, swap and more buttons.
+- **Train:**
+  - Navigation hides and the screen focuses on the current exercise.
+  - Completed sets show as a short checklist.
+  - A large editor has −/+ weight and rep controls. Weight steps to the next dumbbell you own; values are pre-filled from your last session.
+  - One "Complete set" tap logs the set and starts the rest timer. Supersets alternate automatically.
+- **Progress:** one chart at a time (Strength, Frequency or Volume tabs), then personal records and weekly sets per muscle group.
 
 ## Features
 
@@ -91,8 +96,8 @@ js/core.js            taxonomy, default profile, storage, import/export
 js/engine.js          history queries, progression, generator, stats
 js/charts.js          SVG line/bar charts + rings
 js/ui.js              shell, router, sheets, toasts, rest timer
-js/views-train.js     Today, Generate, Train (active workout)
-js/views-data.js      Library, Log, Progress, Settings
-fonts/                bundled OFL fonts + licenses
+js/views-train.js     Home, Generate, Train (active workout)
+js/views-data.js      Exercises, History, Progress, Settings
+fonts/                Inter (OFL) + license
 sw.js, manifest.webmanifest, icons/   PWA
 ```

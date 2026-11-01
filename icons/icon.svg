@@ -1,5 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="115" fill="#2e4a2b"/>
-  <text x="250" y="352" text-anchor="middle" font-family="Fraunces, 'Iowan Old Style', Georgia, serif" font-style="italic" font-weight="330" font-size="358" fill="#f3efe6">F</text>
-  <rect x="113" y="408" width="286" height="7" fill="#f3efe6" opacity=".55"/>
+  <rect width="512" height="512" rx="115" fill="#2f6b4f"/>
+  <g fill="none" stroke="#ffffff" stroke-width="30" stroke-linecap="round">
+    <path d="M186 176v160M326 176v160M132 220v72M380 220v72M186 256h140"/>
+  </g>
 </svg>
