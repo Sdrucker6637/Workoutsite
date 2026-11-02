@@ -720,9 +720,9 @@
       el.value = '';
       WT.openSheet(() => ({
         title: 'Restore backup',
-        body: `<p class="t2">This backup contains ${plural(data.history.length, 'workout')}, ${plural((data.customExercises || []).length, 'custom exercise')} and ${((data.nutrition && data.nutrition.entries) || []).length} food ${((data.nutrition && data.nutrition.entries) || []).length === 1 ? 'entry' : 'entries'}.</p>
+        body: `<p class="t2">This backup contains ${plural(data.history.length, 'workout')}, ${plural((data.customExercises || []).length, 'custom exercise')} ${((data.nutrition && data.nutrition.entries) || []).length} food ${((data.nutrition && data.nutrition.entries) || []).length === 1 ? 'entry' : 'entries'} and ${plural(((data.nutrition && data.nutrition.foods) || []).length, 'saved product')}.</p>
           <div class="list inset mt16">
-            ${H.li({ act: 'doImport', attrs: 'data-mode="merge"', title: 'Merge', sub: 'Add workouts and food entries that aren’t here yet. Keeps your settings.' })}
+            ${H.li({ act: 'doImport', attrs: 'data-mode="merge"', title: 'Merge', sub: 'Add workouts, food entries and saved products that aren’t here yet. Keeps your settings.' })}
             ${H.li({ act: 'doImport', attrs: 'data-mode="replace"', title: 'Replace everything', sub: 'Restore exactly as backed up.', cls: 'danger' })}
           </div>`,
       }));

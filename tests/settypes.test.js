@@ -49,7 +49,7 @@ const SEED = {
   await page.reload();
   await page.waitForTimeout(300);
   let m = await db();
-  ok(m.version === 4, 'data model migrated v2 → v3 (and on to v4)');
+  ok(m.version === 5, 'data model migrated v2 → v3 (and on to v5)');
   ok(m.history.length === 1 && m.history[0].notes === 'kept' && m.profile.name === 'Keep me' && m.profile.favorites[0] === 'pullup', 'history, notes and settings untouched');
   ok(JSON.stringify(m.history[0].exercises[0].sets) === JSON.stringify(plainSets), 'existing plain sets are byte-for-byte unchanged');
   ok((await stored()).history.length === 1, 'nothing cleared from localStorage');
@@ -303,10 +303,10 @@ const SEED = {
     WT.importData(JSON.stringify(keep), 'merge');
     return { same: afterReplace === before, merged: JSON.stringify(WT.db.history) === before, v: WT.db.version };
   });
-  ok(rt.same && rt.v === 4, 'export → import (replace) keeps every stage');
+  ok(rt.same && rt.v === 5, 'export → import (replace) keeps every stage');
   ok(rt.merged, 'export → import (merge) keeps every stage');
   const oldImport = await page.evaluate((seed) => { WT.importData(JSON.stringify({ app: 'workout-tracker', data: seed }), 'replace'); return { v: WT.db.version, sets: JSON.stringify(WT.db.history[0].exercises[0].sets) }; }, SEED);
-  ok(oldImport.v === 4 && oldImport.sets === JSON.stringify(plainSets), 'importing an old (v2) backup still works and is migrated');
+  ok(oldImport.v === 5 && oldImport.sets === JSON.stringify(plainSets), 'importing an old (v2) backup still works and is migrated');
 
   ok(errors.length === 0, 'no console errors' + (errors.length ? ': ' + errors.join(' | ') : ''));
   console.log(`\n${pass} passed, ${fail} failed`);

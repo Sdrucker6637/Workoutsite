@@ -8,8 +8,6 @@
  *   count  what a bare number means ("10 shrimp" → 10 × the `shrimp` unit) — defaults to the base unit
  *   dq     quantity assumed when none is typed ("eggs" → 2 eggs)
  *   fixed  size words (large, small…) don't scale it (eggs, scoops, packaged products)
- *   label  a specific branded product whose typical label value is widely published. These are still
- *          shown as estimates and the note asks the user to check their package.
  *   serv   human description of the base unit, shown in the breakdown
  * Aliases are matched as whole words, plural-insensitive. Longer matches win.
  */
@@ -140,20 +138,10 @@
     F('cookie', 'Cookie', ['cookie', 'brownie', 'donut', 'doughnut', 'muffin', 'cupcake', 'pastry', 'croissant'], 'piece', 2, 200, 28, 9, { units: { serving: 1 } }),
     F('granola-bar', 'Granola bar', ['granola bar', 'cereal bar', 'snack bar'], 'bar', 3, 190, 29, 7, {}),
     F('chocolate', 'Chocolate', ['chocolate', 'candy', 'candy bar', 'chocolate bar'], 'bar', 3, 230, 26, 13, { units: { piece: 0.2, square: 0.1, handful: 0.7 } }),
-
-    /* ── Specific branded products (typical label values — still shown as estimates) ── */
-    F('premier-protein', 'Premier Protein shake', ['premier protein', 'premier protein shake', 'premier shake'], 'shake', 30, 160, 5, 3, { label: true, fixed: true, serv: '11 fl oz bottle', units: { bottle: 1, carton: 1, serving: 1 } }),
-    F('core-power', 'Fairlife Core Power shake', ['core power', 'fairlife core power', 'core power shake'], 'bottle', 26, 170, 8, 4.5, { label: true, fixed: true, serv: '14 fl oz bottle', units: { shake: 1, serving: 1 } }),
-    F('core-power-elite', 'Fairlife Core Power Elite shake', ['core power elite', 'fairlife core power elite'], 'bottle', 42, 230, 8, 4, { label: true, fixed: true, serv: '14 fl oz bottle', units: { shake: 1, serving: 1 } }),
-    F('fairlife-milk', 'Fairlife milk', ['fairlife', 'fairlife milk', 'fairlife 2 milk', 'fairlife 2% milk', 'ultra filtered milk'], 'cup', 13, 120, 6, 4.5, { label: true, g: 240, serv: '2%', units: { glass: 1, serving: 1, bottle: 1.75 } }),
-    F('oikos-pro', 'Oikos Pro yogurt', ['oikos pro', 'oikos pro yogurt'], 'cup', 20, 140, 8, 3, { label: true, fixed: true, serv: '5.3-oz cup', units: { container: 1, serving: 1 } }),
-    F('oikos-triple-zero', 'Oikos Triple Zero yogurt', ['triple zero', 'oikos triple zero', 'oikos'], 'cup', 15, 90, 7, 0, { label: true, fixed: true, serv: '5.3-oz cup', units: { container: 1, serving: 1 } }),
-    F('quest-bar', 'Quest protein bar', ['quest bar', 'quest protein bar', 'quest'], 'bar', 20, 190, 22, 8, { label: true, fixed: true }),
-    F('kodiak', 'Kodiak pancakes', ['kodiak', 'kodiak cakes', 'kodiak pancake', 'kodiak waffle', 'power cakes'], 'serving', 14, 190, 30, 2, { label: true, serv: '½ cup of mix, ≈ 3 pancakes', units: { pancake: 0.33, waffle: 0.5, plate: 1.3, cup: 2 } }),
   ];
 
-  /** Brands we recognize. When a brand isn't one of the label items above, the generic food is used and
-   * the entry says so — we never invent brand-specific numbers. */
+  /** Brands we recognize by name. Specific products with sourced nutrition live in js/products.js; for any
+   * other product of these brands the generic food is used and the entry says so — never invented numbers. */
   WT.FOOD_BRANDS = {
     'oscar mayer': 'Oscar Mayer', 'ball park': 'Ball Park', 'hebrew national': 'Hebrew National', nathans: "Nathan's", "nathan's": "Nathan's", 'hillshire': 'Hillshire',
     chobani: 'Chobani', fage: 'Fage', siggi: "Siggi's", siggis: "Siggi's", 'two good': 'Two Good', dannon: 'Dannon', yoplait: 'Yoplait', ratio: 'Ratio',
@@ -164,5 +152,6 @@
     starkist: 'StarKist', 'bumble bee': 'Bumble Bee', 'chicken of the sea': 'Chicken of the Sea', tyson: 'Tyson', perdue: 'Perdue', 'boars head': "Boar's Head", "boar's head": "Boar's Head",
     kirkland: 'Kirkland', 'trader joes': "Trader Joe's", "trader joe's": "Trader Joe's", subway: 'Subway', chipotle: 'Chipotle', mcdonalds: "McDonald's", "mcdonald's": "McDonald's",
     'chick fil a': 'Chick-fil-A', 'starbucks': 'Starbucks', 'jack links': "Jack Link's", "jack link's": "Jack Link's", chomps: 'Chomps', 'premier': 'Premier', 'core power': 'Core Power',
+    'pioneer pastures': 'Pioneer Pastures', oikos: 'Oikos', jif: 'Jif', kraft: 'Kraft', kodiak: 'Kodiak', quest: 'Quest', 'oscar meyer': 'Oscar Mayer', skippy: 'Skippy', 'peter pan': 'Peter Pan', sargento: 'Sargento', 'tillamook': 'Tillamook',
   };
 })();

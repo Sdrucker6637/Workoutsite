@@ -34,7 +34,7 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   await page.evaluate((s) => { WT.flush = WT.save = () => {}; localStorage.clear(); localStorage.setItem('wt.data.v1', JSON.stringify(s)); }, SEED);
   await page.reload();
   let m = await db();
-  ok(m.version === 4 && JSON.stringify(m.history) === JSON.stringify(SEED.history), 'v3 → v4: workout history byte-identical');
+  ok(m.version === 5 && JSON.stringify(m.history) === JSON.stringify(SEED.history), 'v3 → v5: workout history byte-identical');
   ok(m.profile.name === 'Lifter' && m.profile.proteinTarget === 150 && m.nutrition.entries.length === 0, 'settings kept; empty food log; 150 g default target');
   const histBefore = JSON.stringify(m.history);
 
@@ -72,10 +72,10 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   const pv = await page.textContent('#foodPreview');
   ok(['Greek yogurt', 'Almonds', 'Milk', 'Shrimp', 'Protein pasta', 'Turkey sandwich'].every((s) => pv.includes(s)), 'all six recognized');
   ok(['2 scoops', '1 handful', '1 cup', '1 serving', '1 bowl', '1 sandwich'].every((s) => pv.includes(s)), 'serving words understood');
-  await type('2 Oscar Mayer hot dogs and 1 Snickerdoodle protein shake');
+  await type('2 Ball Park hot dogs and 1 Snickerdoodle protein shake');
   const pv2 = await page.textContent('#foodPreview');
-  ok(/Oscar Mayer hot dog/.test(pv2) && /not label data/.test(pv2), 'brand recognized, labelled as typical estimate');
-  ok(/Snickerdoodle protein shake/.test(pv2) && /Generic/.test(pv2), 'unknown flavor → generic, clearly labelled');
+  ok(/Ball Park hot dog/.test(pv2) && /not label data/.test(pv2), 'brand without product data → typical estimate, says so');
+  ok(/Snickerdoodle protein shake/.test(pv2) && (await page.locator('#foodPreview .tag.conf.e').count()) === 2, 'unknown flavor → clearly labelled Estimate');
   await type('');
 
   console.log('Unrecognized food must be resolved, never silently logged');
@@ -131,8 +131,8 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   await page.tap('[data-act="foodMine"]');
   await page.waitForSelector('.sheet [data-act="mfEdit"][data-id=""]');
   await page.tap('.sheet [data-act="mfEdit"][data-id=""]');
-  await page.waitForSelector('.sheet [data-in="mf"][data-k="name"]');
-  for (const [k, v] of [['name', 'Snickerdoodle protein shake'], ['unit', 'bottle'], ['p', '30'], ['cal', '160']]) {
+  await page.waitForSelector('.sheet [data-in="mf"][data-k="line"]');
+  for (const [k, v] of [['line', 'Snickerdoodle protein shake'], ['unit', 'bottle'], ['p', '30'], ['cal', '160']]) {
     await page.fill(`.sheet [data-in="mf"][data-k="${k}"]`, v);
     await page.dispatchEvent(`.sheet [data-in="mf"][data-k="${k}"]`, 'input');
   }
@@ -141,7 +141,9 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   await closeAll();
   await page.waitForTimeout(150);
   n = await nut();
-  ok(n.foods.length === 1 && n.foods[0].fav && n.foods[0].per.p === 30, 'custom food saved as a favorite');
+  const mine = n.foods.find((f) => f.name === 'Snickerdoodle protein shake');
+  ok(mine && mine.fav && mine.per.p === 30 && mine.status === 'user', 'custom food saved as a favorite, confirmed by you');
+  ok(n.foods.some((f) => /zorbleberr/i.test(f.name) && f.per.p === 4), 'the food you entered by hand earlier was kept in My foods');
   const fav = page.locator('[data-act="foodQuick"][data-k^="fav:"]');
   ok((await fav.count()) === 1 && /Snickerdoodle/.test(await fav.textContent()), 'favorite shows as a one-tap button');
   const before = await total();
@@ -149,7 +151,7 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   await page.waitForTimeout(200);
   ok((await total()) === before + 30, 'one tap logs 30 g');
   await type('1 Snickerdoodle protein shake');
-  ok(/Your saved food/.test(await page.textContent('#foodPreview')) && /≈30 g/.test(await page.textContent('#foodPreview')), 'typing the name now uses the saved values (30 g, not generic 25 g)');
+  ok(/Confirmed by you/.test(await page.textContent('#foodPreview')) && /≈30 g/.test(await page.textContent('#foodPreview')), 'typing the name now uses the saved values (30 g, not generic 25 g)');
   await type('');
   const rec = page.locator('[data-act="foodQuick"][data-k^="rec:"]').first();
   const recCount = (await nut()).entries.length;
@@ -235,6 +237,154 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   await page.waitForTimeout(200);
   ok((await page.locator('.food-mini').count()) === 1 && (await page.locator('.hero [data-act="quickGen"]').count()) === 1, 'Home shows the workout hero plus a small protein card');
 
+  console.log('Branded products: exact match');
+  await page.goto(URL + '#/food');
+  await page.waitForTimeout(200);
+  await type('2 Oscar Mayer beef hot dogs');
+  let bpv = await page.textContent('#foodPreview');
+  ok(/Oscar Mayer Classic Beef Franks/.test(bpv) && /2 franks/.test(bpv) && /≈10 g/.test(bpv), 'exact product, quantity doubled');
+  ok((await page.locator('#foodPreview .tag.conf.v').count()) === 1 && /oscarmayer\.com/.test(bpv), 'marked Verified with its source');
+  await type('3 tablespoons Oikos Triple Zero Greek yogurt');
+  ok(/≈5 g/.test(await page.textContent('#foodPreview')) && /converted/.test(await page.textContent('#foodPreview')), 'tablespoons converted from the 150 g cup (≈)');
+
+  console.log('Branded products: ambiguous match asks, then learns');
+  await type('1 Fairlife protein shake and a chicken breast');
+  ok((await page.locator('#foodPreview .li.amb').count()) === 1, 'ambiguous product flagged');
+  const candTxt = await page.textContent('#foodPreview .cands');
+  ok(/26 g protein/.test(candTxt) && /42 g protein/.test(candTxt) && /30 g protein/.test(candTxt) && /14 fl oz/.test(candTxt), 'candidates show protein and serving to tell them apart');
+  ok(/Generic estimate/.test(candTxt), 'a generic estimate is offered too');
+  await page.tap('#foodAddBtn');
+  await page.waitForSelector('.sheet [data-act="rvLog"]');
+  ok(await page.isDisabled('.sheet [data-act="rvLog"]'), 'cannot log until the product is chosen');
+  const beforeAmb = (await nut()).entries.length;
+  await page.tap('.sheet [data-act="rvPick"][data-id="p:fairlife-core-power-elite"]');
+  await page.waitForTimeout(100);
+  ok(!(await page.isDisabled('.sheet [data-act="rvLog"]')), 'chosen → can log');
+  await page.tap('.sheet [data-act="rvLog"]');
+  await page.waitForTimeout(250);
+  let nn = await nut();
+  const elite = nn.entries.slice(beforeAmb).find((e) => /Core Power Elite/.test(e.name));
+  ok(nn.entries.length === beforeAmb + 2 && elite && Math.round(elite.per.p * elite.qty) === 42 && elite.conf === 'verified', 'logged Core Power Elite (42 g, verified) and the chicken breast');
+  const eliteLib = nn.foods.find((f) => f.productId === 'fairlife-core-power-elite');
+  ok(eliteLib && eliteLib.aliases.includes('fairlife protein shake') && elite.foodId === 'my:' + eliteLib.id, 'auto-saved to My foods with what you typed as shorthand');
+  await type('1 fairlife protein shake');
+  ok(!(await page.locator('#foodPreview .li.amb').count()) && /Core Power Elite/.test(await page.textContent('#foodPreview')), 'same words now resolve directly');
+
+  console.log('Branded products: new flavor from the label, then shorthand');
+  // (the brand-less "Snickerdoodle protein shake" saved earlier in this run would compete with the branded one)
+  await page.evaluate(() => WT.db.nutrition.foods.filter((f) => f.name === 'Snickerdoodle protein shake').forEach((f) => WT.nut.deleteFood(f.id)));
+  await type('1 Pioneer Pastures Snickerdoodle protein shake');
+  ok(/Snickerdoodle isn’t in your library/.test(await page.textContent('#foodPreview')), 'unknown flavor of a known brand → asks, doesn’t guess');
+  await page.tap('#foodPreview [data-act="productAdd"][data-variant="Snickerdoodle"]');
+  await page.waitForSelector('.sheet [data-act="paManual"]');
+  ok(/Pioneer Pastures/.test(await page.textContent('.sheet #paLocal')), 'search shows the brand’s known product');
+  await page.tap('.sheet [data-act="paManual"]');
+  await page.waitForSelector('.sheet [data-in="mf"][data-k="line"]');
+  ok((await page.inputValue('.sheet [data-in="mf"][data-k="brand"]')) === 'Pioneer Pastures' && (await page.inputValue('.sheet [data-in="mf"][data-k="flavor"]')) === 'Snickerdoodle', 'brand and flavor prefilled');
+  for (const [k, v] of [['line', 'A2 Protein Shake'], ['unit', 'bottle'], ['serving', '1 bottle (11 fl oz)'], ['p', '30'], ['aliases', 'my shake']]) {
+    await page.fill(`.sheet [data-in="mf"][data-k="${k}"]`, v);
+    await page.dispatchEvent(`.sheet [data-in="mf"][data-k="${k}"]`, 'input');
+  }
+  await page.tap('.sheet [data-act="mfSave"]');
+  await page.waitForTimeout(250);
+  bpv = await page.textContent('#foodPreview');
+  ok(/Pioneer Pastures A2 Protein Shake · Snickerdoodle/.test(bpv) && /Confirmed by you/.test(bpv) && /≈30 g/.test(bpv), 'typed item now uses the label values you entered');
+  await page.tap('#foodAddBtn');
+  await page.waitForTimeout(250);
+  for (const [t, gText] of [['Snickerdoodle shake', '≈30 g'], ['2 snickerdoodle shakes', '≈60 g'], ['Pioneer Pastures shake', '≈30 g'], ['1 bottle of the snickerdoodle protein shake', '≈30 g'], ['my shake', '≈30 g']]) {
+    await type(t);
+    const pv = await page.textContent('#foodPreview');
+    ok(/Snickerdoodle/.test(pv) && pv.includes(gText) && !(await page.locator('#foodPreview .li.amb').count()), `“${t}” → your Snickerdoodle shake (${gText})`);
+  }
+  await type('2 Pioneer Pastures Snickerdoodle shakes and 3 tablespoons Oikos Triple Zero');
+  ok((await page.locator('#foodPreview .li.pv').count()) === 2 && /Estimated ≈65 g protein/.test(await page.textContent('#foodPreview')), 'two products in one entry: 60 + 5 g');
+  await type('');
+
+  console.log('Correcting a product updates the library');
+  nn = await nut();
+  const snkEntry = nn.entries.find((e) => /Pioneer Pastures A2 Protein Shake · Snickerdoodle/.test(e.name) && e.foodId && e.foodId.startsWith('my:'));
+  await page.tap(`[data-act="foodEdit"][data-id="${snkEntry.id}"]`);
+  await page.waitForSelector('.sheet [data-in="feNum"][data-k="p"]');
+  await page.fill('.sheet [data-in="feNum"][data-k="p"]', '31');
+  await page.dispatchEvent('.sheet [data-in="feNum"][data-k="p"]', 'input');
+  await page.tap('.sheet [data-act="feSave"]');
+  await page.waitForTimeout(200);
+  nn = await nut();
+  const snkLib = nn.foods.find((f) => f.id === snkEntry.foodId.slice(3));
+  ok(snkLib.per.p === 31 && snkLib.status === 'user', 'library product corrected to 31 g');
+  await type('snickerdoodle shake');
+  ok(/≈31 g/.test(await page.textContent('#foodPreview')), 'next entry uses the correction');
+  await type('');
+
+  console.log('Optional online lookup (mocked Open Food Facts)');
+  await page.route('**/world.openfoodfacts.org/**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ products: [{ code: '0123', product_name: 'Plain Skyr', brands: "Siggi's", serving_size: '1 cup (150 g)', serving_quantity: 150, nutriments: { proteins_serving: 16, 'energy-kcal_serving': 110, carbohydrates_serving: 6, fat_serving: 0 } }, { code: '9', product_name: 'No protein data', brands: 'X', nutriments: {} }] }) }));
+  await page.tap('[data-act="foodMine"]');
+  await page.waitForSelector('.sheet-foot [data-act="productAdd"]');
+  await page.tap('.sheet-foot [data-act="productAdd"]');
+  await page.waitForSelector('.sheet [data-in="paQ"]');
+  await page.fill('.sheet [data-in="paQ"]', "siggi's skyr");
+  await page.dispatchEvent('.sheet [data-in="paQ"]', 'input');
+  await page.tap('.sheet [data-act="paOnline"]');
+  await page.waitForSelector('.sheet [data-act="paPickOnline"]');
+  ok((await page.locator('.sheet [data-act="paPickOnline"]').count()) === 1 && /16 g protein/.test(await page.textContent('.sheet')), 'result shown with its nutrition; results without protein dropped');
+  await page.tap('.sheet [data-act="paPickOnline"]');
+  await page.waitForSelector('.sheet [data-act="mfSave"]');
+  ok(/Open Food Facts/.test(await page.textContent('.sheet')) && /Estimate/.test(await page.textContent('.sheet')) && (await page.inputValue('.sheet [data-in="mf"][data-k="p"]')) === '16', 'shown for checking before it’s saved');
+  await page.tap('.sheet [data-act="mfSave"]');
+  await page.waitForTimeout(200);
+  const sig = (await nut()).foods.find((f) => /Skyr/.test(f.name));
+  ok(sig && sig.status === 'user' && /Open Food Facts, confirmed by you/.test(sig.source.name) && sig.per.p === 16, 'saved as confirmed by you, source kept');
+  await page.goto(URL + '#/food');
+  await page.waitForTimeout(150);
+  await type("a siggi's skyr");
+  ok(/Plain Skyr/.test(await page.textContent('#foodPreview')) && /≈16 g/.test(await page.textContent('#foodPreview')), 'looked-up product recognized when typed');
+  await type('');
+  // offline: lookup degrades gracefully, saved products keep working
+  await ctx.setOffline(true);
+  await page.tap('[data-act="foodMine"]');
+  await page.waitForSelector('.sheet-foot [data-act="productAdd"]');
+  await page.tap('.sheet-foot [data-act="productAdd"]');
+  await page.waitForSelector('.sheet [data-act="paOnline"]');
+  await page.fill('.sheet [data-in="paQ"]', 'quest bar');
+  await page.dispatchEvent('.sheet [data-in="paQ"]', 'input');
+  await page.waitForTimeout(200);
+  ok(/Quest Protein Bar/.test(await page.textContent('.sheet #paLocal')), 'offline: bundled products still searchable');
+  await page.tap('.sheet [data-act="paOnline"]');
+  await page.waitForTimeout(200);
+  ok(/offline/i.test(await page.textContent('.sheet')), 'offline: online lookup explains itself instead of failing');
+  await closeAll();
+  await type('Snickerdoodle shake');
+  ok(/Snickerdoodle/.test(await page.textContent('#foodPreview')), 'offline: saved products still recognized');
+  await type('');
+  await ctx.setOffline(false);
+  await page.unroute('**/world.openfoodfacts.org/**');
+
+  console.log('My foods: favorite, alias, delete');
+  await page.tap('[data-act="foodMine"]');
+  await page.waitForSelector('.sheet [data-act="mfStar"]');
+  ok((await page.locator('.sheet .tag.conf').count()) >= 3, 'library shows each product’s status');
+  const sigId = (await nut()).foods.find((f) => /Skyr/.test(f.name)).id;
+  await page.tap(`.sheet [data-act="mfStar"][data-id="${sigId}"]`);
+  ok((await nut()).foods.find((f) => f.id === sigId).fav, 'starred as favorite');
+  await page.tap(`.sheet [data-act="mfEdit"][data-id="${sigId}"]`);
+  await page.waitForSelector('.sheet [data-in="mf"][data-k="aliases"]');
+  await page.fill('.sheet [data-in="mf"][data-k="aliases"]', 'skyr cup');
+  await page.dispatchEvent('.sheet [data-in="mf"][data-k="aliases"]', 'input');
+  await page.tap('.sheet [data-act="mfSave"]');
+  await page.waitForTimeout(150);
+  await closeAll();
+  await type('skyr cup');
+  ok(/Plain Skyr/.test(await page.textContent('#foodPreview')), 'new shorthand works');
+  await type('');
+  await page.tap('[data-act="foodMine"]');
+  await page.tap(`.sheet [data-act="mfEdit"][data-id="${sigId}"]`);
+  await page.waitForSelector('.sheet [data-act="mfDelete"]');
+  await page.tap('.sheet [data-act="mfDelete"]');
+  await page.tap('[data-act="confirmOk"]');
+  await page.waitForTimeout(200);
+  ok(!(await nut()).foods.some((f) => f.id === sigId), 'custom product deleted');
+  await closeAll();
+
   console.log('Persistence after refresh');
   const snap = JSON.stringify(await nut());
   await page.evaluate(() => WT.flush());
@@ -249,7 +399,7 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   const file = '/tmp/forge-food-backup.json';
   await dl.saveAs(file);
   const backup = JSON.parse(fs.readFileSync(file, 'utf8'));
-  ok(backup.data.nutrition.entries.length === JSON.parse(snap).entries.length && backup.data.nutrition.foods.length === 2, 'backup file contains entries and saved foods');
+  ok(backup.data.nutrition.entries.length === JSON.parse(snap).entries.length && backup.data.nutrition.foods.length === JSON.parse(snap).foods.length && backup.data.nutrition.foods.some((f) => f.aliases.length), 'backup file contains entries, saved products and their aliases');
   ok(backup.data.history.length === 1, 'backup still contains workouts');
   await page.evaluate(() => { WT.resetAll(); });
   await page.reload();

@@ -79,14 +79,54 @@ Built for speed, not precision: no weighing, no grams, no calorie targets. Every
 2. It is split into items on commas, new lines, `and`, `with`, `plus`… except inside names that contain them (*rice and beans*, *mac and cheese*, *PB&J*, your own saved foods).
 3. Each item is matched against **your saved foods first**, then the bundled table in `js/foods.js` (≈115 foods, ≈460 aliases), by whole words, ignoring plurals; the longest match wins.
 4. The quantity, serving word (`scoop`, `cup`, `bowl`, `handful`, `serving`, `shake`, `package`, `slice`, `can`, `oz`/`g`/`lb`…) and size word (`small`, `large`) set the amount. Each food defines what its servings mean (a scoop of Greek yogurt ≈ ¾ of a single cup; a bowl of protein pasta ≈ 1½ servings).
-5. Leftover words are kept honestly: a known **brand** is named but uses the typical estimate for that kind of food ("Oscar Mayer recognized · typical hot dog estimate, not label data"); an unknown flavor marks the item **Generic**. A handful of widely published products (Premier Protein, Fairlife Core Power / Core Power Elite, Fairlife milk, Oikos Pro, Oikos Triple Zero, Quest bars, Kodiak) use their typical label values and still say "check your package".
-6. If nothing matches, the item is **never logged with a made-up value**: you pick a suggestion (typo-tolerant) or type your own protein, optionally saving it to My foods.
+5. Leftover words are kept honestly: a brand with no product data is named but uses the typical estimate for that kind of food ("Ball Park recognized · typical hot dog estimate, not label data"); an unknown flavor keeps the item an **Estimate**.
+6. If nothing matches, the item is **never logged with a made-up value**: you pick a suggestion (typo-tolerant), look the product up, or type your own protein.
 
 Protein shows as whole grams, calories to the nearest 5–10; there are no decimals on screen.
 
-**Favorites and custom foods.** *My foods* (Food screen or Settings → Nutrition) holds foods with your own protein per serving. Saved foods are recognized when you type their name and override the generic estimate; starred ones appear as one-tap buttons. The star on any logged entry saves it the same way. *Recent* shows the last distinct foods you logged.
+### Branded products
 
-**Storage.** The food log lives in the same local store as workouts (`wt.data.v1`, data version 4) under `nutrition: { entries, foods }`, keyed by local date. Upgrading from version 3 only adds this empty section; workout data is untouched. Export includes it; *Replace* restores it exactly and *Merge* adds missing entries and foods by id without duplicates (merging an older backup without food data keeps your log).
+Specific products are matched **before** generic foods, from two places: your library (*My foods*) and the bundled `js/products.js`. Each bundled product stores brand, product, flavor, serving size, protein, calories/carbs/fat when published (blank otherwise, never guessed), category, source URL and the date it was checked.
+
+**Three confidence levels**, shown as a tag on every item:
+- **Verified**: protein and serving were read from the manufacturer's own product page.
+- **Confirmed by you**: you entered it from the label, confirmed a looked-up result, or corrected a value.
+- **Estimate**: a generic value, a retailer-listed label not confirmed with the manufacturer, or a flavor we have no data for.
+
+**Bundled products** (checked 2026-11-02):
+
+| Product | Protein / serving | Status · source |
+|---|---|---|
+| Pioneer Pastures A2 Protein Shake (Vanilla, Chocolate, Strawberries & Cream) | 30 g / bottle | Verified · pioneerpastures.com |
+| Premier Protein Shake (all listed flavors) | 30 g / bottle | Verified · premierprotein.com |
+| fairlife Core Power (26 g) | 26 g / 14 fl oz | Verified · fairlife.com |
+| fairlife Core Power Elite (42 g) | 42 g / 14 fl oz | Verified · fairlife.com |
+| fairlife Nutrition Plan | 30 g / 11.5 fl oz | Verified · fairlife.com |
+| Oikos Triple Zero (Vanilla, 5.3 oz cup) | 15 g | Verified · oikos.com |
+| Oikos Pro yogurt (5.3 oz cup) | 20 g | Verified · oikos.com |
+| Quest Protein Bar, Chocolate Chip Cookie Dough | 21 g / 60 g bar | Verified · questnutrition.com |
+| Jif Creamy Peanut Butter | 7 g / 2 tbsp | Verified · jif.com |
+| Barilla Protein+ pasta (US) | 17 g / 3.5 oz dry | Verified · barilla.com |
+| Kraft Singles American | 4 g / 21 g slice | Verified · kraftheinz.com |
+| Oscar Mayer Classic Beef Franks | 5 g / link | Verified · oscarmayer.com |
+| Oscar Mayer Classic Wieners | 5 g / link | Verified · oscarmayer.com |
+| Kodiak Power Cakes, Buttermilk | 15 g / serving | Verified · kodiakcakes.com |
+| Chobani Complete yogurt cup (Vanilla) | 15 g | Estimate · retailer label listing |
+| Chobani Complete yogurt drink (Vanilla) | 20 g / 10 fl oz | Estimate · retailer label listing |
+| fairlife 2% ultra-filtered milk | ≈13 g / cup | Estimate · fairlife says "up to 13 g" |
+
+**Matching and uncertainty.** A product is picked automatically only when nothing typed contradicts it and it's singled out within its brand: "Oikos Triple Zero", "core power elite", "2 Oscar Mayer beef hot dogs". Otherwise the entry asks, listing each candidate's brand, flavor, serving and protein, plus a generic estimate and "a different product":
+- "Fairlife protein shake" (Core Power, Core Power Elite or Nutrition Plan?), "Oikos", "Kraft cheese", "Oscar Mayer hot dogs".
+- A flavor the data doesn't list ("Quest cookies and cream", "Pioneer Pastures Snickerdoodle") is never assumed. You can use a listed product's values as a labelled estimate, or add it from the label.
+- Generic words never land on a brand: "milk", "greek yogurt", "beef hot dog" and "protein pasta" stay generic estimates.
+
+**Amounts** follow the label serving. Bottles, bars, cups and links multiply directly ("2 shakes" = 2 bottles). Weights use the label grams. Tablespoons and teaspoons are converted from the serving weight (a 150 g Triple Zero cup ≈ 10 tbsp) and marked "≈".
+
+**Adding and correcting products.** *My foods → Find product* searches your library and bundled products (works offline). *Search online* optionally queries [Open Food Facts](https://world.openfoodfacts.org), a free, keyless community database of package labels. A result is shown for checking before saving. *Enter from label* takes values straight from the package. Correcting a logged product's values updates it in the library.
+
+**Personal library.** Branded products are saved to *My foods* automatically when logged, with their source and status. When you resolve an ambiguous entry, the words you typed become shorthand, so "Oscar Mayer hot dogs" or "Snickerdoodle shake" resolve directly next time. You can star favorites (one-tap buttons), edit values, add shorthand names and delete products. *Recent* shows the last distinct foods you logged.
+
+**Storage.** The food log lives in the same local store as workouts (`wt.data.v1`, data version 5) under `nutrition: { entries, foods }`, keyed by local date. Version 4 → 5 only adds fields (product brand / flavor / aliases / status / source, and each entry's confidence); workout data is untouched. Export includes the log and the library with aliases. *Replace* restores them exactly. *Merge* adds missing entries and products by id without duplicates.
 
 ## Run locally
 
@@ -118,8 +158,8 @@ node tests/engine.test.js                          # generator, intensity statis
 python3 -m http.server 8765 & node tests/e2e.test.js   # full browser flow (needs Playwright)
 node tests/features.test.js                         # exercise demonstrations + More options panel
 node tests/settypes.test.js                         # drop sets, build-up sets, plain set types unchanged
-node tests/nutrition.test.js                        # food parser, estimates, totals, trends, guidance, migration, backup
-node tests/food.test.js                             # food tracker in the browser: logging, editing, favorites, dates, export/restore
+node tests/nutrition.test.js                        # food parser, brands, ambiguity, library, estimates, trends, migration, backup
+node tests/food.test.js                             # food tracker in the browser: logging, brands, lookup (mocked), favorites, dates, export/restore
 ```
 The end-to-end test generates every workout type, swaps exercises, logs a full session, refreshes mid-workout, saves, and checks that the next session shows previous weights and an increase recommendation that is only applied on approval. It also checks the v1 → v2 data upgrade, intensity variety across repeated generations through the UI, the intensity picker, PR detection, the charts, export → wipe → import, persistence after refresh, the theme toggle and offline loading.
 
@@ -135,7 +175,8 @@ js/charts.js          SVG line/bar charts + rings
 js/ui.js              shell, router, sheets, toasts, rest timer
 js/views-train.js     Home, Generate, Train (active workout)
 js/views-data.js      Exercises, History, Progress, Settings
-js/foods.js           bundled food reference (typical values per serving)
+js/foods.js           bundled generic food reference (typical values per serving)
+js/products.js        branded products with sources, serving sizes and status
 js/nutrition.js       food parser, food-log store, trends, guidance
 js/views-food.js      Food screen, review/edit sheets, My foods
 fonts/                Inter (OFL) + license

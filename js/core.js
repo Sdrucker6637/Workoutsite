@@ -178,7 +178,7 @@
 
   /* ───────── Store ───────── */
   const KEY = 'wt.data.v1';
-  const DATA_VERSION = 4;
+  const DATA_VERSION = 5;
   const fresh = () => ({
     version: DATA_VERSION,
     profile: WT.defaultProfile(),
@@ -215,7 +215,8 @@
     out.history = Array.isArray(out.history) ? out.history : [];
     out.customExercises = Array.isArray(out.customExercises) ? out.customExercises : [];
     out.overrides = out.overrides || {};
-    // v3 → v4: food & protein log. Purely additive — workout data is untouched.
+    // v3 → v4: food & protein log. v4 → v5: branded products — library entries gain brand / flavor / aliases /
+    // status / source, log entries gain a confidence level. Purely additive; workout data is untouched.
     out.nutrition = normalizeNutrition(out.nutrition);
     if (!(+out.profile.proteinTarget > 0)) out.profile.proteinTarget = 150;
     // v2 → v3: multi-stage sets (drop / build-up). Existing sets need no change — a set without

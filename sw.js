@@ -1,11 +1,11 @@
 /* Service worker: caches the app shell so Forge works fully offline. Bump VERSION on each deploy. */
-const VERSION = 'forge-v9';
+const VERSION = 'forge-v10';
 // Exercise illustrations live in their own cache: it survives app updates, so a demo is
 // downloaded once and then always served locally. Bump only if the media files change.
 const MEDIA = 'forge-media-v1';
 const ASSETS = [
   './', './index.html', './manifest.webmanifest', './css/app.css',
-  './js/exercises.js', './js/core.js', './js/foods.js', './js/nutrition.js', './js/engine.js', './js/media.js', './js/icons.js', './js/charts.js',
+  './js/exercises.js', './js/core.js', './js/foods.js', './js/products.js', './js/nutrition.js', './js/engine.js', './js/media.js', './js/icons.js', './js/charts.js',
   './js/ui.js', './js/views-train.js', './js/views-data.js', './js/views-food.js',
   './fonts/inter-latin-opsz-normal.woff2',
   './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png',
