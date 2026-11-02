@@ -61,7 +61,7 @@ for (const t of WT.WORKOUT_TYPES) {
       ok(tally.heavy <= Math.ceil(w.exercises.length / 2), 'heavy safety cap');
       w.exercises.forEach((i) => {
         const ex = WT.ex(i.exId);
-        ok(ex.intensities.includes(i.intensity), `${ex.id} got ineligible ${i.intensity}`);
+        ok(WT.STAGED[i.intensity] ? WT.canStage(ex) : ex.intensities.includes(i.intensity), `${ex.id} got ineligible ${i.intensity}`);
         if (i.intensity === 'burnout') ok(!ex.tags.includes('spinal-load'), 'burnout on spinal-load ' + ex.id);
         if (i.intensity === 'heavy') ex.category === 'compound' ? heavyComp++ : heavyIso++;
         if (i.intensity === 'burnout') ex.category === 'compound' ? burnComp++ : burnIso++;
@@ -82,7 +82,7 @@ for (const t of WT.WORKOUT_TYPES) {
   const w = WT.generate(WT.defaultSettings('full'));
   w.exercises.forEach((i) => (i.intensity = null));
   const odds = WT.db.profile.intensityOdds; const saved = Object.assign({}, odds);
-  Object.assign(odds, { heavy: 0, burnout: 0, standard: 0, regular: 1 });
+  Object.assign(odds, { heavy: 0, burnout: 0, standard: 0, regular: 1, drop: 0, buildup: 0 });
   WT.randomizeIntensities(w.exercises);
   ok(w.exercises.every((i) => i.intensity === 'regular' || !WT.ex(i.exId).intensities.includes('regular')), 'all-regular workout produced when odds allow it (ineligible exercises fall back to standard)');
   Object.assign(odds, saved);
@@ -129,9 +129,13 @@ function addSession(daysAgo, exId, sets, extra) {
 }
 const plan = id => { const p = WT.prescribe(WT.ex(id), 'standard'); return { repMin: p.repMin, repMax: p.repMax, sets: p.sets, intensity: 'standard' }; };
 let r = WT.recommend('db-incline-press', plan('db-incline-press')); ok(r.action === 'new', 'no history → new');
+addSession(8, 'db-incline-press', [[40, 10], [40, 10], [40, 10]]);
+r = WT.recommend('db-incline-press', plan('db-incline-press')); console.log('\nincline all top once →', r.headline, '|', r.reasons.join(' '));
+ok(r.action === 'hold' && r.weight === 40, 'one good session → hold and confirm (no increase on a single workout)');
 addSession(5, 'db-incline-press', [[40, 10], [40, 10], [40, 10]]);
-r = WT.recommend('db-incline-press', plan('db-incline-press')); console.log('\nincline all top →', r.headline, '|', r.reasons.join(' '));
-ok(r.action === 'increase' && r.weight === 45, 'upper db +5 → 45');
+r = WT.recommend('db-incline-press', plan('db-incline-press')); console.log('incline all top twice →', r.headline, '|', r.reasons.join(' '));
+ok(r.action === 'increase' && r.weight === 45, 'confirmed at the top twice → upper db +5 → 45');
+ok(r.reasons.some((x) => x.startsWith('Recent sessions')), 'Why shows the relevant history');
 addSession(2, 'db-incline-press', [[45, 9], [45, 8], [45, 8]]);
 r = WT.recommend('db-incline-press', plan('db-incline-press')); console.log('in range →', r.headline); ok(r.action === 'hold' && r.weight === 45 && r.headline.includes('aim for'), 'hold 45');
 addSession(1, 'db-incline-press', [[45, 7], [45, 6], [45, 6]]);
@@ -143,16 +147,17 @@ addSession(4, 'cable-fly', [[30, 10], [30, 10], [30, 9]], { intensity: 'regular'
 r = WT.recommend('cable-fly', { repMin: 8, repMax: 12, sets: 3, intensity: 'regular' }); console.log('30x10,10,9 →', r.headline);
 ok(r.action === 'hold' && r.weight === 30 && r.repTargets.join() === '10,10,10', 'maintain 30 lb, aim 10,10,10');
 // Lower body
+addSession(6, 'goblet-squat', [[50, 12], [50, 12], [50, 11]]);
 addSession(3, 'goblet-squat', [[50, 12], [50, 12], [50, 12]]);
-r = WT.recommend('goblet-squat', plan('goblet-squat')); console.log('goblet →', r.headline); ok(r.action === 'increase' && r.weight === 55, 'lower +5 → 55');
+r = WT.recommend('goblet-squat', plan('goblet-squat')); console.log('goblet →', r.headline); ok(r.action === 'increase' && r.weight === 55, 'previous session one rep short of the top + now at the top → lower +5 → 55');
 addSession(3, 'bulgarian-split-squat', [[30, 14], [30, 13], [30, 13]]);
 r = WT.recommend('bulgarian-split-squat', plan('bulgarian-split-squat')); console.log('bss exceeded →', r.headline); ok(r.weight === 40, 'lower exceeded +10 → 40');
 // Max dumbbell cap
 addSession(3, 'db-hip-thrust', [[60, 12], [60, 12], [60, 12]]);
 r = WT.recommend('db-hip-thrust', plan('db-hip-thrust')); console.log('cap →', r.headline); ok(r.action === 'reps' && r.weight === 60, 'cap at 60');
 // Cable
-addSession(3, 'cable-pushdown', [[50, 12], [50, 12], [50, 12]]);
-r = WT.recommend('cable-pushdown', plan('cable-pushdown')); ok(r.weight === 55, 'cable +5');
+addSession(3, 'cable-pushdown', [[50, 12], [50, 12], [50, 12]], { effort: 'easy' });
+r = WT.recommend('cable-pushdown', plan('cable-pushdown')); ok(r.weight === 55, 'top of range and rated easy → cable +5');
 // Bodyweight pull-up
 addSession(3, 'pullup', [[0, 10], [0, 10], [0, 10]]);
 r = WT.recommend('pullup', plan('pullup')); console.log('pullup top →', r.headline, '|', r.reasons.join(' ')); ok(r.action === 'progress', 'pullup progress');
@@ -168,7 +173,7 @@ r = WT.recommend('db-shoulder-press', plan('db-shoulder-press')); console.log('l
 const hp = WT.prescribe(WT.ex('goblet-squat'), 'heavy');
 r = WT.recommend('goblet-squat', { repMin: hp.repMin, repMax: hp.repMax, sets: hp.sets, intensity: 'heavy' }); console.log('heavy from e1rm →', r.headline, r.reasons[0]); ok(r.weight >= 55, 'heavy e1rm based');
 // PRs
-const prs = WT.personalRecords('db-incline-press'); ok(prs.heaviest.w === 45 && prs.count === 4, 'PRs');
+const prs = WT.personalRecords('db-incline-press'); ok(prs.heaviest.w === 45 && prs.count === 5, 'PRs');
 // Finish session with PR
 const s = WT.sessionFromWorkout({ type: 'push', title: 'Push', exercises: [Object.assign({ exId: 'db-incline-press' }, WT.prescribe(WT.ex('db-incline-press'), 'regular'))] });
 s.exercises[0].sets.forEach(x => { x.w = 50; x.r = 8; x.done = true; });

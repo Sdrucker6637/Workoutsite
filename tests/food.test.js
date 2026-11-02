@@ -34,7 +34,7 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   await page.evaluate((s) => { WT.flush = WT.save = () => {}; localStorage.clear(); localStorage.setItem('wt.data.v1', JSON.stringify(s)); }, SEED);
   await page.reload();
   let m = await db();
-  ok(m.version === 5 && JSON.stringify(m.history) === JSON.stringify(SEED.history), 'v3 → v5: workout history byte-identical');
+  ok(m.version === 6 && JSON.stringify(m.history) === JSON.stringify(SEED.history), 'v3 → v6: workout history byte-identical');
   ok(m.profile.name === 'Lifter' && m.profile.proteinTarget === 150 && m.nutrition.entries.length === 0, 'settings kept; empty food log; 150 g default target');
   const histBefore = JSON.stringify(m.history);
 

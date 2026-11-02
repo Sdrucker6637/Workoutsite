@@ -155,8 +155,9 @@
     burnouts: true,
     // Intensity: probability-based randomisation (default) or fixed counts
     intensityRandom: true,
-    intensityOdds: { heavy: 22, regular: 30, burnout: 16, standard: 32 },
-    intensityFixed: { heavy: 2, burnout: 1 },
+    // Drop / build-up sets can also be drawn automatically (v6). Low odds: they are techniques, not defaults.
+    intensityOdds: { heavy: 22, regular: 30, burnout: 16, standard: 32, drop: 7, buildup: 7 },
+    intensityFixed: { heavy: 2, burnout: 1, drop: 0, buildup: 0 },
     experience: 'intermediate',
     equipment: ['db', 'bench', 'cable', 'lat', 'row', 'mb', 'bw', 'bar'],
     dumbbells: { min: 5, max: 60, step: 5, microLoad: false },
@@ -174,11 +175,16 @@
     proteinTarget: 150,
     showMacros: true,
     homeProtein: true,
+    // Achievements (v6): optional and quiet. Celebrations can be turned off separately.
+    achievements: true,
+    achCelebrate: true,
+    // Recommendations learn from what you actually do (all on-device)
+    adaptive: true,
   });
 
   /* ───────── Store ───────── */
   const KEY = 'wt.data.v1';
-  const DATA_VERSION = 5;
+  const DATA_VERSION = 6;
   const fresh = () => ({
     version: DATA_VERSION,
     profile: WT.defaultProfile(),
@@ -188,8 +194,53 @@
     active: null,
     draft: null,
     nutrition: { entries: [], foods: [] },
+    meals: freshMeals(),
+    achievements: freshAch(),
+    learn: freshLearn(),
     createdAt: new Date().toISOString(),
   });
+
+  /* v6 stores. Each is self-contained so older data simply gains empty ones. */
+  function freshMeals() {
+    return { custom: [], edits: {}, selected: [], unavailable: [], staples: [], usage: {}, favorites: [], recent: [], prefs: { diets: [], disliked: [], dislikedText: [], airFryer: true, servings: 2, maxTime: 0 } };
+  }
+  function freshAch() {
+    // unlocked: { id: { at: date it was reached, found: when Forge noticed, retro: reached before tracking began } }
+    return { unlocked: {}, since: null, seen: [] };
+  }
+  function freshLearn() {
+    // Draft-level signals the history can't show: exercises removed or swapped out of a plan before starting.
+    return { dropped: {} };
+  }
+  WT.freshMeals = freshMeals;
+  const arr = (a) => (Array.isArray(a) ? a : []);
+  function normalizeMeals(m) {
+    const f = freshMeals();
+    m = m && typeof m === 'object' ? m : {};
+    const out = Object.assign(f, m);
+    ['custom', 'selected', 'unavailable', 'staples', 'favorites', 'recent'].forEach((k) => (out[k] = arr(out[k])));
+    out.custom = out.custom.filter((x) => x && x.id && x.name && ['protein', 'carb', 'veg'].includes(x.cat));
+    out.favorites = out.favorites.filter((x) => x && x.key && x.name);
+    out.edits = out.edits && typeof out.edits === 'object' ? out.edits : {};
+    out.usage = out.usage && typeof out.usage === 'object' ? out.usage : {};
+    out.prefs = Object.assign(freshMeals().prefs, out.prefs || {});
+    ['diets', 'disliked', 'dislikedText'].forEach((k) => (out.prefs[k] = arr(out.prefs[k])));
+    return out;
+  }
+  function normalizeAch(a) {
+    a = a && typeof a === 'object' ? a : {};
+    const out = Object.assign(freshAch(), a);
+    out.unlocked = out.unlocked && typeof out.unlocked === 'object' ? out.unlocked : {};
+    out.seen = arr(out.seen);
+    return out;
+  }
+  function normalizeLearn(l) {
+    l = l && typeof l === 'object' ? l : {};
+    const out = Object.assign(freshLearn(), l);
+    out.dropped = out.dropped && typeof out.dropped === 'object' ? out.dropped : {};
+    return out;
+  }
+  WT.normalizeMeals = normalizeMeals;
 
   const V1_GOALS = [
     'Reduce body fat and get leaner and more defined',
@@ -219,6 +270,11 @@
     // status / source, log entries gain a confidence level. Purely additive; workout data is untouched.
     out.nutrition = normalizeNutrition(out.nutrition);
     if (!(+out.profile.proteinTarget > 0)) out.profile.proteinTarget = 150;
+    // v5 → v6: meal planner, achievements and recommendation learning get their own stores. Purely additive;
+    // nothing existing is rewritten. New intensity odds (drop / build-up) arrive through the defaults merge above.
+    out.meals = normalizeMeals(out.meals);
+    out.achievements = normalizeAch(out.achievements);
+    out.learn = normalizeLearn(out.learn);
     // v2 → v3: multi-stage sets (drop / build-up). Existing sets need no change — a set without
     // `stages` is a plain set. Only sanitise staged sets so later code can rely on their shape.
     if ((out.version || 1) < DATA_VERSION) out.version = DATA_VERSION;
@@ -280,6 +336,7 @@
         console.error(e);
         WT.toast && WT.toast('Could not save — storage may be full. Export a backup.', 'error');
       }
+      if (WT.onSaved) WT.onSaved();
     };
     if (immediate) write();
     else saveTimer = setTimeout(write, 150);
@@ -324,6 +381,23 @@
       const fids = new Set(nut.foods.map((f) => f.id));
       const fnames = new Set(nut.foods.map((f) => String(f.name).toLowerCase()));
       nIn.foods.forEach((f) => !fids.has(f.id) && !fnames.has(String(f.name).toLowerCase()) && nut.foods.push(f));
+      // Meal planner: add custom ingredients and saved recipes that aren't here; keep this device's selections and prefs.
+      const mIn = normalizeMeals(JSON.parse(JSON.stringify(data.meals || {})));
+      const meals = (WT.db.meals = normalizeMeals(WT.db.meals));
+      const mids = new Set(meals.custom.map((x) => x.id));
+      mIn.custom.forEach((x) => !mids.has(x.id) && meals.custom.push(x));
+      const rkeys = new Set(meals.favorites.map((x) => x.key));
+      mIn.favorites.forEach((x) => !rkeys.has(x.key) && meals.favorites.push(x));
+      mIn.staples.forEach((x) => !meals.staples.includes(x) && meals.staples.push(x));
+      Object.entries(mIn.usage).forEach(([k, v]) => (meals.usage[k] = Math.max(+meals.usage[k] || 0, +v || 0)));
+      // Achievements: keep the earliest record of each one.
+      const aIn = normalizeAch(data.achievements);
+      const ach = (WT.db.achievements = normalizeAch(WT.db.achievements));
+      Object.entries(aIn.unlocked).forEach(([k, v]) => {
+        const cur = ach.unlocked[k];
+        if (!cur || (v && v.at && new Date(v.at) < new Date(cur.at))) ach.unlocked[k] = v;
+      });
+      if (aIn.since && (!ach.since || new Date(aIn.since) < new Date(ach.since))) ach.since = aIn.since;
     } else {
       WT.db = migrate(data);
     }

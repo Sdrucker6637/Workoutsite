@@ -24,15 +24,16 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
     history: [{ id: 'old1', type: 'push', title: 'Push', startedAt: '2026-10-01T17:00:00.000Z', endedAt: '2026-10-01T18:00:00.000Z', durationSec: 3600, totals: { sets: 3, volume: 1200 }, prs: [], exercises: [{ uid: 'u1', exId: 'db-bench-press', name: 'Dumbbell Bench Press', intensity: 'regular', targetSets: 3, repMin: 6, repMax: 10, sets: [{ w: '40', r: '10', done: true }, { w: '40', r: '10', done: true }, { w: '40', r: '10', done: true }] }] }], customExercises: [], overrides: {} })));
   await page.reload();
   let m = await db();
-  ok(m.version === 5 && m.history.length === 1 && m.profile.name === 'Old' && m.profile.excluded[0] === 'crunch', 'v1 history and settings preserved');
+  ok(m.version === 6 && m.history.length === 1 && m.profile.name === 'Old' && m.profile.excluded[0] === 'crunch', 'v1 history and settings preserved');
   ok(m.profile.theme === 'light' && m.profile.goals[0].startsWith('Reduce overall') && m.profile.intensityRandom === true, 'new defaults applied (theme, unedited goals, intensity odds)');
   ok((await page.evaluate(() => WT.personalRecords('db-bench-press').heaviest.w)) === 40, 'old history feeds records');
   await page.evaluate(() => { WT.flush = WT.save = () => {}; localStorage.clear(); });
   await page.reload();
 
   console.log('Navigation');
-  ok((await page.locator('.tabs .tab').count()) === 6, 'compact 6-tab bar on mobile (incl. Food)');
-  for (const r of ['dashboard', 'generate', 'workout', 'library', 'history', 'progress', 'food', 'settings']) {
+  ok((await page.locator('.tabs .tab').count()) === 5, 'compact 5-tab bar on mobile (Train tab removed; incl. Food)');
+  ok((await page.locator('.tabs [data-nav="workout"], .side [data-nav="workout"]').count()) === 0, 'no Train entry in the navigation');
+  for (const r of ['dashboard', 'generate', 'workout', 'library', 'history', 'progress', 'food', 'meals', 'achievements', 'settings']) {
     await page.goto(URL + '#/' + r); await page.waitForTimeout(120);
     const over = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth);
     ok(!over, `${r}: no horizontal overflow`);
@@ -56,9 +57,9 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   for (let k = 0; k < 18; k++) {
     await gen();
     const ex = (await db()).draft.exercises;
-    tallies.add(['heavy', 'regular', 'burnout', 'standard'].map((x) => ex.filter((e) => e.intensity === x).length).join('/'));
+    tallies.add(['heavy', 'regular', 'burnout', 'standard', 'drop', 'buildup'].map((x) => ex.filter((e) => e.intensity === x).length).join('/'));
     if (!ex.some((e) => e.intensity === 'heavy' || e.intensity === 'burnout')) noSpecial = true;
-    ok(await page.evaluate(() => WT.db.draft.exercises.every((e) => WT.ex(e.exId).intensities.includes(e.intensity))), 'assigned intensities are eligible');
+    ok(await page.evaluate(() => WT.db.draft.exercises.every((e) => (WT.STAGED[e.intensity] ? WT.canStage(WT.ex(e.exId)) : WT.ex(e.exId).intensities.includes(e.intensity)))), 'assigned intensities are eligible');
   }
   ok(tallies.size >= 5, `intensity mix varies (${tallies.size} distinct in 18)`);
   console.log('    a workout with no heavy/burnout seen in this sample:', noSpecial);
@@ -99,6 +100,8 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
 
   console.log('Workout 1: log sets with the editor');
   await page.click('[data-act="genType"][data-k="full"]'); await gen();
+  // This flow logs plain sets; staged (drop / build-up) logging is covered in settypes.test.js and v6.test.js
+  await page.evaluate(() => { WT.db.draft.exercises.forEach((i) => { if (WT.STAGED[i.intensity]) { delete i.stageCount; delete i.stageRest; Object.assign(i, WT.prescribe(WT.ex(i.exId), 'regular')); } }); WT.save(true); });
   await page.click('.sticky-cta [data-act="startDraft"]');
   await page.waitForSelector('.cur');
   ok(await page.evaluate(() => document.body.classList.contains('focus')), 'focus mode hides navigation while training');
@@ -162,7 +165,9 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   ok(d.history[0].exercises.find((e) => e.uid === lastUid).skipped, 'skipped exercise recorded');
 
   console.log('History → next session uses real data');
-  await page.evaluate(() => { const s = WT.db.history[0]; const t = Date.now() - 3 * 864e5; s.startedAt = new Date(t - 3600e3).toISOString(); s.endedAt = new Date(t).toISOString(); WT.flush(); });
+  await page.evaluate(() => { const s = WT.db.history[0]; const t = Date.now() - 3 * 864e5; s.startedAt = new Date(t - 3600e3).toISOString(); s.endedAt = new Date(t).toISOString();
+    // A second, earlier session at the same numbers: weight only goes up once the top of the range is confirmed
+    const p = JSON.parse(JSON.stringify(s)); p.id = 'confirm-prev'; p.startedAt = new Date(t - 3 * 864e5 - 3600e3).toISOString(); p.endedAt = new Date(t - 3 * 864e5).toISOString(); WT.db.history.unshift(p); WT.flush(); });
   await page.click('[data-act="histRepeat"]'); await page.waitForSelector('.cur');
   await page.click(`[data-act="woFocus"][data-uid="${(await db()).active.exercises.find((e) => e.exId === cur0.exId).uid}"]`);
   const it = (await db()).active.exercises.find((e) => e.exId === cur0.exId);
@@ -176,11 +181,11 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
     ok(+(await page.locator('.field-num input[data-f="w"]').inputValue()) === rec.weight, 'Apply sets recommended weight only on approval');
     for (let i = 0; i < it.sets.length; i++) { await page.click(`[data-act="woCheck"][data-uid="${it.uid}"]`); if (i < it.sets.length - 1) await page.click(`[data-act="woFocus"][data-uid="${it.uid}"]`); }
     await shot('train-progress');
-  }
+  } else await page.click(`[data-act="woCheck"][data-uid="${it.uid}"]`); // bodyweight / timed: log one set so the workout can be saved
   await page.click('.mtop [data-act="woFinish"]'); await page.click('[data-act="woSave"]'); await page.waitForTimeout(300);
   d = await db();
-  ok(d.history.length === 2, 'second workout saved');
-  if (tt0 === 'weight') ok(d.history[1].prs.some((p) => p.exId === cur0.exId), 'PR detected');
+  ok(d.history.length === 3, 'second workout saved (plus the seeded earlier session)');
+  if (tt0 === 'weight') ok(d.history[2].prs.some((p) => p.exId === cur0.exId), 'PR detected');
   await page.click('.sheet [data-act="closeSheet"]');
 
   console.log('Progress');
@@ -215,21 +220,21 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   const file = '/tmp/forge-export.json';
   await dl.saveAs(file);
   const exported = JSON.parse(fs.readFileSync(file, 'utf8'));
-  ok(exported.data.history.length === 2 && exported.data.customExercises.length === 1, 'export contains history + custom exercises');
+  ok(exported.data.history.length === 3 && exported.data.customExercises.length === 1, 'export contains history + custom exercises');
   await page.evaluate(() => WT.resetAll()); await page.reload();
   ok((await db()).history.length === 0, 'data wiped');
   await page.goto(URL + '#/settings');
   await page.setInputFiles('[data-in="importFile"]', file);
   await page.click('[data-act="doImport"][data-mode="replace"]');
   d = await db();
-  ok(d.history.length === 2 && d.customExercises.length === 1 && d.profile.excluded.length === 1, 'import restored everything');
+  ok(d.history.length === 3 && d.customExercises.length === 1 && d.profile.excluded.length === 1, 'import restored everything');
   await page.setInputFiles('[data-in="importFile"]', file);
   await page.click('[data-act="doImport"][data-mode="merge"]');
-  ok((await db()).history.length === 2, 'merge import does not duplicate');
+  ok((await db()).history.length === 3, 'merge import does not duplicate');
   await page.reload();
-  ok((await db()).history.length === 2, 'data persists after refresh');
+  ok((await db()).history.length === 3, 'data persists after refresh');
   await page.goto(URL + '#/history');
-  ok((await page.locator('[data-entry]').count()) === 2, 'history lists both workouts');
+  ok((await page.locator('[data-entry]').count()) === 3, 'history lists all workouts');
 
   console.log('Theme & offline');
   await page.goto(URL + '#/settings');

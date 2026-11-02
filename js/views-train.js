@@ -38,18 +38,41 @@
     const greet = `Good ${h < 12 ? 'morning' : h < 18 ? 'afternoon' : 'evening'}${p.name ? ', ' + esc(p.name) : ''}`;
 
     // Focal action
-    const hero = active
-      ? `<div class="panel hero">
+    const runBtn = (cls) => `<button class="btn ${cls || 'btn-secondary'} btn-lg" data-act="runRecord">${I('cardio', 18)}Record a run</button>`;
+    let hero;
+    if (active)
+      hero = `<div class="panel hero">
           <div class="kicker">In progress</div>
           <h2>${esc(active.title)}</h2>
           <p class="tnum">${doneSets(active)} of ${totalSets(active)} sets · <span id="dashClock">${WT.fmtClock((Date.now() - new Date(active.startedAt)) / 1000)}</span></p>
-          <div class="actions"><a class="btn btn-primary btn-lg" href="#/workout">Resume workout</a></div></div>`
-      : `<div class="panel hero">
+          <div class="actions"><a class="btn btn-primary btn-lg" href="#/workout">Resume workout</a>${runBtn('btn-plain')}</div></div>`;
+    else if (sugg.kind === 'run')
+      hero = `<div class="panel hero">
+          <div class="kicker">Up next</div>
+          <h2>Run day</h2>
+          <p>${esc(sugg.reason)}</p>
+          <div class="actions">${runBtn('btn-primary')}
+            <button class="btn btn-secondary btn-lg" data-act="quickGen" data-k="cardio">${I('sparkles', 18)}Generate cardio</button>
+            <a class="btn btn-plain" href="#/generate">Choose another type</a>
+          </div></div>`;
+    else if (sugg.kind === 'recovery')
+      hero = `<div class="panel hero">
+          <div class="kicker">Up next</div>
+          <h2>Recovery</h2>
+          <p>${esc(sugg.reason)}</p>
+          ${sugg.reasons.length ? `<p class="footnote t3 mt8">${esc(sugg.reasons.join(' '))}</p>` : ''}
+          <div class="actions">${runBtn()}
+            <button class="btn btn-plain" data-act="quickGen" data-k="${sugg.type}">Generate ${esc(WT.typeName(sugg.type))} anyway</button>
+          </div></div>`;
+    else
+      hero = `<div class="panel hero">
           <div class="kicker">Up next</div>
           <h2>${WT.typeName(sugg.type)}</h2>
           <p>${esc(sugg.reason)}</p>
+          ${sugg.reasons.length ? `<p class="footnote t3 mt8">${esc(sugg.reasons.join(' '))}</p>` : ''}
           <div class="actions">
             <button class="btn btn-primary btn-lg" data-act="quickGen" data-k="${sugg.type}">${I('sparkles', 18)}Generate workout</button>
+            ${runBtn()}
             <a class="btn btn-plain" href="#/generate">Choose another type</a>
           </div></div>`;
 
@@ -100,6 +123,7 @@
       <section class="section">
         <div class="section-title"><h2>This week</h2><span class="footnote t2 tnum">${week.strength} of ${p.strengthPerWeek} workouts${p.runsPerWeek ? ` · ${runs} of ${p.runsPerWeek} runs` : ''}</span></div>
         <div class="week">${days.join('')}</div>
+        ${WT.runList().length ? `<div class="row between mt12"><span class="footnote t3">${lastRunLine()}</span><button class="btn-link footnote" data-act="runList">All runs</button></div>` : ''}
       </section>
       ${WT.foodHomeSummary ? WT.foodHomeSummary() : ''}
       <section class="section">
@@ -119,13 +143,21 @@
       }
     </div>`;
   };
+  function lastRunLine() {
+    const r = WT.runList()[0];
+    if (!r) return '';
+    return `Last run ${WT.fmtRelDay(r.s.startedAt).toLowerCase()} · ${r.dist ? WT.fmtNum(r.dist) + ' mi' : ''}${r.dist && r.time ? ' in ' : ''}${r.time ? WT.fmtRunTime(r.time) : ''}${r.dist && r.time ? ` · ${WT.fmtPace(r.time / r.dist)} /mi` : ''}`;
+  }
   function runsThisWeek() {
     const start = WT.startOfWeek(new Date());
     return WT.db.history.filter((s) => new Date(s.startedAt) >= start && s.exercises.some((e) => !e.skipped && WT.ex(e.exId) && WT.ex(e.exId).tags.includes('run'))).length;
   }
 
   A.quickGen = (d) => {
+    const sugg = WT.suggestNext();
     WT.ui.gen = WT.defaultSettings(d.k);
+    if (sugg.duration && d.k !== 'cardio') WT.ui.gen.duration = sugg.duration; // sized to what you usually complete
+    WT.ui.gen.suggested = sugg.kind === 'strength' ? sugg.type : null;
     WT.db.draft = WT.generate(WT.ui.gen);
     WT.save();
     WT.go('generate');
@@ -139,6 +171,183 @@
     };
     if (WT.db.active) WT.confirm('Replace current workout?', 'A workout is in progress. Starting a run will discard it.', 'Discard and start', begin, true);
     else begin();
+  };
+
+  /* ═════════════════════ RECORD A RUN ═════════════════════
+   * A recorded run is a normal history session (type 'cardio', one run exercise, one set with time in decimal
+   * minutes and distance in miles) — exactly what the live "Log a run" flow saves, so history, the week strip,
+   * stats, recommendations and achievements all treat both the same way.
+   */
+  WT.runList = function () {
+    return WT.sessions()
+      .filter((s) => WT.isRunSession(s))
+      .map((s) => {
+        const e = s.exercises.find((x) => !x.skipped && WT.ex(x.exId) && WT.ex(x.exId).tags.includes('run'));
+        const set = (e.sets || []).find((x) => x.done) || {};
+        return { s, e, set, dist: +set.dist || 0, time: +set.time || 0 };
+      })
+      .reverse();
+  };
+  const RUN_KINDS = [['outdoor-run', 'Outdoor'], ['treadmill-run', 'Treadmill'], ['interval-run', 'Intervals']];
+  /** Save a run (new or edited). f: { id?, date 'YYYY-MM-DD', h, m, s, dist, kind, effort, notes } */
+  WT.saveRun = function (f) {
+    const dist = WT.round(parseFloat(String(f.dist).replace(',', '.')) || 0, 2);
+    const sec = (+f.h || 0) * 3600 + (+f.m || 0) * 60 + (+f.s || 0);
+    if (!(dist > 0) && !(sec > 0)) throw new Error('Enter a distance or a time');
+    if (dist > 200) throw new Error('That distance looks too long');
+    if (sec > 24 * 3600) throw new Error('That time looks too long');
+    const N = WT.nut;
+    const today = N.dayKey();
+    if (!N.validDay(f.date) || f.date > today) throw new Error('Choose a date that isn’t in the future');
+    const exId = WT.ex(f.kind) ? f.kind : 'outdoor-run';
+    const ex = WT.ex(exId);
+    const existing = f.id ? WT.db.history.find((x) => x.id === f.id) : null;
+    // Time of day: keep an edited run's time; a new run today ends now; a past run sits at 7 am that day.
+    let end;
+    if (existing && N.dayKey(new Date(existing.startedAt)) === f.date) end = new Date(existing.endedAt || existing.startedAt);
+    else if (f.date === today) end = new Date();
+    else end = new Date(N.parseDay(f.date).getTime() + 7 * 36e5 + Math.max(sec, 60) * 1000);
+    const start = new Date(end.getTime() - Math.max(sec, 0) * 1000);
+    if (WT.startOfDay(start).getTime() !== N.parseDay(f.date).getTime()) start.setTime(N.parseDay(f.date).getTime() + 6 * 36e5);
+    const set = { w: '', r: '', time: sec ? String(WT.round(sec / 60, 4)) : '', dist: dist ? String(dist) : '', done: true, at: end.toISOString() };
+    if (existing) {
+      let e = existing.exercises.find((x) => WT.ex(x.exId) && WT.ex(x.exId).tags.includes('run'));
+      if (!e) return null;
+      if (e.exId !== exId) Object.assign(e, { exId, name: ex.name });
+      const i = (e.sets || []).findIndex((x) => x.done);
+      if (i >= 0) e.sets[i] = Object.assign({}, e.sets[i], set);
+      else e.sets = [set];
+      e.effort = f.effort || null;
+      existing.notes = f.notes || '';
+      existing.startedAt = start.toISOString();
+      existing.endedAt = end.toISOString();
+      if (existing.exercises.length === 1) existing.durationSec = sec;
+      WT.save(true);
+      return existing;
+    }
+    const pr = WT.prescribe(ex, 'standard');
+    const s = {
+      id: WT.uid(),
+      type: 'cardio',
+      title: 'Run',
+      startedAt: start.toISOString(),
+      endedAt: end.toISOString(),
+      durationSec: sec,
+      settings: null,
+      notes: f.notes || '',
+      exercises: [{ uid: WT.uid(), exId, name: ex.name, intensity: 'standard', targetSets: 1, repMin: pr.repMin, repMax: pr.repMax, rest: 0, superset: null, note: '', notes: '', effort: f.effort || null, skipped: false, sets: [set] }],
+      totals: { sets: 1, volume: 0 },
+      prs: [],
+      meta: { source: 'run' },
+    };
+    WT.db.history.push(s);
+    WT.save(true);
+    return s;
+  };
+  function runForm(id) {
+    const N = WT.nut;
+    const ex0 = id ? WT.runList().find((r) => r.s.id === id) : null;
+    const t = ex0 ? Math.round(ex0.time * 60) : 0;
+    const f = ex0
+      ? { id, date: N.dayKey(new Date(ex0.s.startedAt)), h: t >= 3600 ? String(Math.floor(t / 3600)) : '', m: t ? String(Math.floor((t % 3600) / 60)) : '', s: t ? String(t % 60).padStart(2, '0') : '', dist: ex0.dist ? String(ex0.dist) : '', kind: ex0.e.exId, effort: ex0.e.effort || '', notes: ex0.s.notes || '' }
+      : { id: null, date: N.dayKey(), h: '', m: '', s: '', dist: '', kind: 'outdoor-run', effort: '', notes: '' };
+    const paceText = () => {
+      const sec = (+f.h || 0) * 3600 + (+f.m || 0) * 60 + (+f.s || 0);
+      const dist = parseFloat(String(f.dist).replace(',', '.')) || 0;
+      return sec > 0 && dist > 0 ? `${WT.fmtPace(sec / 60 / dist)} /mi average pace` : 'Pace appears once you enter distance and time';
+    };
+    WT.openSheet(() => ({
+      eyebrow: f.id ? 'Edit run' : 'Record a run',
+      title: f.id ? 'Run' : 'New run',
+      body: `<div class="stack" style="gap:18px">
+          ${H.seg(RUN_KINDS.filter(([k]) => WT.ex(k)), f.kind, 'runKind', '', 'full')}
+          <div class="row" style="gap:12px;align-items:flex-end">
+            <label class="stack grow" style="gap:6px"><span class="label">Distance</span><span class="row" style="gap:8px"><input class="input tnum run-in" id="runDist" type="text" inputmode="decimal" data-in="runF" data-k="dist" value="${esc(f.dist)}" placeholder="0.0" aria-label="Distance in miles" autocomplete="off"><span class="footnote t3">mi</span></span></label>
+            <label class="stack grow" style="gap:6px"><span class="label">Date</span><input class="input" type="date" data-in="runF" data-k="date" value="${esc(f.date)}" max="${N.dayKey()}" aria-label="Date"></label>
+          </div>
+          <div class="stack" style="gap:6px"><span class="label">Duration</span>
+            <div class="row run-time" style="gap:6px"><input class="input tnum" type="text" inputmode="numeric" data-in="runF" data-k="h" value="${esc(f.h)}" placeholder="0" aria-label="Hours"><span class="t3">h</span><input class="input tnum" type="text" inputmode="numeric" data-in="runF" data-k="m" value="${esc(f.m)}" placeholder="00" aria-label="Minutes"><span class="t3">m</span><input class="input tnum" type="text" inputmode="numeric" data-in="runF" data-k="s" value="${esc(f.s)}" placeholder="00" aria-label="Seconds"><span class="t3">s</span></div>
+            <span class="footnote t2 tnum" id="runPace">${paceText()}</span></div>
+          <div class="stack" style="gap:8px"><span class="label">How did it feel? <span class="t3">· optional</span></span>${H.seg([['easy', 'Easy'], ['good', 'Solid'], ['hard', 'Hard']], f.effort, 'runEffort', '', 'full')}</div>
+          <label class="stack" style="gap:6px"><span class="label">Notes <span class="t3">· optional</span></span><textarea class="input" data-in="runF" data-k="notes" style="min-height:64px" placeholder="Route, weather, how your legs felt…">${esc(f.notes)}</textarea></label>
+        </div>`,
+      foot: `${f.id ? `<button class="btn btn-plain btn-sm" style="color:var(--danger)" data-act="runDelete">Delete</button><span class="grow"></span>` : ''}<button class="btn btn-primary ${f.id ? '' : 'btn-lg btn-block'}" data-act="runSave">${f.id ? 'Save changes' : 'Save run'}</button>`,
+      after: (sheet) => {
+        if (!f.id && !f._focused) {
+          f._focused = true;
+          const el = sheet.querySelector('#runDist');
+          if (el) setTimeout(() => el.focus(), 60);
+        }
+      },
+    }));
+    WT.I.runF = (el) => {
+      let v = el.value;
+      if (['h', 'm', 's'].includes(el.dataset.k)) {
+        v = v.replace(/[^0-9]/g, '').slice(0, 3);
+        if (v !== el.value) el.value = v;
+      }
+      if (el.dataset.k === 'dist') {
+        v = v.replace(/[^0-9.,]/g, '');
+        if (v !== el.value) el.value = v;
+      }
+      f[el.dataset.k] = v;
+      const pe = document.getElementById('runPace');
+      if (pe) pe.textContent = paceText();
+    };
+    A.runKind = (d) => {
+      f.kind = d.v;
+      WT.refreshSheet();
+    };
+    A.runEffort = (d) => {
+      f.effort = f.effort === d.v ? '' : d.v;
+      WT.refreshSheet();
+    };
+    A.runSave = () => {
+      try {
+        const s = WT.saveRun(f);
+        WT.closeSheet(true);
+        WT.rerender();
+        const r = WT.runList().find((x) => x.s.id === s.id);
+        WT.toast(f.id ? 'Run updated' : `Run saved${r && r.dist && r.time ? ` · ${WT.fmtPace(r.time / r.dist)} /mi` : ''}`, 'good');
+      } catch (e) {
+        WT.toast(e.message, 'error');
+      }
+    };
+    A.runDelete = () =>
+      WT.confirm('Delete run?', 'It will be removed from your history and statistics.', 'Delete', () => {
+        WT.db.history = WT.db.history.filter((x) => x.id !== f.id);
+        WT.save(true);
+        WT.closeSheet(true);
+        if (WT.ui.route === 'history' && WT.ui.param === f.id) WT.go('history');
+        else WT.rerender();
+        WT.toast('Run deleted');
+      }, true);
+  }
+  WT.runForm = runForm;
+  A.runRecord = () => runForm(null);
+  A.runEdit = (d) => {
+    WT.closeSheet(true);
+    runForm(d.id);
+  };
+  A.runList = () => {
+    WT.openSheet(() => {
+      const list = WT.runList();
+      return {
+        title: 'Runs',
+        body: list.length
+          ? `<div class="list inset">${list
+              .map((r) => H.li({
+                act: 'runEdit',
+                attrs: `data-id="${r.s.id}"`,
+                title: `${r.dist ? WT.fmtNum(r.dist) + ' mi' : WT.ex(r.e.exId).name}${r.time ? ` · ${WT.fmtRunTime(r.time)}` : ''}`,
+                sub: `${WT.fmtDate(r.s.startedAt, { weekday: 'short', month: 'short', day: 'numeric' })}${r.dist && r.time ? ` · ${WT.fmtPace(r.time / r.dist)} /mi` : ''}${r.e.effort ? ` · ${{ easy: 'Easy', good: 'Solid', hard: 'Hard' }[r.e.effort]}` : ''}`,
+                trail: `<span class="t3">${I('edit', 15)}</span>`,
+              }))
+              .join('')}</div><p class="footnote t3 mt12">Tap a run to edit or delete it.</p>`
+          : `<p class="t2">No runs yet.</p>`,
+        foot: `<button class="btn btn-primary btn-block" data-act="runRecord">${I('plus', 15)}Record a run</button>`,
+      };
+    });
   };
 
   /* ═════════════════════ GENERATE ═════════════════════ */
@@ -156,19 +365,21 @@
     const types = GEN_TYPES.concat(GEN_TYPES.includes(g.type) ? [] : [g.type])
       .map((t) => `<button class="chip ${g.type === t ? 'on' : ''}" data-act="genType" data-k="${t}" aria-pressed="${g.type === t}">${WT.typeName(t)}</button>`)
       .join('');
-    const reg = Math.max(0, g.count - (+g.heavy || 0) - (+g.burnout || 0));
+    const reg = Math.max(0, g.count - (+g.heavy || 0) - (+g.burnout || 0) - (+g.drop || 0) - (+g.buildup || 0));
 
     const advanced = `
       <details class="adv mt24" ${H.keepOpen('genAdv')}><summary>${I('chevR', 14)}More options</summary>
         <div class="adv-body">
           <div class="adv-block"><span class="label">Intensity</span>
             <div class="row between wrap" style="gap:12px">${H.seg([['random', 'Randomized'], ['manual', 'Fixed']], random ? 'random' : 'manual', 'genSet', 'intensityMode')}
-            ${random ? `<span class="footnote t3 tnum">${['heavy', 'regular', 'burnout'].map((k) => `${H.pct(p.intensityOdds, k)}% ${k}`).join(' · ')}</span>` : ''}</div>
+            ${random ? `<span class="footnote t3 tnum">${['heavy', 'regular', 'burnout', 'drop', 'buildup'].filter((k) => +p.intensityOdds[k] > 0).map((k) => `${H.pct(p.intensityOdds, k)}% ${k === 'buildup' ? 'build-up' : k}`).join(' · ')}</span>` : ''}</div>
             ${
               random
-                ? `<p class="footnote t3 mt12">Each exercise is assigned independently, weighted by what suits it — some workouts have no heavy or burnout work at all. <a class="btn-link" href="#/settings">Adjust odds</a></p>`
+                ? `<p class="footnote t3 mt12">Each exercise is drawn from your odds, weighted by what suits it: heavy and build-up sets go to compound lifts early on, burnout and drop sets to safer isolation work near the end, and a workout never stacks too many techniques. <a class="btn-link" href="#/settings">Adjust odds</a></p>`
                 : `<div class="row between mt16"><span class="int heavy">Heavy</span>${H.stepper(g.heavy, 'genStep', 'heavy', 0, 12)}</div>
                    <div class="row between mt12"><span class="int burnout">Burnout</span>${H.stepper(g.burnout, 'genStep', 'burnout', 0, 12)}</div>
+                   <div class="row between mt12"><span class="int drop">Drop set</span>${H.stepper(g.drop || 0, 'genStep', 'drop', 0, 3)}</div>
+                   <div class="row between mt12"><span class="int buildup">Build-up set</span>${H.stepper(g.buildup || 0, 'genStep', 'buildup', 0, 3)}</div>
                    <p class="footnote t3 mt12">${reg} regular.</p>`
             }</div>
           <div class="adv-block"><div class="row between"><div><div class="strong" style="font-size:14.5px">Supersets</div><div class="footnote t3">Pair non-competing exercises</div></div>${H.toggle(g.supersets, 'genToggle', 'data-k="supersets"')}</div>
@@ -187,14 +398,17 @@
       plan = `<section class="section" id="planCol" style="scroll-margin-top:72px">
         <div class="plan-head"><div><h2 class="title2">${esc(d.title)}</h2><div class="plan-meta">${plural(d.exercises.length, 'exercise')} · ${sets} sets · about ${d.estimatedMin} min</div></div>
           <div class="row" style="gap:2px"><button class="icon-btn" data-act="rerollIntensity" title="Re-roll intensities" aria-label="Re-roll intensities">${I('zap', 17)}</button><button class="icon-btn" data-act="regenerate" title="Regenerate" aria-label="Regenerate">${I('refresh', 17)}</button><button class="icon-btn" data-act="clearDraft" title="Discard" aria-label="Discard plan">${I('x', 18)}</button></div></div>
+        ${(d.notes || []).length ? `<ul class="plan-why">${d.notes.slice(0, 4).map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
         <div class="plan-list fade-in">${planRows(d)}</div>
-        <div class="row between mt12"><button class="btn btn-plain btn-sm" data-act="openAdd" data-ctx="draft" style="margin-left:-10px">${I('plus', 15)}Add exercise</button>${(d.notes || []).length ? `<span class="footnote t3">${esc(d.notes[d.notes.length - 1])}</span>` : ''}</div>
+        <div class="row between mt12"><button class="btn btn-plain btn-sm" data-act="openAdd" data-ctx="draft" style="margin-left:-10px">${I('plus', 15)}Add exercise</button></div>
         <div class="sticky-cta"><button class="btn btn-primary btn-lg btn-block" data-act="startDraft">Start workout</button></div>
       </section>`;
     }
 
+    const act = WT.db.active;
     return `<div class="page">
       <div class="head"><h1 class="large-title">Generate</h1><p class="sub">Built from your goals, equipment and recent training.</p></div>
+      ${act ? `<a class="callout mb24" href="#/workout" style="margin-bottom:24px">${I('activity', 15)}<span class="grow"><span class="strong">${esc(act.title)}</span> is in progress</span><span class="btn-link footnote">Resume</span></a>` : ''}
       <div class="types">${types}</div>
       ${g.type === 'custom' ? `<div class="mt16"><div class="label" style="margin-bottom:10px">Muscle groups</div>${H.chipGroup(WT.CUSTOM_TARGETS, g.targets, 'genTarget', 'sm')}</div>` : ''}
       <div class="opts mt32">
@@ -204,6 +418,7 @@
       ${advanced}
       ${d ? `<button class="btn btn-secondary mt24" data-act="generate">${I('sparkles', 16)}Generate again</button>` : `<button class="btn btn-primary btn-lg btn-block mt24" data-act="generate">${I('sparkles', 18)}Generate workout</button>`}
       ${plan}
+      ${d ? '' : `<div class="row wrap mt16" style="gap:4px 8px"><button class="btn btn-plain btn-sm" data-act="startEmpty" style="margin-left:-10px">${I('plus', 15)}Start an empty workout</button><button class="btn btn-plain btn-sm" data-act="runRecord">${I('cardio', 15)}Record a run</button><button class="btn btn-plain btn-sm" data-act="logRun">${I('timer', 15)}Track a run live</button></div>`}
     </div>`;
   };
 
@@ -226,6 +441,7 @@
       <div style="min-width:0">
         <button class="nm" data-act="exDetail" data-id="${ex.id}">${esc(ex.name)}</button>
         <div class="meta"><span>${WT.muscleName(ex.primary)}</span><span class="rx">${H.target(it, ex)}</span>${load ? `<span>${load}</span>` : ''}${it.intensity !== 'standard' ? H.intensity(it.intensity, 'pickIntensity', it.uid, 'draft') : ''}${ss ? `<span class="ss-tag">Superset ${ss}</span>` : ''}</div>
+        ${it.why && it.why[0] && !['Swapped in', 'Added by you'].includes(it.why[0]) ? `<div class="why">${esc(it.why[0])}</div>` : ''}
       </div>
       <div class="acts">
         <a class="icon-btn sm" href="${esc(WT.videoUrl(ex))}" target="_blank" rel="noopener" title="Watch tutorial" aria-label="Watch ${esc(ex.name)} tutorial">${I('play', 15)}</a>
@@ -249,7 +465,11 @@
       g.heavy = Math.min(g.heavy, g.count);
       g.burnout = Math.min(g.burnout, g.count - g.heavy);
     }
-    if ((d.k === 'heavy' || d.k === 'burnout') && g.heavy + g.burnout > g.count) g[d.k] = g.count - (d.k === 'heavy' ? g.burnout : g.heavy);
+    const fixedKeys = ['heavy', 'burnout', 'drop', 'buildup'];
+    if (fixedKeys.includes(d.k)) {
+      const others = fixedKeys.filter((k) => k !== d.k).reduce((a, k) => a + (+g[k] || 0), 0);
+      if (others + g[d.k] > g.count) g[d.k] = Math.max(0, g.count - others);
+    }
     WT.rerender();
   };
   A.genSet = (d) => {
@@ -289,6 +509,8 @@
   A.generate = () => {
     const g = gen();
     if (g.type === 'custom' && !g.targets.length) return WT.toast('Choose at least one muscle group', 'error');
+    const sugg = WT.suggestNext();
+    g.suggested = sugg.kind === 'strength' ? sugg.type : null; // remembered so Forge can learn which types you prefer
     compose(() => WT.generate(g));
   };
   A.regenerate = () => {
@@ -303,10 +525,18 @@
     let tries = 0;
     do {
       d.exercises.forEach((i) => !i.locked && (i.intensity = null));
-      WT.randomizeIntensities(d.exercises);
+      WT.randomizeIntensities(d.exercises, WT.buildContext(Object.assign(WT.defaultSettings(d.type), d.settings || {}, { type: d.type })));
     } while (JSON.stringify(WT.intensityTally(d.exercises)) === before && ++tries < 6);
-    d.exercises.forEach((i) => Object.assign(i, WT.prescribe(WT.ex(i.exId), i.intensity)));
+    d.exercises.forEach((i) => {
+      if (i.locked && i.sets) return;
+      if (!WT.STAGED[i.intensity]) {
+        delete i.stageCount;
+        delete i.stageRest;
+      }
+      Object.assign(i, WT.prescribe(WT.ex(i.exId), i.intensity));
+    });
     d.exercises = WT.arrange(d.exercises, (d.settings || {}).supersets !== false, d.type);
+    d.plan = WT.intensityTally(d.exercises);
     d.estimatedMin = WT.estimateMinutes(d.exercises);
     WT.save();
     WT.rerender();
@@ -327,11 +557,31 @@
       body: `<div class="list inset">
         ${H.li({ act: 'openSwap', attrs: `data-ctx="draft" data-uid="${it.uid}"`, title: 'Swap exercise', chev: true })}
         ${H.li({ act: 'pickIntensity', attrs: `data-ctx="draft" data-uid="${it.uid}"`, title: 'Intensity', trail: `<span class="footnote t2">${WT.INTENSITY_INFO[it.intensity].name}</span>`, chev: true })}
+        ${WT.STAGED[it.intensity] ? H.li({ title: 'Stages per set', sub: `${WT.stageReps(it.intensity, it.stageCount || 3, it.repMin, it.repMax).join(' / ')} reps${WT.suggestedLoad(ex.id, it) ? ' · ' + esc(WT.suggestedLoad(ex.id, it)) : ''} — loads and reps stay editable during the workout`, trail: H.stepper(it.stageCount || 3, 'planStages', it.uid, 2, 5) }) : ''}
+        ${WT.STAGED[it.intensity] ? H.li({ title: 'Sets', trail: H.stepper(it.sets || 2, 'planSets', it.uid, 1, 4) }) : ''}
         ${H.li({ act: 'exDetail', attrs: `data-id="${ex.id}"`, title: 'Details and history', chev: true })}
         ${H.li({ act: 'planLock', attrs: `data-uid="${it.uid}"`, title: it.locked ? 'Unlock' : 'Lock', sub: 'Locked exercises stay when you regenerate' })}
         ${H.li({ act: 'planRemove', attrs: `data-uid="${it.uid}"`, title: 'Remove', cls: 'danger' })}
       </div>`,
     }));
+  };
+  A.planStages = (d) => {
+    const it = draftItem(d.k);
+    if (!it) return;
+    it.stageCount = WT.clamp((it.stageCount || 3) + +d.d, 2, 5);
+    WT.db.draft.estimatedMin = WT.estimateMinutes(WT.db.draft.exercises);
+    WT.save();
+    WT.refreshSheet();
+    WT.rerender();
+  };
+  A.planSets = (d) => {
+    const it = draftItem(d.k);
+    if (!it) return;
+    it.sets = WT.clamp((it.sets || 2) + +d.d, 1, 4);
+    WT.db.draft.estimatedMin = WT.estimateMinutes(WT.db.draft.exercises);
+    WT.save();
+    WT.refreshSheet();
+    WT.rerender();
   };
   A.planLock = (d) => {
     const it = draftItem(d.uid);
@@ -342,6 +592,8 @@
   };
   A.planRemove = (d) => {
     const dr = WT.db.draft;
+    const gone = dr.exercises.find((i) => i.uid === d.uid);
+    if (gone && !gone.locked) WT.recordDrop(gone.exId); // learning: removed before starting
     dr.exercises = dr.exercises.filter((i) => i.uid !== d.uid);
     const left = {};
     dr.exercises.forEach((i) => i.superset && (left[i.superset] = (left[i.superset] || 0) + 1));
@@ -498,6 +750,7 @@
         ni.uid = old.uid;
         w.exercises[idx] = ni;
       } else {
+        if (!old.locked && (old.why || [])[0] !== 'Swapped in') WT.recordDrop(old.exId); // learning: generated pick swapped out
         WT.applySwap(old, dd.id);
         w.estimatedMin = WT.estimateMinutes(w.exercises);
       }

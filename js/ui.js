@@ -13,11 +13,15 @@
   const NAV = [
     { id: 'dashboard', name: 'Home', icon: 'home' },
     { id: 'generate', name: 'Generate', icon: 'sparkles' },
-    { id: 'workout', name: 'Train', icon: 'activity' },
+    // The active-workout screen is reached from Home ("Resume workout") and after starting any workout;
+    // it no longer has its own tab, but the route (and everything on it) is unchanged.
+    { id: 'workout', name: 'Workout', icon: 'activity', hidden: true },
     { id: 'library', name: 'Exercises', icon: 'book' },
     { id: 'history', name: 'History', icon: 'clock' },
     { id: 'progress', name: 'Progress', icon: 'chart' },
     { id: 'food', name: 'Food', icon: 'food' },
+    { id: 'meals', name: 'Meal ideas', icon: 'sparkles' },
+    { id: 'achievements', name: 'Achievements', icon: 'trophy', optional: true },
     { id: 'settings', name: 'Settings', icon: 'settings' },
   ];
   WT.NAV = NAV;
@@ -25,14 +29,14 @@
   /* ───────── Shell ───────── */
   function shell() {
     const navLink = (n) => `<a href="#/${n.id}" class="nav" data-nav="${n.id}">${I(n.icon, 17)}<span>${n.name}</span><span class="slot"></span></a>`;
-    const tabs = ['dashboard', 'generate', 'workout', 'history', 'progress', 'food']
+    const tabs = ['dashboard', 'generate', 'history', 'progress', 'food']
       .map((id) => NAV.find((n) => n.id === id))
       .map((n) => `<a href="#/${n.id}" class="tab" data-nav="${n.id}">${I(n.icon, 23)}<span>${n.name}</span><span class="slot"></span></a>`)
       .join('');
     document.getElementById('app').innerHTML = `
       <aside class="side">
         <a href="#/dashboard" class="brand"><span class="brand-mark">${I('dumbbell', 15)}</span>Forge</a>
-        ${NAV.filter((n) => n.id !== 'settings').map(navLink).join('')}
+        ${NAV.filter((n) => n.id !== 'settings' && !n.hidden).map(navLink).join('')}
         <div class="side-spacer"></div>
         ${navLink(NAV.find((n) => n.id === 'settings'))}
       </aside>
@@ -48,7 +52,10 @@
   }
   WT.refreshShell = function () {
     const a = WT.db.active;
-    document.querySelectorAll('[data-nav="workout"] .slot').forEach((el) => (el.innerHTML = a ? '<span class="live" title="Workout in progress"></span>' : ''));
+    // A workout in progress shows as a dot on Home, where "Resume workout" lives
+    document.querySelectorAll('[data-nav="dashboard"] .slot').forEach((el) => (el.innerHTML = a ? '<span class="live" title="Workout in progress"></span>' : ''));
+    const achOn = WT.db.profile.achievements !== false;
+    document.querySelectorAll('.side [data-nav="achievements"]').forEach((el) => (el.style.display = achOn ? '' : 'none'));
     const focus = WT.ui.route === 'workout' && !!a;
     document.body.classList.toggle('focus', focus);
     const mb = $('#mtop');
@@ -96,7 +103,9 @@
     const after = WT.V[route + 'After'];
     if (after) requestAnimationFrame(() => after(param));
     WT.refreshShell();
-    document.querySelectorAll('[data-nav]').forEach((a) => a.classList.toggle('active', a.dataset.nav === route));
+    // Screens without a tab light up their parent tab (Meal ideas → Food, Achievements → Progress)
+    const parent = { meals: 'food', achievements: 'progress', workout: 'dashboard' }[route];
+    document.querySelectorAll('[data-nav]').forEach((a) => a.classList.toggle('active', a.dataset.nav === route || (a.classList.contains('tab') && a.dataset.nav === parent)));
     WT.renderTimer();
   };
   WT.rerender = () => WT.render(true);
@@ -388,12 +397,12 @@
       return `data-keep="${key}" ${WT.ui.open[key] ? 'open' : ''}`;
     },
     oddsBar(odds) {
-      const keys = ['heavy', 'regular', 'burnout', 'standard'];
+      const keys = ['heavy', 'regular', 'burnout', 'standard', 'drop', 'buildup'];
       const tot = keys.reduce((a, k) => a + Math.max(0, +odds[k] || 0), 0) || 1;
       return `<div class="oddsbar">${keys.map((k) => `<i class="${k}" style="width:${(Math.max(0, +odds[k] || 0) / tot) * 100}%"></i>`).join('')}</div>`;
     },
     pct(odds, k) {
-      const tot = ['heavy', 'regular', 'burnout', 'standard'].reduce((a, x) => a + Math.max(0, +odds[x] || 0), 0) || 1;
+      const tot = ['heavy', 'regular', 'burnout', 'standard', 'drop', 'buildup'].reduce((a, x) => a + Math.max(0, +odds[x] || 0), 0) || 1;
       return Math.round((Math.max(0, +odds[k] || 0) / tot) * 100);
     },
     li(o) {
@@ -497,6 +506,7 @@
     setInterval(tick, 250);
     if (!location.hash) history.replaceState(null, '', WT.db.active ? '#/workout' : '#/dashboard');
     WT.render();
+    if (WT.ach) WT.ach.schedule();
     if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
     if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => {});
   };

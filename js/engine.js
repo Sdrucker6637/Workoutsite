@@ -297,44 +297,104 @@
       return { action: 'hold', reps: lastMin, headline: `Match ${repsStr} and push for ${lastMin}`, reasons, basis };
     }
 
-    // Weighted exercise
+    // Weighted exercise — look at several recent sessions, not just the last one.
+    const recentH = hist.filter((h) => WT.daysBetween(h.date, new Date()) <= 56).slice(-4);
+    const fmtH = (h) => {
+      const tw = h.metrics.topWeight;
+      return `${WT.fmtDate(h.date, { month: 'short', day: 'numeric' })}: ${WT.fmtNum(tw)}×${h.sets.filter((x) => x.w === tw).map((x) => x.r).join(',')}`;
+    };
+    const histLine = recentH.length > 1 ? `Recent sessions — ${recentH.slice(-3).map(fmtH).join(' · ')}.` : null;
+    const withHist = (r) => {
+      if (histLine && !r.reasons.includes(histLine)) r.reasons.push(histLine);
+      r.history = recentH.slice(-3).map((h) => ({ date: h.date, sets: h.sets.filter((x) => x.w === h.metrics.topWeight).map((x) => ({ w: x.w, r: x.r })) }));
+      return r;
+    };
+    const hardRecent = recentH.slice(-3).filter((h) => h.effort === 'hard').length;
+    const prevNearTop = prev && prev.metrics.topWeight === topW && WT.daysBetween(prev.date, last.date) <= 21 && (() => {
+      const ps = prev.sets.filter((x) => x.w === topW);
+      return ps.length >= targetSets && ps.reduce((a, x) => a + x.r, 0) / ps.length >= (prev.repMax || lastMax) - 1;
+    })();
+    const declining = recentH.length >= 3 && recentH.slice(-3).every((h, i, a) => i === 0 || h.metrics.e1rm < a[i - 1].metrics.e1rm - 0.01);
+    const stale = days > 21; // a 3-week-old comparison is a check-in, not a basis for adding load
+    if (allTop && hardRecent >= 2)
+      return withHist({ action: 'hold', weight: topW, headline: `Repeat ${WT.fmtNum(topW)} ${u}`, reasons: [`You reached the top of the range ${when} (${lastStr}), but rated this exercise hard in ${hardRecent} of your last ${Math.min(3, recentH.length)} sessions.`, 'Hold the weight until it feels solid — consistent hard ratings mean the load is already challenging.'], basis });
     if (allTop && !hard) {
       const step = WT.stepLoad(ex, topW, +1, exceeded);
       if (step.capped)
-        return {
+        return withHist({
           action: 'reps',
           weight: topW,
           headline: `Stay at ${WT.fmtNum(topW)} ${u} — add reps or tempo`,
           reasons: [`You hit ${lastMax}+ reps on all sets ${when} (${lastStr}), but ${WT.fmtNum(topW)} ${u} is your heaviest available ${ex.load === 'db' ? 'dumbbell' : 'load'}.`, 'Progress with 1–2 more reps per set, a 3-second lowering phase, a pause at the stretch, or an extra set.'],
           basis,
-        };
+        });
+      // One good day isn't enough: add weight only when it's confirmed — the session before was also at (or one
+      // rep from) the top at this weight, you rated it easy, or every set clearly overshot the range.
+      const confirmed = prevTop || prevNearTop || easy || exceeded;
+      if (!confirmed || stale)
+        return withHist({
+          action: 'hold',
+          weight: topW,
+          reps: `${lastMax}`,
+          repTargets: workSets.map(() => lastMax).slice(0, targetSets),
+          headline: `Repeat ${WT.fmtNum(topW)} ${u} — confirm ${lastMax} reps`,
+          reasons: stale
+            ? [`You hit the top of the range last time (${lastStr}), but that was ${days} days ago.`, 'Repeat the weight as a check-in; if it still feels this good, the next session adds load.']
+            : [`You hit the top of the ${lastMin}–${lastMax} range on every set ${when} (${lastStr}).`, `Match it once more at ${WT.fmtNum(topW)} ${u}. Two sessions at the top confirm you're ready — weight isn't raised on a single good day.`],
+          basis,
+        });
       const inc = WT.round(step.w - topW, 2);
+      // Realistic dumbbell jumps: when the next dumbbell is a big relative jump on upper-body work, earn it with reps first.
+      const jump = inc / Math.max(1, topW);
+      const bestReps = Math.min(...workSets.map((x) => x.r));
+      if (ex.load === 'db' && WT.region(ex) !== 'lower' && jump > 0.2 && bestReps < lastMax + 2)
+        return withHist({
+          action: 'reps',
+          weight: topW,
+          reps: `${lastMax + 2}`,
+          repTargets: workSets.map(() => lastMax + 2).slice(0, targetSets),
+          headline: `Stay at ${WT.fmtNum(topW)} ${u} — build to ${lastMax + 2} reps`,
+          reasons: [`You're at the top of the range (${lastStr}). The next dumbbell, ${WT.fmtNum(step.w)} ${u}, is a ${Math.round(jump * 100)}% jump.`, `Build to ${lastMax + 2} reps on every set first so the heavier dumbbell lands back in range.`],
+          basis,
+        });
       const reasons = [`You completed all ${workSets.length} sets at the top of the ${lastMin}–${lastMax} range ${when} (${lastStr}).`];
-      if (prevTop) reasons.push('Second session in a row at the top of the range — you are ready.');
+      if (prevTop || prevNearTop) reasons.push('Your previous session at this weight was there too — the progress is consistent.');
+      else if (exceeded) reasons.push(`Every set went at least 3 reps past ${lastMax}, so the weight is clearly light for this range.`);
       if (easy) reasons.push('You also rated it easy.');
       reasons.push(`Add ${WT.fmtNum(inc)} ${u}${ex.load === 'db' ? ' (next available dumbbell)' : ''} and expect reps to drop toward ${lastMin}–${lastMin + 2}; build back up from there.`);
-      return { action: 'increase', weight: step.w, reps: `${lastMin}–${lastMax}`, headline: `${WT.fmtNum(step.w)} ${u} × ${lastMin}–${lastMax}`, delta: inc, reasons, basis };
+      return withHist({ action: 'increase', weight: step.w, reps: `${lastMin}–${lastMax}`, headline: `${WT.fmtNum(step.w)} ${u} × ${lastMin}–${lastMax}`, delta: inc, reasons, basis });
     }
     if (allTop && hard)
-      return { action: 'hold', weight: topW, headline: `Repeat ${WT.fmtNum(topW)} ${u}`, reasons: [`You hit every rep ${when} (${lastStr}) but rated it a grind. Repeat it once more so it feels solid before adding weight.`], basis };
+      return withHist({ action: 'hold', weight: topW, headline: `Repeat ${WT.fmtNum(topW)} ${u}`, reasons: [`You hit every rep ${when} (${lastStr}) but rated it a grind. Repeat it once more so it feels solid before adding weight.`], basis });
 
-    if (easy && allMin && avgReps >= (lastMin + lastMax) / 2) {
+    if (easy && allMin && avgReps >= (lastMin + lastMax) / 2 && prev && prev.effort === 'easy' && !stale) {
       const step = WT.stepLoad(ex, topW, +1);
       if (!step.capped)
-        return {
+        return withHist({
           action: 'increase',
           weight: step.w,
           reps: `${lastMin}–${lastMax}`,
           headline: `${WT.fmtNum(step.w)} ${u} × ${lastMin}–${lastMax}`,
           delta: WT.round(step.w - topW, 2),
-          reasons: [`You rated ${lastStr} as easy and averaged ${WT.fmtNum(avgReps)} reps.`, `A small jump to ${WT.fmtNum(step.w)} ${u} is reasonable.`],
+          reasons: [`You rated this easy two sessions running (latest ${lastStr}, averaging ${WT.fmtNum(avgReps)} reps).`, `A small jump to ${WT.fmtNum(step.w)} ${u} is reasonable.`],
           basis,
-        };
+        });
+    }
+    if (declining && !allMin) {
+      const step = WT.stepLoad(ex, topW, -1);
+      return withHist({
+        action: 'decrease',
+        weight: step.w,
+        reps: `${lastMin}–${lastMax}`,
+        headline: `Ease to ${WT.fmtNum(step.w)} ${u} × ${lastMin}–${lastMax}`,
+        reasons: [`Your last three sessions have trended down (latest ${lastStr}).`, `A lighter session at ${WT.fmtNum(step.w)} ${u} lets you recover and rebuild; sleep and food matter as much as load.`],
+        basis,
+      });
     }
 
     if (allMin) {
       const targets = repTargets(workSets.map((x) => x.r), lastMin, lastMax, targetSets);
-      return {
+      return withHist({
         action: 'hold',
         weight: topW,
         reps: targets.join(', '),
@@ -342,23 +402,23 @@
         headline: `Maintain ${WT.fmtNum(topW)} ${u} — aim for ${targets.join(', ')}`,
         reasons: [`Last time ${when}: ${lastStr}. Every set was in the ${lastMin}–${lastMax} range, but not all at the top.`, `Keep the weight and bring each set up by about a rep. Once all ${targetSets} sets reach ${lastMax}, the next step is a weight increase.`],
         basis,
-      };
+      });
     }
 
     // Struggled
     if (prevStruggled) {
       const step = WT.stepLoad(ex, topW, -1);
-      return {
+      return withHist({
         action: 'decrease',
         weight: step.w,
         reps: `${lastMin}–${lastMax}`,
         headline: `Drop to ${WT.fmtNum(step.w)} ${u} × ${lastMin}–${lastMax}`,
         reasons: [`You fell short of ${lastMin} reps at ${WT.fmtNum(topW)} ${u} in your last two sessions (latest: ${repsStr}).`, `Drop to ${WT.fmtNum(step.w)} ${u}, own the full range for a couple of sessions, then build back up.`],
         basis,
-      };
+      });
     }
     const targets = repTargets(workSets.map((x) => x.r), lastMin, lastMax, targetSets).map((r) => Math.max(lastMin, r));
-    return {
+    return withHist({
       action: 'hold',
       weight: topW,
       reps: targets.join(', '),
@@ -366,7 +426,7 @@
       headline: `Maintain ${WT.fmtNum(topW)} ${u} — aim for ${targets.join(', ')}`,
       reasons: [`Last time ${when}: ${lastStr} — some sets fell short of ${lastMin} reps${workSets.length < targetSets ? ` and only ${workSets.length} of ${targetSets} sets were completed` : ''}.`, 'Repeat this weight and aim to hit the minimum on every set. If it happens again, the app will suggest backing off.'],
       basis,
-    };
+    });
   };
 
   /**
@@ -738,6 +798,23 @@
   /** Drop / build-up sets need a load to change: weighted, rep-based exercises only. */
   WT.canStage = (ex) => !!ex && WT.trackType(ex) === 'weight' && ex.unit !== 'sec';
 
+  /** Every set type the generator may draw automatically (drop / build-up only on weighted exercises). */
+  WT.AUTO_TYPES = ['heavy', 'regular', 'burnout', 'standard', 'drop', 'buildup'];
+  /** Fatigue-heavy techniques: these are budgeted together so a workout never stacks too many. */
+  WT.TECHNIQUES = ['heavy', 'burnout', 'drop', 'buildup'];
+
+  /**
+   * Movements where piling on fatigue (a burnout or drop set) costs technique before it builds muscle:
+   * spinal loading, explosive work, free-weight squats / hinges / lunges, and advanced compound lifts.
+   */
+  WT.fatigueRisky = function (ex) {
+    if (!ex) return true;
+    if (ex.tags.includes('spinal-load') || ex.tags.includes('power') || ex.pattern === 'plyo') return true;
+    if (['hinge', 'squat', 'lunge'].includes(ex.pattern) && ['db', 'bb', 'kb'].includes(ex.load)) return true;
+    if (ex.category === 'compound' && (ex.load === 'bb' || ex.difficulty === 'advanced')) return true;
+    return false;
+  };
+
   /** Relative odds of each eligible intensity for one exercise (0 = not allowed). */
   WT.intensityWeights = function (ex, opts) {
     opts = opts || {};
@@ -745,6 +822,7 @@
     const odds = p.intensityOdds || {};
     const comp = ex.category === 'compound';
     const tt = WT.trackType(ex);
+    const pos = opts.position;
     const w = {};
     ex.intensities.forEach((k) => {
       let v = Math.max(0, +odds[k] || 0);
@@ -754,15 +832,42 @@
         if (ex.difficulty === 'advanced') v *= 0.6;
         if (p.experience === 'beginner') v *= 0.5;
         if (opts.fatigued) v *= 0.4; // muscle hammered in the last 48h
-        if (opts.position != null) v *= opts.position < 0.5 ? 1.25 : 0.7; // early in the session → heavier
+        if (pos != null) v *= pos < 0.5 ? 1.25 : 0.7; // early in the session → heavier
       } else if (k === 'burnout') {
         if (!p.burnouts) v = 0;
         v *= comp ? 0.35 : 1; // burnouts favour safer isolation / bodyweight work
         if (ex.tags.includes('spinal-load')) v = 0;
-        if (opts.position != null) v *= opts.position >= 0.5 ? 1.3 : 0.6; // finishers come late
+        // A near-failure set on a loaded squat, hinge or barbell compound adds injury risk for little gain
+        else if (WT.fatigueRisky(ex) && tt === 'weight') v = 0;
+        if (pos != null) v *= pos >= 0.5 ? 1.3 : 0.6; // finishers come late
       }
       w[k] = v;
     });
+    // Drop and build-up sets: only weighted, rep-based exercises (they need a load to change).
+    if (WT.canStage(ex)) {
+      const beginner = p.experience === 'beginner';
+      let d = Math.max(0, +odds.drop || 0);
+      if (d) {
+        if (WT.fatigueRisky(ex)) d = 0; // stripping weight to failure on these compromises technique
+        d *= comp ? 0.25 : 1; // isolation work first
+        if (ex.load === 'cable' || ex.load === 'machine') d *= 1.3; // quick, safe weight changes
+        if (pos != null) d *= pos >= 0.5 ? 1.5 : 0.25; // end of the workout
+        if (opts.fatigued) d *= 0.5;
+        if (beginner) d *= 0.3;
+        w.drop = d;
+      }
+      let b = Math.max(0, +odds.buildup || 0);
+      if (b) {
+        if (ex.tags.includes('power') || ex.pattern === 'plyo') b = 0;
+        if (ex.tags.includes('spinal-load')) b *= 0.5;
+        b *= comp ? 1 : 0.35; // pyramids suit compound lifts
+        if (ex.difficulty === 'advanced') b *= 0.6;
+        if (pos != null) b *= pos < 0.6 ? 1.2 : 0.4; // early-to-middle, while fresh
+        if (opts.fatigued) b *= 0.5;
+        if (beginner) b *= 0.4;
+        w.buildup = b;
+      }
+    }
     return w;
   };
   function drawWeighted(w, rnd) {
@@ -778,23 +883,49 @@
   }
   WT.drawWeighted = drawWeighted;
 
-  /** Independently randomise intensities for a list of workout items (locked items keep theirs). */
+  /** Per-workout limits so techniques are balanced rather than stacked. */
+  WT.intensityCaps = function (n) {
+    return {
+      heavy: Math.max(1, Math.ceil(n / 2)),
+      burnout: Math.max(1, Math.ceil(n / 3)),
+      drop: 1,
+      buildup: 1,
+      staged: n >= 7 ? 2 : 1, // drop + build-up together
+      techniques: Math.max(2, Math.ceil(n * 0.6)), // heavy + burnout + drop + build-up together
+    };
+  };
+  const tallyKey = (items) => WT.AUTO_TYPES.map((k) => items.filter((i) => i.intensity === k).length).join('/');
+
+  /**
+   * Independently randomise intensities for a list of workout items (locked items keep theirs).
+   * Each draw is weighted by suitability (position, compound vs isolation, fatigue, safety), then capped so
+   * one workout never piles up techniques. If the result repeats the pattern of BOTH of your last two
+   * workouts of this type, it's drawn again (up to a few times) so sessions don't settle into a template.
+   */
   WT.randomizeIntensities = function (items, ctx, rnd) {
     const n = items.length;
-    // Safety rails only — they rarely bind with default odds, and never force a minimum.
-    const cap = { heavy: Math.max(1, Math.ceil(n / 2)), burnout: Math.max(1, Math.ceil(n / 3)) };
-    const used = { heavy: 0, burnout: 0 };
-    items.forEach((i) => i.locked && i.intensity && used[i.intensity] != null && used[i.intensity]++);
-    const order = WT.shuffle(items.filter((i) => !(i.locked && i.intensity)));
-    order.forEach((i) => {
-      const ex = WT.ex(i.exId);
-      const pos = n > 1 ? items.indexOf(i) / (n - 1) : 0;
-      const fatigued = ctx && ctx.fatigue ? (ctx.fatigue[ex.primary] || 0) >= 8 : false;
-      const w = WT.intensityWeights(ex, { position: i.slot && i.slot.heavy ? 0 : pos, fatigued });
-      ['heavy', 'burnout'].forEach((k) => used[k] >= cap[k] && (w[k] = 0));
-      i.intensity = drawWeighted(w, rnd);
-      if (used[i.intensity] != null) used[i.intensity]++;
-    });
+    const cap = WT.intensityCaps(n);
+    const avoid = (ctx && ctx.recentTallies) || [];
+    const fixed = items.filter((i) => i.locked && i.intensity);
+    const draw = () => {
+      const used = { heavy: 0, burnout: 0, drop: 0, buildup: 0 };
+      fixed.forEach((i) => used[i.intensity] != null && used[i.intensity]++);
+      const order = WT.shuffle(items.filter((i) => !(i.locked && i.intensity)));
+      order.forEach((i) => {
+        const ex = WT.ex(i.exId);
+        const pos = n > 1 ? items.indexOf(i) / (n - 1) : 0;
+        const fatigued = ctx && ctx.fatigue ? (ctx.fatigue[ex.primary] || 0) >= 8 : false;
+        const w = WT.intensityWeights(ex, { position: i.slot && i.slot.heavy ? 0 : pos, fatigued });
+        const tech = used.heavy + used.burnout + used.drop + used.buildup;
+        ['heavy', 'burnout', 'drop', 'buildup'].forEach((k) => used[k] >= cap[k] && (w[k] = 0));
+        if (used.drop + used.buildup >= cap.staged) w.drop = w.buildup = 0;
+        if (tech >= cap.techniques) WT.TECHNIQUES.forEach((k) => (w[k] = 0));
+        i.intensity = drawWeighted(w, rnd);
+        if (used[i.intensity] != null) used[i.intensity]++;
+      });
+    };
+    draw();
+    for (let t = 0; avoid.length >= 2 && t < 3 && avoid.every((a) => a === tallyKey(items)); t++) draw();
     return items;
   };
 
@@ -803,7 +934,9 @@
     const f = WT.db.profile.intensityFixed || { heavy: 2, burnout: 1 };
     const heavy = Math.min(n, type === 'cardio' ? 0 : +f.heavy || 0);
     const burnout = Math.min(n - heavy, type === 'cardio' ? 0 : +f.burnout || 0);
-    return { heavy, burnout, regular: Math.max(0, n - heavy - burnout) };
+    const drop = Math.min(n - heavy - burnout, type === 'cardio' ? 0 : +f.drop || 0);
+    const buildup = Math.min(n - heavy - burnout - drop, type === 'cardio' ? 0 : +f.buildup || 0);
+    return { heavy, burnout, drop, buildup, regular: Math.max(0, n - heavy - burnout - drop - buildup) };
   }
   WT.autoIntensity = autoIntensity;
 
@@ -825,6 +958,8 @@
       intensityMode: p.intensityRandom === false ? 'manual' : 'random',
       heavy: (p.intensityFixed || {}).heavy != null ? +p.intensityFixed.heavy : 2,
       burnout: (p.intensityFixed || {}).burnout != null ? +p.intensityFixed.burnout : 1,
+      drop: +(p.intensityFixed || {}).drop || 0,
+      buildup: +(p.intensityFixed || {}).buildup || 0,
       prioritize: p.prioritize.slice(),
       avoidMuscles: p.avoidMuscles.slice(),
       supersets: p.supersets,
@@ -832,24 +967,40 @@
     };
   };
 
-  /** Context (fatigue, weekly volume, exercise recency) used by scoring. */
+  /** Context (fatigue, weekly volume, exercise / pattern recency, progress, learned habits) used by scoring. */
   function buildContext(settings) {
     const p = WT.db.profile;
+    const now = Date.now();
     const fatigue = WT.muscleLoad(48);
     const weekly = WT.muscleLoad(24 * 7);
-    const lastDone = {};
-    WT.db.history.forEach((s) =>
+    const lastDone = {}, patternLast = {}, exCount14 = {};
+    WT.db.history.forEach((s) => {
+      const t = new Date(s.endedAt || s.startedAt).getTime();
       s.exercises.forEach((e) => {
-        const t = new Date(s.endedAt || s.startedAt).getTime();
-        if (!e.skipped && (!lastDone[e.exId] || lastDone[e.exId] < t)) lastDone[e.exId] = t;
-      })
-    );
+        if (e.skipped || !(e.sets || []).some((x) => x.done)) return;
+        if (!lastDone[e.exId] || lastDone[e.exId] < t) lastDone[e.exId] = t;
+        const ex = WT.ex(e.exId);
+        if (ex && (!patternLast[ex.pattern] || patternLast[ex.pattern] < t)) patternLast[ex.pattern] = t;
+        if (now - t < 14 * 864e5) exCount14[e.exId] = (exCount14[e.exId] || 0) + 1;
+      });
+    });
+    const trends = {};
+    const adapt = p.adaptive !== false ? WT.adaptStats() : null;
+    // Intensity patterns of the last two workouts of this type (so a third in a row can be avoided)
+    const sameType = WT.sessions().filter((s) => s.type === settings.type && s.plan).slice(-2);
     return {
       p,
       settings,
+      now,
       fatigue,
       weekly,
       lastDone,
+      patternLast,
+      exCount14,
+      hasHistory: WT.db.history.length > 0,
+      trend: (id) => (trends[id] !== undefined ? trends[id] : (trends[id] = WT.progressTrend(id))),
+      adapt,
+      recentTallies: sameType.map((s) => WT.AUTO_TYPES.map((k) => +s.plan[k] || 0).join('/')),
       equipment: settings.equipment || p.equipment,
       prioritize: new Set(settings.prioritize || p.prioritize),
       avoid: new Set(settings.avoidMuscles || p.avoidMuscles),
@@ -858,6 +1009,26 @@
       emphasis: new Set(p.emphasisTags || []),
     };
   }
+  WT.buildContext = buildContext;
+
+  /**
+   * Is the user progressing on an exercise? Looks at up to the last 4 plain-set sessions in the past 10 weeks.
+   * 'up' — estimated strength (or best reps for bodyweight work) rose across them; 'down' — it fell;
+   * 'flat' — no real change; null — not enough recent history to tell.
+   */
+  WT.progressTrend = function (exId) {
+    const ex = WT.ex(exId);
+    if (!ex || WT.trackType(ex) === 'cardio') return null;
+    const h = WT.exerciseHistory(exId, null, 'straight').filter((x) => WT.daysBetween(x.date, new Date()) <= 70).slice(-4);
+    if (h.length < 3) return null;
+    const v = h.map((x) => (x.metrics.e1rm > 0 ? x.metrics.e1rm : x.metrics.bestReps));
+    const first = v[0], last = v[v.length - 1];
+    const rises = v.slice(1).filter((x, i) => x > v[i] + 1e-6).length;
+    const falls = v.slice(1).filter((x, i) => x < v[i] - 1e-6).length;
+    if (last > first * 1.02 && rises >= falls + 1) return 'up';
+    if (last < first * 0.97 && falls >= rises + 1) return 'down';
+    return 'flat';
+  };
 
   function eligible(ex, ctx, used) {
     if (used && used.has(ex.id)) return false;
@@ -882,25 +1053,31 @@
     return groups.has((WT.MUSCLES[ex.primary] || {}).group);
   }
 
+  /**
+   * Score one candidate for a slot. Returns { s, why } where `why` holds short, human reasons ordered by
+   * importance — never the raw arithmetic.
+   */
   function scoreExercise(ex, slot, ctx, chosen, focused, jitter) {
-    const why = [];
+    const reasons = []; // [priority, text]
+    const why = (pr, t) => reasons.push([pr, t]);
     let s = 10;
     const p = ctx.p;
+    const now = ctx.now || Date.now();
     if (slot.tag && ex.tags.includes(slot.tag)) {
       s += 3;
     }
     const emph = ex.tags.filter((t) => ctx.emphasis.has(t));
     if (emph.length) {
       s += 1.5;
-      why.push({ 'lower-chest': 'Lower-chest emphasis (your goal)', 'arm-size': 'Arm-size builder (your goal)', 'love-handles': 'Targets obliques / love handles (your goal)' }[emph[0]] || 'Matches your goals');
+      why(3, { 'lower-chest': 'Lower-chest emphasis (your goal)', 'arm-size': 'Arm-size builder (your goal)', 'love-handles': 'Targets obliques / love handles (your goal)' }[emph[0]] || 'Matches your goals');
     }
     if (ctx.prioritize.has(ex.primary)) {
       s += 1.5;
-      if (!emph.length) why.push(`${WT.muscleName(ex.primary)} is a priority muscle`);
+      if (!emph.length) why(2, `${WT.muscleName(ex.primary)} is a priority muscle`);
     }
     if (ctx.favorites.has(ex.id)) {
       s += 2.5;
-      why.push('One of your favorites');
+      why(3.5, 'One of your favorites');
     }
     if (ex.tags.includes('staple')) s += 1;
     if (slot.heavy && ex.intensities.includes('heavy')) s += 1.5;
@@ -914,51 +1091,83 @@
       if (ctx.avoid.has(m)) s -= 2;
     });
 
-    // Weekly volume deficit
+    // Weekly volume: muscles that are behind get a boost, muscles already at target step aside
     const target = WT.weeklyTarget(ex.primary);
     if (target) {
       const done = ctx.weekly[ex.primary] || 0;
       const deficit = WT.clamp((target - done) / target, -0.5, 1);
-      s += deficit * 2;
-      if (deficit > 0.6 && WT.db.history.length) why.push(`${WT.muscleName(ex.primary)} is behind on weekly volume (${WT.fmtNum(done)}/${target} sets)`);
+      s += deficit * 2.5;
+      if (deficit > 0.5 && ctx.hasHistory) why(5, `${WT.muscleName(ex.primary)} is due for more weekly volume (${WT.fmtNum(done)} of ${target} sets)`);
     }
     // Recent fatigue (last 48h)
     const f = ctx.fatigue[ex.primary] || 0;
     if (f >= 3) {
       s -= Math.min(5, f / 2.5);
     }
-    // Exercise recency
-    const t = ctx.lastDone[ex.id];
-    if (t) {
-      const days = (Date.now() - t) / 864e5;
-      if (days < 3) s -= 2;
-      else {
-        s += 0.75;
-        why.push('Has history — progression tracked');
+    if (!slot.cardio && ctx.hasHistory) {
+      // Movement pattern recency: rotate patterns across the week rather than repeating yesterday's
+      const pt = ctx.patternLast && ctx.patternLast[ex.pattern];
+      const pdays = pt ? (now - pt) / 864e5 : null;
+      if (pdays != null && pdays < 2) s -= 1.2;
+      else if (pdays != null && pdays >= 7) s += 0.6;
+      // Exercise recency and frequency
+      const t = ctx.lastDone[ex.id];
+      const n14 = (ctx.exCount14 && ctx.exCount14[ex.id]) || 0;
+      if (n14 >= 3) s -= (n14 - 1) * 1.1; // done a lot lately — let something else have a turn
+      if (t) {
+        const days = (now - t) / 864e5;
+        if (days < 3) s -= 2;
+        else {
+          s += 0.75;
+          if (days >= 10) why(2.5, 'This exercise hasn’t appeared in your recent workouts');
+        }
+      }
+      // Progress: keep what's working in rotation; a long stall makes room for a variation
+      const tr = ctx.trend ? ctx.trend(ex.id) : null;
+      if (tr === 'up') {
+        s += 1.5;
+        why(4, 'You’ve made consistent progress on this exercise');
+      } else if (tr === 'down') s -= 0.5;
+      // Learned behaviour: repeatedly skipped / removed → suggested less; reliably completed → kept
+      const ad = ctx.adapt && ctx.adapt.ex[ex.id];
+      if (ad) {
+        if (ad.penalty) s -= ad.penalty;
+        if (ad.completed >= 3 && !ad.penalty) s += 0.5;
       }
     }
-    // Overlap within this workout
+    // Overlap within this workout: avoid two exercises that do essentially the same job
     chosen.forEach((c) => {
       if (c.primary === ex.primary) s -= focused ? 0.4 : 2;
       if (c.pattern === ex.pattern) s -= focused ? 2.5 : 1.5;
+      if (!focused && c.primary === ex.primary && c.pattern === ex.pattern) s -= 3; // near-duplicate
+      if (focused && c.pattern === ex.pattern && c.equipment.join() === ex.equipment.join()) s -= 1;
       if (c.secondary.includes(ex.primary) || ex.secondary.includes(c.primary)) s -= 0.3;
       if (c.equipment.join() === ex.equipment.join() && focused) s -= 0.3;
       if (['row', 'lat'].some((st) => c.equipment.includes(st) && ex.equipment.includes(st))) s -= 2.5;
     });
-    s += Math.random() * (jitter == null ? 2.5 : jitter);
-    return { s, why };
+    s += Math.random() * (jitter == null ? 1.2 : jitter);
+    return { s, why: reasons.sort((a, b) => b[0] - a[0]).map((r) => r[1]) };
   }
 
+  /**
+   * Choose an exercise for a slot. Rather than always taking the single top score, it samples among the
+   * candidates close to the best (weighted toward the best), so effective choices dominate while workouts
+   * still vary from one generation to the next.
+   */
   function pickForSlot(slot, ctx, used, chosen, focused, jitter) {
     for (let level = 0; level <= 2; level++) {
       const cands = WT.exercises.filter((ex) => eligible(ex, ctx, used) && slotMatch(ex, slot, level));
       if (cands.length) {
-        let best = null;
-        cands.forEach((ex) => {
-          const r = scoreExercise(ex, slot, ctx, chosen, focused, jitter);
-          if (!best || r.s > best.s) best = { ex, s: r.s, why: r.why };
-        });
-        return best;
+        const scored = cands.map((ex) => Object.assign({ ex }, scoreExercise(ex, slot, ctx, chosen, focused, jitter))).sort((a, b) => b.s - a.s);
+        const best = scored[0].s;
+        const pool = scored.filter((x) => x.s >= best - 1.5).slice(0, 4);
+        const weights = pool.map((x) => Math.exp((x.s - best) / 0.8));
+        let r = Math.random() * weights.reduce((a, x) => a + x, 0);
+        for (let k = 0; k < pool.length; k++) {
+          r -= weights[k];
+          if (r <= 0) return pool[k];
+        }
+        return pool[0];
       }
     }
     return null;
@@ -1033,7 +1242,12 @@
     const tt = ex ? WT.trackType(ex) : 'weight';
     if (tt === 'cardio') return ((item.repMin + item.repMax) / 2) * 60;
     if (tt === 'time' || (ex && ex.unit === 'sec')) return (item.repMin + item.repMax) / 2 + 15;
-    return Math.min(75, 15 + ((item.repMin + item.repMax) / 2) * 3);
+    const one = Math.min(75, 15 + ((item.repMin + item.repMax) / 2) * 3);
+    if (WT.STAGED[item.intensity]) {
+      const k = item.stageCount || 3;
+      return k * (one - 5) + (k - 1) * ((item.stageRest || 0) + 10); // a staged set runs its stages back to back
+    }
+    return one;
   }
   WT.estimateMinutes = function (items) {
     let sec = 300; // warm-up
@@ -1081,7 +1295,8 @@
       if (!ex) return 5;
       if (type === 'cardio') return ex.pattern === 'run' || ex.pattern === 'steady' ? 0 : 2;
       if (i.intensity === 'heavy') return ex.category === 'compound' ? 0 : 0.5;
-      if (i.intensity === 'burnout') return 4;
+      if (i.intensity === 'burnout' || i.intensity === 'drop') return 4;
+      if (i.intensity === 'buildup') return ex.category === 'compound' ? 0.75 : 1.5;
       if (WT.region(ex) === 'core' && type !== 'core') return 3;
       return ex.category === 'compound' ? 1 : 2;
     };
@@ -1089,7 +1304,7 @@
     const sorted = items.map((it, idx) => ({ it, idx })).sort((a, b) => rank(a.it) - rank(b.it) || a.idx - b.idx).map((x) => x.it);
     let blocks = sorted.map((i) => [i]);
     if (supersets && type !== 'cardio') {
-      const pool = sorted.filter((i) => i.intensity !== 'heavy' && WT.trackType(WT.ex(i.exId) || {}) !== 'cardio');
+      const pool = sorted.filter((i) => i.intensity !== 'heavy' && !WT.STAGED[i.intensity] && WT.trackType(WT.ex(i.exId) || {}) !== 'cardio');
       const paired = new Set();
       const pairs = [];
       pool.forEach((a, ai) => {
@@ -1168,6 +1383,126 @@
     }
   }
 
+  const listJoin = (a) => (a.length < 2 ? a.join('') : a.slice(0, -1).join(', ') + ' and ' + a[a.length - 1]);
+  WT.listJoin = listJoin;
+  /** How much a slot's muscles still need this week: 1 = nothing done yet, 0 = at target, < 0 = past it. */
+  function slotNeed(muscles, ctx) {
+    const vals = muscles.map((m) => {
+      const t = WT.weeklyTarget(m);
+      return t ? WT.clamp((t - (ctx.weekly[m] || 0)) / t, -0.5, 1) : 0;
+    });
+    return vals.length ? vals.reduce((a, x) => a + x, 0) / vals.length : 0;
+  }
+  const FAMILY = { chest: 'push', 'front-delts': 'push', 'side-delts': 'push', triceps: 'push', lats: 'pull', 'upper-back': 'pull', 'rear-delts': 'pull', biceps: 'pull', traps: 'pull', quads: 'legs', hamstrings: 'legs', glutes: 'legs', calves: 'legs', adductors: 'legs' };
+  const MAIN_GROUPS = ['chest', 'back', 'shoulders', 'arms', 'legs', 'core'];
+  /**
+   * Week-level picture used for workout selection and explanations: which groups are behind (`due`),
+   * already covered (`covered`), still recovering (`recovering`), and what the last session emphasized.
+   */
+  WT.trainingAnalysis = function (ctx) {
+    ctx = ctx || { weekly: WT.muscleLoad(24 * 7), fatigue: WT.muscleLoad(48) };
+    const groups = {};
+    MAIN_GROUPS.forEach((g) => (groups[g] = { done: 0, target: 0, fatigue: 0 }));
+    Object.keys(WT.MUSCLES).forEach((m) => {
+      const g = WT.MUSCLES[m].group;
+      if (!groups[g]) return;
+      groups[g].done += ctx.weekly[m] || 0;
+      groups[g].target += WT.weeklyTarget(m);
+      groups[g].fatigue = Math.max(groups[g].fatigue, ctx.fatigue[m] || 0);
+    });
+    const ratio = (g) => (groups[g].target ? groups[g].done / groups[g].target : 1);
+    const due = MAIN_GROUPS.filter((g) => ratio(g) < 0.5 && groups[g].fatigue < 8).sort((a, b) => ratio(a) - ratio(b));
+    const covered = MAIN_GROUPS.filter((g) => ratio(g) >= 1);
+    const recovering = MAIN_GROUPS.filter((g) => groups[g].fatigue >= 8).sort((a, b) => groups[b].fatigue - groups[a].fatigue);
+    // Emphasis of the most recent strength session (within 4 days): push / pull / legs if one took ≥ 55% of the sets
+    let lastEmphasis = null;
+    const last = WT.sessions().filter((x) => x.type !== 'cardio').slice(-1)[0];
+    if (last && Date.now() - new Date(last.endedAt || last.startedAt) < 4 * 864e5) {
+      const fam = { push: 0, pull: 0, legs: 0 };
+      let tot = 0;
+      last.exercises.forEach((e) => {
+        const ex = WT.ex(e.exId);
+        const n = e.skipped ? 0 : (e.sets || []).filter((x) => x.done).length;
+        if (!ex || !n) return;
+        tot += n;
+        if (FAMILY[ex.primary]) fam[FAMILY[ex.primary]] += n;
+      });
+      const top = Object.entries(fam).sort((a, b) => b[1] - a[1])[0];
+      if (tot >= 6 && top[1] / tot >= 0.55) lastEmphasis = top[0];
+    }
+    return { groups, due, covered, recovering, lastEmphasis, familyOf: (m) => FAMILY[m] || null };
+  };
+
+  /* ───────── Adaptive learning (all on-device) ─────────
+   * Signals: exercises skipped in finished workouts, exercises removed or swapped out of a plan before
+   * starting (WT.recordDrop), workout types picked instead of the suggestion, actual vs planned duration and
+   * how much of each plan was completed. Every signal needs repetition — one skipped exercise or one odd
+   * session changes nothing.
+   */
+  WT.recordDrop = function (exId) {
+    if (!exId || !WT.db.learn) return;
+    const d = WT.db.learn.dropped;
+    d[exId] = (d[exId] || []).concat(new Date().toISOString()).slice(-10);
+  };
+  let adaptCache = null;
+  WT.adaptStats = function () {
+    const h = WT.db.history;
+    const key = h.length + ':' + (h.length ? h[h.length - 1].id + (h[h.length - 1].endedAt || '') : '') + ':' + JSON.stringify((WT.db.learn || {}).dropped || {}).length;
+    if (adaptCache && adaptCache.key === key && adaptCache.db === WT.db) return adaptCache.v;
+    const now = Date.now();
+    const W = 60 * 864e5;
+    const ex = {};
+    const get = (id) => (ex[id] = ex[id] || { seen: 0, skipped: 0, dropped: 0, completed: 0, penalty: 0 });
+    const ss = WT.sessions();
+    ss.filter((s) => now - new Date(s.startedAt) < W).forEach((s) =>
+      s.exercises.forEach((e) => {
+        const r = get(e.exId);
+        r.seen++;
+        const done = (e.sets || []).filter((x) => x.done).length;
+        if (e.skipped || !done) r.skipped++;
+        else if (done >= (e.targetSets || done)) r.completed++;
+      })
+    );
+    Object.entries(((WT.db.learn || {}).dropped) || {}).forEach(([id, list]) => {
+      const n = (list || []).filter((t) => now - new Date(t) < W).length;
+      if (n) get(id).dropped += n;
+    });
+    Object.values(ex).forEach((r) => {
+      const misses = r.skipped + r.dropped;
+      // At least two misses before anything changes, scaled by how often it's missed when offered
+      if (misses >= 2) r.penalty = WT.round(Math.min(4, (misses / (r.seen + r.dropped)) * 4 + (misses - 2) * 0.25), 2);
+    });
+    // Workout types chosen over the suggestion (last 8 sessions that recorded a suggestion)
+    const withSug = ss.filter((s) => s.meta && s.meta.suggested && s.type !== 'cardio').slice(-8);
+    const overrides = {};
+    withSug.forEach((s) => s.type !== s.meta.suggested && (overrides[s.type] = (overrides[s.type] || 0) + 1));
+    const pref = Object.entries(overrides).sort((a, b) => b[1] - a[1])[0];
+    const preferredType = pref && pref[1] >= 3 && pref[1] / withSug.length >= 0.4 ? pref[0] : null;
+    // Duration and completion of recent strength sessions
+    const recent = ss.filter((s) => s.type !== 'cardio' && s.durationSec > 0 && !(s.meta && s.meta.source === 'run')).slice(-6);
+    const med = (a) => (a.length ? a.slice().sort((x, y) => x - y)[Math.floor((a.length - 1) / 2)] : null);
+    const actualMin = recent.length >= 4 ? med(recent.map((s) => s.durationSec / 60)) : null;
+    const planned = recent.filter((s) => s.meta && s.meta.plannedSets > 0);
+    const completion = planned.length >= 3 ? planned.reduce((a, s) => a + Math.min(1, ((s.totals && s.totals.sets) || 0) / s.meta.plannedSets), 0) / planned.length : null;
+    const v = { ex, preferredType, overrides, actualMin, completion, samples: recent.length };
+    adaptCache = { key, db: WT.db, v };
+    return v;
+  };
+  /** Suggested session length from what you actually complete; null when there's no consistent signal. */
+  WT.suggestedDuration = function () {
+    const p = WT.db.profile;
+    if (p.adaptive === false) return null;
+    const a = WT.adaptStats();
+    const def = +p.defaultDuration || 60;
+    let est = null;
+    if (a.actualMin != null && a.actualMin < def * 0.8) est = a.actualMin;
+    if (a.completion != null && a.completion < 0.75) est = Math.min(est || def, def * Math.max(0.6, a.completion + 0.1));
+    if (est == null) return null;
+    const opts = [30, 45, 60, 75, 90];
+    const pick = opts.reduce((b, o) => (Math.abs(o - est) < Math.abs(b - est) ? o : b), opts[0]);
+    return pick < def ? pick : null;
+  };
+
   /**
    * Generate a workout.
    * settings: see WT.defaultSettings. keep: optional array of locked items to preserve.
@@ -1181,16 +1516,28 @@
     const focused = !['full', 'push', 'pull', 'legs', 'custom'].includes(type);
     const notes = [];
 
-    // Rank slots: essentials first, then weight + priority bonus − fatigue penalty
+    const analysis = WT.trainingAnalysis(ctx);
+    const balance = type === 'full' && ctx.hasHistory; // full body: balance across the week, not every muscle every time
+    // Rank slots: essentials first, then weight + priority bonus + weekly need − fatigue penalty
     const tmpl = templateFor(type, settings.targets).map((s, i) => {
       let w = s.weight;
-      if (!s.essential) {
+      let essential = s.essential;
+      const need = slotNeed(s.m, ctx);
+      const fat = Math.max(...s.m.map((m) => ctx.fatigue[m] || 0));
+      // A full-body essential (squat / press / pull) can step aside when its muscles are already covered this
+      // week or still recovering — the other areas get the session instead.
+      if (balance && essential && (need <= 0 || fat >= 8)) {
+        essential = false;
+        w -= 3;
+      }
+      if (!essential) {
         if (s.m.some((m) => ctx.prioritize.has(m))) w += 1.5;
-        const fat = Math.max(...s.m.map((m) => ctx.fatigue[m] || 0));
+        if (ctx.hasHistory) w += need * 3;
         if (fat >= 8 && !focused) w -= 2.5;
+        if (balance && analysis.lastEmphasis && s.m.every((m) => analysis.familyOf(m) === analysis.lastEmphasis)) w -= 1.5;
         if (s.m.every((m) => ctx.avoid.has(m))) w -= 20;
       }
-      return Object.assign({}, s, { rank: s.essential ? 100 - i : w, order: i });
+      return Object.assign({}, s, { essential, rank: essential ? 100 - i : w, order: i });
     });
     let slots = tmpl.slice().sort((a, b) => b.rank - a.rank).slice(0, n);
     // Pad if more exercises requested than template slots
@@ -1202,17 +1549,20 @@
     }
     slots.sort((a, b) => a.order - b.order);
 
-    // Fatigue notes
-    const hot = Object.entries(ctx.fatigue)
-      .filter(([m, v]) => v >= 8 && m !== 'cardio')
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 3);
-    if (hot.length)
-      notes.push(`Recently trained hard (last 48h): ${hot.map(([m, v]) => `${WT.muscleName(m)} (${WT.fmtNum(v)} sets)`).join(', ')}. Exercises for these muscles were de-prioritized.`);
+    // Short explanations of the session as a whole
+    if (ctx.hasHistory) {
+      const inPlan = (g) => slots.some((sl) => sl.m.some((m) => (WT.MUSCLES[m] || {}).group === g));
+      const due = analysis.due.filter(inPlan).slice(0, 2);
+      if (due.length) notes.push(`${listJoin(due.map((g) => WT.GROUPS[g]))} ${due.length > 1 ? 'are' : 'is'} due for more weekly volume.`);
+      if (analysis.recovering.length) notes.push(`Your ${listJoin(analysis.recovering.slice(0, 2).map((g) => WT.GROUPS[g].toLowerCase()))} may benefit from more recovery.`);
+      if (balance && analysis.lastEmphasis) notes.push(`Your last session emphasized ${analysis.lastEmphasis === 'legs' ? 'legs' : analysis.lastEmphasis + 'ing movements'}, so this one leans elsewhere.`);
+      const covered = analysis.covered.filter((g) => !inPlan(g)).slice(0, 2);
+      if (balance && covered.length) notes.push(`${listJoin(covered.map((g) => WT.GROUPS[g]))} already ${covered.length > 1 ? 'have' : 'has'} enough work this week.`);
+    }
 
     // Intensity plan
     const randomMode = settings.intensityMode !== 'manual';
-    const plan = randomMode ? null : { heavy: +settings.heavy || 0, burnout: +settings.burnout || 0 };
+    const plan = randomMode ? null : { heavy: +settings.heavy || 0, burnout: +settings.burnout || 0, drop: +settings.drop || 0, buildup: +settings.buildup || 0 };
 
     // Fill slots
     const used = new Set();
@@ -1262,13 +1612,15 @@
       settings,
       plan: WT.intensityTally(arranged),
       intensityMode: randomMode ? 'random' : 'manual',
+      generated: true,
+      suggested: settings.suggested || null,
       notes,
       exercises: arranged,
       estimatedMin: WT.estimateMinutes(arranged),
     };
   };
   WT.intensityTally = (items) => {
-    const t = { heavy: 0, regular: 0, burnout: 0, standard: 0 };
+    const t = { heavy: 0, regular: 0, burnout: 0, standard: 0, drop: 0, buildup: 0 };
     items.forEach((i) => (t[i.intensity] = (t[i.intensity] || 0) + 1));
     return t;
   };
@@ -1298,6 +1650,27 @@
         if (burnLeft > 0) {
           i.intensity = 'burnout';
           burnLeft--;
+        }
+      });
+    // Build-up → stageable compounds early on; drop → stageable, lower-risk isolation late.
+    let buildLeft = (+plan.buildup || 0) - items.filter((i) => i.locked && i.intensity === 'buildup').length;
+    fresh
+      .filter((i) => !i.intensity && WT.canStage(exOf(i)) && !exOf(i).tags.includes('power'))
+      .sort((a, b) => (exOf(b).category === 'compound') - (exOf(a).category === 'compound') || a.slotIndex - b.slotIndex)
+      .forEach((i) => {
+        if (buildLeft > 0) {
+          i.intensity = 'buildup';
+          buildLeft--;
+        }
+      });
+    let dropLeft = (+plan.drop || 0) - items.filter((i) => i.locked && i.intensity === 'drop').length;
+    fresh
+      .filter((i) => !i.intensity && WT.canStage(exOf(i)) && !WT.fatigueRisky(exOf(i)))
+      .sort((a, b) => (exOf(b).category !== 'compound') - (exOf(a).category !== 'compound') || b.slotIndex - a.slotIndex)
+      .forEach((i) => {
+        if (dropLeft > 0) {
+          i.intensity = 'drop';
+          dropLeft--;
         }
       });
     fresh.forEach((i) => {
@@ -1359,6 +1732,9 @@
       settings: w.settings || null,
       notes: '',
       exercises: w.exercises.map((i) => WT.sessionItem(i.exId, i)),
+      // What was planned — lets recommendations learn from what actually happens (stays on this device)
+      meta: { source: w.source || (w.generated ? 'generated' : 'plan'), suggested: w.suggested || null, plannedSets: w.exercises.reduce((a, i) => a + (+i.sets || +i.targetSets || 0), 0), plannedMin: w.estimatedMin || null },
+      plan: w.generated ? WT.intensityTally(w.exercises) : undefined,
     };
   };
   /** A new, empty set for an exercise item: plain, or staged with one empty stage per planned stage. */
@@ -1535,20 +1911,104 @@
       .map(([id, n]) => ({ ex: WT.ex(id), n }));
   };
 
-  /** Suggest the next workout type based on recency of muscle groups. */
+  /** Does a session contain a logged run? */
+  WT.isRunSession = (s) => !!s && s.exercises.some((e) => !e.skipped && WT.ex(e.exId) && WT.ex(e.exId).tags.includes('run') && (e.sets || []).some((x) => x.done));
+  WT.isStrengthSession = (s) => !!s && s.type !== 'cardio' && !WT.isRunSession(s);
+
+  const SPLIT_MUSCLES = {
+    push: ['chest', 'front-delts', 'side-delts', 'triceps'],
+    pull: ['lats', 'upper-back', 'rear-delts', 'biceps'],
+    legs: ['quads', 'hamstrings', 'glutes', 'calves'],
+    full: ['chest', 'lats', 'upper-back', 'quads', 'glutes', 'hamstrings', 'side-delts', 'biceps', 'triceps', 'abs'],
+  };
+
+  /**
+   * What to do next — strength (and which type), a run, or recovery — from the whole recent picture:
+   * weekly strength / run goals, consecutive training days, muscles still recovering, weekly volume per muscle,
+   * the order of recent sessions, and learned habits (types you pick instead of the suggestion, how long your
+   * sessions really run). Returns { type, kind: 'strength' | 'run' | 'recovery', reason, reasons, duration }.
+   * `type` is always something the generator can build, so "Generate" keeps working on every kind.
+   */
   WT.suggestNext = function () {
     const ss = WT.sessions();
     const p = WT.db.profile;
-    if (!ss.length) return { type: p.preferredType, reason: 'Your preferred split — a great place to start.' };
-    const last = ss[ss.length - 1];
-    const hours = (Date.now() - new Date(last.endedAt || last.startedAt)) / 3600e3;
-    if (p.preferredType === 'full') {
-      if (hours < 20 && last.type === 'full') return { type: 'cardio', reason: 'You did a full-body session in the last day — a run or conditioning lets you recover.' };
-      return { type: 'full', reason: 'Full body is your preferred split. Fatigue from recent sessions is factored into exercise choice.' };
+    const pref = p.preferredType || 'full';
+    const duration = WT.suggestedDuration ? WT.suggestedDuration() : null;
+    const out = (o) => Object.assign({ reasons: [], duration }, o);
+    if (!ss.length) return out({ type: pref, kind: 'strength', reason: 'Your preferred split — a great place to start.' });
+    const now = Date.now();
+    const t = (s) => new Date(s.endedAt || s.startedAt).getTime();
+    const week = ss.filter((s) => now - t(s) < 7 * 864e5);
+    const strength7 = week.filter(WT.isStrengthSession).length;
+    const runs7 = week.filter(WT.isRunSession).length;
+    const lastStrength = ss.filter(WT.isStrengthSession).slice(-1)[0];
+    const hoursSinceStrength = lastStrength ? (now - t(lastStrength)) / 3600e3 : Infinity;
+    // Consecutive days trained, ending today or yesterday
+    const days = new Set(ss.map((s) => WT.startOfDay(s.startedAt).getTime()));
+    let streak = 0;
+    const d0 = WT.startOfDay(new Date());
+    if (!days.has(d0.getTime())) d0.setDate(d0.getDate() - 1);
+    while (days.has(d0.getTime())) {
+      streak++;
+      d0.setDate(d0.getDate() - 1);
     }
-    const order = ['push', 'pull', 'legs'];
-    const idx = order.indexOf(last.type);
-    if (idx >= 0) return { type: order[(idx + 1) % 3], reason: `Next in your rotation after ${WT.typeName(last.type)}.` };
-    return { type: p.preferredType, reason: 'Your preferred split.' };
+    const trainedToday = days.has(WT.startOfDay(new Date()).getTime());
+    const goalS = +p.strengthPerWeek || 3, goalR = +p.runsPerWeek || 0;
+    const ctx = { weekly: WT.muscleLoad(24 * 7), fatigue: WT.muscleLoad(48) };
+    const an = WT.trainingAnalysis(ctx);
+    const readiness = (type) => {
+      const ms = SPLIT_MUSCLES[type];
+      if (!ms) return 0;
+      return ms.reduce((a, m) => {
+        const tg = WT.weeklyTarget(m) || 1;
+        return a + WT.clamp((tg - (ctx.weekly[m] || 0)) / tg, -0.5, 1) - ((ctx.fatigue[m] || 0) >= 6 ? 0.8 : 0);
+      }, 0) / ms.length;
+    };
+    const runsBehind = goalR > 0 && runs7 < goalR;
+    const strengthBehind = strength7 < goalS;
+    const groupList = (gs) => WT.listJoin(gs.map((g) => WT.GROUPS[g]));
+
+    // 1. Recovery: several days in a row, or a hard day already done today
+    if (streak >= 4 || (streak >= 3 && !strengthBehind)) {
+      return out({ type: pref, kind: 'recovery', reason: `You've trained ${streak} days in a row. A rest day or an easy walk will help you come back stronger.`, reasons: an.recovering.length ? [`${groupList(an.recovering)} ${an.recovering.length > 1 ? 'are' : 'is'} still recovering.`] : [] });
+    }
+    // 2. Run: runs are behind and legs/lungs are the better use of today
+    if (runsBehind && (hoursSinceStrength < 22 || !strengthBehind || (goalR - runs7) >= (goalS - strength7))) {
+      const why = hoursSinceStrength < 22 ? 'You lifted in the last day — a run keeps you moving while your muscles recover.' : !strengthBehind ? `You've done your ${goalS} strength sessions this week.` : 'Runs are furthest behind this week.';
+      return out({ type: 'cardio', kind: 'run', reason: `${why} ${runs7} of ${goalR} runs in the last 7 days.` });
+    }
+    // 3. Weekly goals met → optional session, nothing is due
+    if (!strengthBehind && !runsBehind) {
+      return out({ type: pref, kind: 'recovery', reason: `You've met this week's goals (${strength7} workouts${goalR ? `, ${runs7} runs` : ''}). Rest, or train lightly if you feel like it.` });
+    }
+    // 4. A strength session. Full-body heavy day less than a day ago → recover first.
+    if (hoursSinceStrength < 20 && lastStrength.type === 'full' && pref === 'full') {
+      return out({ type: goalR ? 'cardio' : pref, kind: goalR ? 'run' : 'recovery', reason: 'You did a full-body session in the last day — a run, conditioning or rest lets you recover.' });
+    }
+    let type = pref;
+    const reasons = [];
+    let reason;
+    if (['push', 'pull', 'legs'].includes(pref)) {
+      // Rotate by readiness (muscles behind for the week and recovered), not blindly by order
+      const cands = ['push', 'pull', 'legs'].map((k) => ({ k, r: readiness(k) - (lastStrength && lastStrength.type === k ? 1 : 0) })).sort((x, y) => y.r - x.r);
+      type = cands[0].k;
+      reason = `${WT.typeName(type)} muscles are the most recovered and furthest behind this week.`;
+    } else if (pref === 'full') {
+      reason = an.due.length ? `${groupList(an.due.slice(0, 2))} ${an.due.length > 1 ? 'are' : 'is'} due for more weekly volume — the plan leans that way.` : 'Full body is your preferred split. The plan balances muscles across your week.';
+      if (an.recovering.length) reasons.push(`Your ${groupList(an.recovering.slice(0, 2)).toLowerCase()} may benefit from more recovery.`);
+    } else reason = 'Your preferred split.';
+    // Learned preference: a type you keep choosing instead of the suggestion (needs 3+ times)
+    const ad = p.adaptive !== false ? WT.adaptStats() : null;
+    if (ad && ad.preferredType && ad.preferredType !== type && WT.WORKOUT_TYPES.some((x) => x.id === ad.preferredType)) {
+      const ms = SPLIT_MUSCLES[ad.preferredType];
+      const hot = ms && ms.some((m) => (ctx.fatigue[m] || 0) >= 8);
+      if (!hot) {
+        type = ad.preferredType;
+        reason = `You've often chosen ${WT.typeName(type)} over the suggestion, so Forge suggests it.`;
+      }
+    }
+    if (duration) reasons.push(`Your recent workouts run about ${duration} minutes, so the plan is sized to fit.`);
+    if (trainedToday) reasons.push('You already trained today — keep it short if you go again.');
+    return out({ type, kind: 'strength', reason, reasons });
   };
 })();

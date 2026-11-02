@@ -16,11 +16,12 @@ A quiet, precise interface in the spirit of Apple, Linear and Things: generous w
 - **Color:** a soft neutral background, near-black text and a single pine-green accent, used only for the primary action and completion. Heavy and burnout appear as small rust and amber dots; nothing else is colored. A dark theme is in Settings.
 
 **Navigation**
-- **Desktop:** a quiet sidebar with Home, Generate, Train, Exercises, History, Progress, Food and Settings.
-- **Phone:** a 6-tab bar (Home, Generate, Train, History, Progress, Food). Exercises and Settings sit in the top bar.
+- **Desktop:** a quiet sidebar with Home, Generate, Exercises, History, Progress, Food, Meal ideas, Achievements and Settings.
+- **Phone:** a 5-tab bar (Home, Generate, History, Progress, Food). Exercises and Settings sit in the top bar; Meal ideas is linked from Food and Achievements from Progress.
+- There is no separate Train tab: the active-workout screen opens when you start a workout and from Home's **Resume workout** (a dot on the Home tab shows one is in progress). Empty workouts and live run tracking are on Generate.
 
 **Screens**
-- **Home:** one focal "Generate workout" panel, a 7-day strip, a small "Protein today" card (can be turned off), the three most recent workouts, and a three-number summary of the last 30 days.
+- **Home:** one focal panel with the recommendation (a strength type, a run day or a recovery day, with a short reason), **Record a run**, a 7-day strip with your last run and pace, a small "Protein today" card (can be turned off), the three most recent workouts, and a three-number summary of the last 30 days.
 - **Generate:**
   - Type chips plus two options (exercise count and duration); everything else sits under *More options*.
   - The plan is a single list. Each row shows the name, muscle, sets × reps, the suggested weight from your history and a subtle intensity marker, with video, swap and more buttons.
@@ -44,7 +45,10 @@ A quiet, precise interface in the spirit of Apple, Linear and Things: generous w
 | **History** | Permanent log with every set. Open any workout, repeat it, use it as a template, edit notes or delete it. |
 | **Progress** | Workouts, per-week average, sets and volume; a workouts-per-week chart; a consistency heatmap; per-exercise charts (est. 1RM, top weight, volume, reps); PRs; weekly volume per muscle group against targets. Everything is calculated from logged data only. |
 | **Food & protein** | Type what you ate in plain words ("2 chicken breasts, a protein shake and 2 hot dogs"); each item is recognized and its protein estimated, with a live breakdown before you log. Edit name, amount and protein; delete entries; browse and edit any past day. Favorites and recent foods log with one tap, and your own saved foods are recognized when typed. A flexible daily target (default 150 g, ±10% counts as on target), friendly guidance, and 7/30-day trends that leave unlogged days out of averages. Calories, carbs and fat are optional secondary estimates. |
-| **Data** | Export a JSON backup (workouts **and** food log), then import it to merge or fully restore. Erase all data. Storage is persisted between sessions. |
+| **Record a run** | From Home: distance, duration (h/m/s), date, optional effort and notes, live average pace. Edit or delete from Home → All runs or from History. Saved in the same format as live-tracked runs. |
+| **Meal ideas** | Pick ingredients you have (protein, carbohydrates, vegetables; search, staples, frequent picks, your own ingredients, “ran out” mode) and get several protein-forward recipes with approximate quantities, steps, times and estimated macros. Dietary needs, disliked ingredients, air fryer, servings and a time limit in Preferences. Save favorites, regenerate different ideas, log a serving to the food diary. Fully offline: bundled recipe templates, no API. |
+| **Achievements** | 28 milestones across consistency, strength, running, variety and nutrition, computed from logged data with their real dates, progress bars for locked ones, and a small celebration (can be turned off, as can achievements). |
+| **Data** | Export a JSON backup (workouts, runs, food log, meal planner and achievements), then import it to merge or fully restore. Erase all data. Storage is persisted between sessions. |
 
 ### Your profile (pre-loaded, editable in Settings)
 - **Goals:** lean out; lower-chest emphasis; bigger arms; obliques. Priority muscles are chest, biceps, triceps, abs and obliques.
@@ -126,7 +130,17 @@ Specific products are matched **before** generic foods, from two places: your li
 
 **Personal library.** Branded products are saved to *My foods* automatically when logged, with their source and status. When you resolve an ambiguous entry, the words you typed become shorthand, so "Oscar Mayer hot dogs" or "Snickerdoodle shake" resolve directly next time. You can star favorites (one-tap buttons), edit values, add shorthand names and delete products. *Recent* shows the last distinct foods you logged.
 
-**Storage.** The food log lives in the same local store as workouts (`wt.data.v1`, data version 5) under `nutrition: { entries, foods }`, keyed by local date. Version 4 → 5 only adds fields (product brand / flavor / aliases / status / source, and each entry's confidence); workout data is untouched. Export includes the log and the library with aliases. *Replace* restores them exactly. *Merge* adds missing entries and products by id without duplicates.
+**Storage.** The food log lives in the same local store as workouts (`wt.data.v1`, now data version 6 — v6 only adds `meals`, `achievements` and `learn`) under `nutrition: { entries, foods }`, keyed by local date. Version 4 → 5 only adds fields (product brand / flavor / aliases / status / source, and each entry's confidence); workout data is untouched. Export includes the log and the library with aliases. *Replace* restores them exactly. *Merge* adds missing entries and products by id without duplicates.
+
+## Recommendations (v6)
+
+All calculations run on the device; nothing is sent anywhere.
+
+- **What to do next** (`WT.suggestNext`): looks at the last 7 days — strength sessions and runs against your weekly goals, consecutive training days, muscles still recovering (48 h), weekly sets per muscle — and suggests a strength type, a run, or recovery. Push/pull/legs rotate by readiness rather than fixed order. A type you repeatedly pick over the suggestion (3+ of the last 8) is learned, and if your sessions consistently run short the plan is sized to fit.
+- **Workout composition**: full-body plans balance coverage across the week — a squat / press / pull slot steps aside when those muscles are already at their weekly target or still recovering, and the slots for muscles that are behind move up. Short notes explain the plan (“Back is due for more weekly volume.”, “Your last session emphasized pushing movements…”).
+- **Exercise choice**: adds movement-pattern recency, how often an exercise was done in the last 14 days, progress trend (rising estimated strength is kept in rotation), near-duplicate penalties, and learned skips/removals (needs 2+ misses before anything changes). Instead of always taking the top score it samples among near-best candidates.
+- **Intensity**: heavy / regular / burnout / standard plus **drop** and **build-up** sets are drawn from configurable odds (Settings → Intensity; defaults 7 each). Build-up sets favour compound lifts early in the session; drop sets favour isolation (especially cable / machine) work near the end and never go on spinal-loading, explosive, free-weight squat / hinge / lunge or advanced compound lifts; burnouts are also kept off those loaded lifts. Caps per workout: drop and build-up at most one each and two together (7+ exercises), and all techniques together at most ~60% of the exercises. A pattern identical to your last two workouts of that type is redrawn. Fixed mode has drop / build-up counts too. Stage counts and sets can be edited in the plan before starting, and every stage is editable during the workout.
+- **Weight progression**: weight goes up only when the top of the range is confirmed — the previous session at that weight was also at (or one rep from) the top, it was rated easy, or every set overshot by 3+ reps. Repeated Hard ratings hold the weight, a 3-week-old comparison becomes a check-in, a declining trend backs off, and a big relative dumbbell jump (>20%) asks for two extra reps first. The *Why* lists the recent sessions. Weights still change only when you tap Apply.
 
 ## Run locally
 
@@ -160,6 +174,9 @@ node tests/features.test.js                         # exercise demonstrations + 
 node tests/settypes.test.js                         # drop sets, build-up sets, plain set types unchanged
 node tests/nutrition.test.js                        # food parser, brands, ambiguity, library, estimates, trends, migration, backup
 node tests/food.test.js                             # food tracker in the browser: logging, brands, lookup (mocked), favorites, dates, export/restore
+node tests/recommend.test.js                        # v6 recommendations: weekly balance, variety, drop/build-up assignment, caps, progression, learning, migration
+node tests/meals.test.js                            # meal planner + achievements logic
+node tests/v6.test.js                               # v6 in the browser: navigation, Record a run, Meal ideas, Achievements, settings, upgrade from v5
 ```
 The end-to-end test generates every workout type, swaps exercises, logs a full session, refreshes mid-workout, saves, and checks that the next session shows previous weights and an increase recommendation that is only applied on approval. It also checks the v1 → v2 data upgrade, intensity variety across repeated generations through the UI, the intensity picker, PR detection, the charts, export → wipe → import, persistence after refresh, the theme toggle and offline loading.
 
@@ -179,6 +196,9 @@ js/foods.js           bundled generic food reference (typical values per serving
 js/products.js        branded products with sources, serving sizes and status
 js/nutrition.js       food parser, food-log store, trends, guidance
 js/views-food.js      Food screen, review/edit sheets, My foods
+js/meals.js           ingredient catalog, bundled recipe templates, offline meal-idea generator
+js/achievements.js    achievement definitions, evaluation and celebration
+js/views-meals.js     Meal ideas and Achievements screens
 fonts/                Inter (OFL) + license
 sw.js, manifest.webmanifest, icons/   PWA
 ```

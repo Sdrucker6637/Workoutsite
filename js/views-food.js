@@ -167,6 +167,7 @@
         <div id="foodPreview" class="mt12" aria-live="polite">${previewHtml(currentItems())}</div>
       </section>
       ${quick}
+      <div class="list inset mt24">${H.li({ href: '#/meals', lead: `<span class="ach-ic" aria-hidden="true">${I('sparkles', 16)}</span>`, title: 'Meal ideas', sub: 'Pick ingredients you have and get protein-forward recipes', chev: true })}</div>
       <section class="section">
         <div class="section-title"><h2>${isToday ? 'Today' : dayName(day)}</h2>${entries.length ? `<span class="footnote t2 tnum">${g(N.dayTotals(day).p)} protein</span>` : ''}</div>
         ${list}

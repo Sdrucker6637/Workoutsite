@@ -358,8 +358,8 @@
   }
   A.histMenu = (d) =>
     WT.openSheet(() => ({
-      title: 'Workout',
-      body: `<div class="list inset">${H.li({ act: 'histNotes', attrs: `data-id="${d.id}"`, title: 'Edit notes' })}${H.li({ act: 'histDelete', attrs: `data-id="${d.id}"`, title: 'Delete workout', cls: 'danger' })}</div>`,
+      title: WT.isRunSession(WT.db.history.find((x) => x.id === d.id)) ? 'Run' : 'Workout',
+      body: `<div class="list inset">${WT.isRunSession(WT.db.history.find((x) => x.id === d.id)) ? H.li({ act: 'runEdit', attrs: `data-id="${d.id}"`, title: 'Edit run', sub: 'Distance, time, date, effort and notes' }) : ''}${H.li({ act: 'histNotes', attrs: `data-id="${d.id}"`, title: 'Edit notes' })}${H.li({ act: 'histDelete', attrs: `data-id="${d.id}"`, title: 'Delete workout', cls: 'danger' })}</div>`,
     }));
   A.histRepeat = (d) => {
     const s = WT.db.history.find((x) => x.id === d.id);
@@ -452,6 +452,7 @@
       <div class="head"><h1 class="large-title">Progress</h1><p class="sub tnum">${plural(st.count, 'workout')} · ${WT.fmtNum(st.totalSets)} sets · ${st.totalVolume >= 10000 ? WT.fmtNum(Math.round(st.totalVolume / 1000)) + 'k' : WT.fmtNum(st.totalVolume)} ${u} lifted</p></div>
       ${H.seg([['strength', 'Strength'], ['frequency', 'Frequency'], ['volume', 'Volume']], tab, 'progTab', '', 'full')}
       <div class="mt24">${top}</div>
+      ${WT.db.profile.achievements !== false ? `<div class="list inset mt24"><a class="li" href="#/achievements"><span class="ach-ic" aria-hidden="true">${I('trophy', 17)}</span><div class="grow"><div class="ti">Achievements</div><div class="su">${WT.ach.counts().earned} of ${WT.ach.counts().total} earned</div></div><span class="chev">${I('chevR', 16)}</span></a></div>` : ''}
       <section class="section">
         <div class="section-title"><h2>Personal records</h2></div>
         ${st.prs.length ? `<div class="list inset">${st.prs.slice(0, 6).map((r) => H.li({ href: `#/history/${r.sessionId}`, title: esc((WT.ex(r.exId) || {}).name || r.exId), sub: `${r.kind} · ${WT.fmtDate(r.date, { month: 'short', day: 'numeric' })}`, trail: `<span class="strong tnum">${esc(r.value)}</span>` })).join('')}</div>` : `<p class="t2">Beat a previous best and it will be recorded here.</p>`}
@@ -517,10 +518,10 @@
         ${H.li({ title: 'Randomize intensity', sub: 'Assign each exercise independently', trail: H.toggle(p.intensityRandom !== false, 'pfIntRandom') })}
         ${
           p.intensityRandom !== false
-            ? block(`${H.oddsBar(odds)}<div class="mt8">${['heavy', 'regular', 'burnout', 'standard'].map((k) => `<div class="odds-row"><span class="int ${k}">${WT.INTENSITY_INFO[k].name}</span><input class="range" type="range" min="0" max="60" step="1" value="${odds[k]}" data-in="pfOdds" data-k="${k}" aria-label="${k} odds"><span class="tnum footnote t2" style="text-align:right" id="odds-${k}">${H.pct(odds, k)}%</span></div>`).join('')}</div>`)
-            : `${H.li({ title: '<span class="int heavy">Heavy per workout</span>', trail: H.stepper(p.intensityFixed.heavy, 'pfFixed', 'heavy', 0, 6) })}${H.li({ title: '<span class="int burnout">Burnout per workout</span>', trail: H.stepper(p.intensityFixed.burnout, 'pfFixed', 'burnout', 0, 6) })}`
+            ? block(`${H.oddsBar(odds)}<div class="mt8">${['heavy', 'regular', 'burnout', 'standard', 'drop', 'buildup'].map((k) => `<div class="odds-row"><span class="int ${k}">${WT.INTENSITY_INFO[k].name}</span><input class="range" type="range" min="0" max="60" step="1" value="${odds[k]}" data-in="pfOdds" data-k="${k}" aria-label="${k} odds"><span class="tnum footnote t2" style="text-align:right" id="odds-${k}">${H.pct(odds, k)}%</span></div>`).join('')}</div>`)
+            : `${H.li({ title: '<span class="int heavy">Heavy per workout</span>', trail: H.stepper(p.intensityFixed.heavy, 'pfFixed', 'heavy', 0, 6) })}${H.li({ title: '<span class="int burnout">Burnout per workout</span>', trail: H.stepper(p.intensityFixed.burnout, 'pfFixed', 'burnout', 0, 6) })}${H.li({ title: '<span class="int drop">Drop sets per workout</span>', trail: H.stepper(+p.intensityFixed.drop || 0, 'pfFixed', 'drop', 0, 3) })}${H.li({ title: '<span class="int buildup">Build-up sets per workout</span>', trail: H.stepper(+p.intensityFixed.buildup || 0, 'pfFixed', 'buildup', 0, 3) })}`
         }
-        ${H.li({ title: 'Allow burnout sets', trail: H.toggle(p.burnouts, 'pfToggle', 'data-k="burnouts"') })}`, p.intensityRandom !== false ? 'Heavy favours compound lifts early in a workout; burnout favours isolation work near the end. Exercises unsuited to a category never receive it. <button class="btn-link" data-act="pfOddsReset">Reset</button>' : 'The rest are regular.', 'intensity')}
+        ${H.li({ title: 'Allow burnout sets', trail: H.toggle(p.burnouts, 'pfToggle', 'data-k="burnouts"') })}`, p.intensityRandom !== false ? 'Heavy and build-up sets favour compound lifts early in a workout; burnout and drop sets favour isolation work near the end and are never put on spinal-loading, explosive or free-weight squat / hinge lifts. Drop and build-up sets need a weighted exercise, appear at most once or twice per workout, and a workout never stacks too many techniques. Set any slider to 0 to turn that type off. <button class="btn-link" data-act="pfOddsReset">Reset</button>' : 'The rest are regular.', 'intensity')}
       ${grp('Equipment', block(H.chipGroup(WT.EQUIPMENT, p.equipment, 'pfEquip', 'sm')) + `
         ${H.li({ title: 'Lightest dumbbell', trail: num('min', p.dumbbells.min, 2.5, 'dumbbells') })}
         ${H.li({ title: 'Heaviest dumbbell', trail: num('max', p.dumbbells.max, 2.5, 'dumbbells') })}
@@ -540,10 +541,15 @@
         ${H.li({ title: 'Show calories, carbs and fat', sub: 'Secondary estimates — no targets', trail: H.toggle(p.showMacros !== false, 'pfToggleOn', 'data-k="showMacros"') })}
         ${H.li({ title: 'Protein on Home', trail: H.toggle(p.homeProtein !== false, 'pfToggleOn', 'data-k="homeProtein"') })}
         ${H.li({ act: 'foodMine', title: 'My foods', sub: 'Saved foods and favorites', trail: `<span class="footnote t2">${(WT.db.nutrition.foods || []).length}</span>`, chev: true })}`, 'Food logging is independent of workouts. Every value is an estimate.', 'nutrition')}
+      ${grp('Recommendations & achievements', `
+        ${H.li({ title: 'Learn from my workouts', sub: 'Exercises you skip come up less, types you prefer and how long you usually train shape suggestions. Calculated on this device only.', trail: H.toggle(p.adaptive !== false, 'pfToggleOn', 'data-k="adaptive"') })}
+        ${H.li({ title: 'Achievements', sub: 'Milestones for consistency, progress and variety', trail: H.toggle(p.achievements !== false, 'pfToggleOn', 'data-k="achievements"') })}
+        ${p.achievements !== false ? H.li({ title: 'Celebrate new achievements', sub: 'A small notification when one is earned', trail: H.toggle(p.achCelebrate !== false, 'pfToggleOn', 'data-k="achCelebrate"') }) : ''}
+        ${p.achievements !== false ? H.li({ href: '#/achievements', title: 'View achievements', trail: `<span class="footnote t2">${WT.ach.counts().earned} / ${WT.ach.counts().total}</span>`, chev: true }) : ''}`, 'Nothing about your training or meals leaves this device.')}
       ${grp('Data', `
         ${H.li({ act: 'exportJson', title: 'Export backup', sub: `Last backup: ${p.lastBackup ? WT.fmtRelDay(p.lastBackup) : 'never'}`, trail: `<span class="t3">${I('download', 16)}</span>` })}
         <label class="li" style="cursor:pointer"><div class="grow"><div class="ti">Import or restore</div><div class="su">From a Forge JSON backup</div></div><span class="t3">${I('upload', 16)}</span><input type="file" accept="application/json,.json" data-in="importFile" hidden></label>
-        ${H.li({ act: 'resetAll', title: 'Erase all data', cls: 'danger' })}`, `<span id="storageInfo">${plural(WT.db.history.length, 'workout')} and ${plural(WT.db.nutrition.entries.length, 'food entry').replace('entrys', 'entries')} stored on this device. Backups include both. No account, no server.</span>`)}
+        ${H.li({ act: 'resetAll', title: 'Erase all data', cls: 'danger' })}`, `<span id="storageInfo">${plural(WT.db.history.length, 'workout')}, ${plural(WT.db.nutrition.entries.length, 'food entry').replace('entrys', 'entries')} and ${plural((WT.db.meals.favorites || []).length, 'saved recipe')} stored on this device. Backups include workouts, runs, food, meal ideas and achievements. No account, no server.</span>`)}
       ${grp('About', `
         ${(() => {
           const M = WT.MEDIA, n = M.counts(), S = M.sources, total = Object.keys(M.map).length;
@@ -597,7 +603,7 @@
     odds[el.dataset.k] = +el.value;
     WT.save();
     WT.ui.gen = null;
-    ['heavy', 'regular', 'burnout', 'standard'].forEach((k) => {
+    ['heavy', 'regular', 'burnout', 'standard', 'drop', 'buildup'].forEach((k) => {
       const o = document.getElementById('odds-' + k);
       if (o) o.textContent = WT.h.pct(odds, k) + '%';
     });
@@ -722,13 +728,14 @@
         title: 'Restore backup',
         body: `<p class="t2">This backup contains ${plural(data.history.length, 'workout')}, ${plural((data.customExercises || []).length, 'custom exercise')} ${((data.nutrition && data.nutrition.entries) || []).length} food ${((data.nutrition && data.nutrition.entries) || []).length === 1 ? 'entry' : 'entries'} and ${plural(((data.nutrition && data.nutrition.foods) || []).length, 'saved product')}.</p>
           <div class="list inset mt16">
-            ${H.li({ act: 'doImport', attrs: 'data-mode="merge"', title: 'Merge', sub: 'Add workouts, food entries and saved products that aren’t here yet. Keeps your settings.' })}
+            ${H.li({ act: 'doImport', attrs: 'data-mode="merge"', title: 'Merge', sub: 'Add workouts, runs, food entries, saved products, custom ingredients and saved recipes that aren’t here yet. Keeps your settings.' })}
             ${H.li({ act: 'doImport', attrs: 'data-mode="replace"', title: 'Replace everything', sub: 'Restore exactly as backed up.', cls: 'danger' })}
           </div>`,
       }));
       A.doImport = (d) => {
         try {
           WT.importData(text, d.mode);
+          if (WT.ach) WT.ach.check({ silent: true }); // milestones in imported history keep their dates, without fanfare
           WT.applyTheme();
           WT.ui.gen = null;
           WT.closeSheet(true);
