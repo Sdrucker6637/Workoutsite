@@ -973,7 +973,7 @@
     const now = Date.now();
     const fatigue = WT.muscleLoad(48);
     const weekly = WT.muscleLoad(24 * 7);
-    const lastDone = {}, patternLast = {}, exCount14 = {};
+    const lastDone = {}, patternLast = {}, exCount14 = {}, muscleLast = {};
     WT.db.history.forEach((s) => {
       const t = new Date(s.endedAt || s.startedAt).getTime();
       s.exercises.forEach((e) => {
@@ -981,6 +981,7 @@
         if (!lastDone[e.exId] || lastDone[e.exId] < t) lastDone[e.exId] = t;
         const ex = WT.ex(e.exId);
         if (ex && (!patternLast[ex.pattern] || patternLast[ex.pattern] < t)) patternLast[ex.pattern] = t;
+        if (ex && (!muscleLast[ex.primary] || muscleLast[ex.primary] < t)) muscleLast[ex.primary] = t;
         if (now - t < 14 * 864e5) exCount14[e.exId] = (exCount14[e.exId] || 0) + 1;
       });
     });
@@ -996,6 +997,7 @@
       weekly,
       lastDone,
       patternLast,
+      muscleLast,
       exCount14,
       hasHistory: WT.db.history.length > 0,
       trend: (id) => (trends[id] !== undefined ? trends[id] : (trends[id] = WT.progressTrend(id))),
@@ -1113,7 +1115,11 @@
       // Exercise recency and frequency
       const t = ctx.lastDone[ex.id];
       const n14 = (ctx.exCount14 && ctx.exCount14[ex.id]) || 0;
-      if (n14 >= 3) s -= (n14 - 1) * 1.1; // done a lot lately — let something else have a turn
+      // Done a lot lately — let something else have a turn. Capped, and halved for favorites, so an exercise you
+      // love is rotated rather than shut out.
+      // (Not stacked on top of the "done in the last 3 days" penalty below — that already covers it.)
+      const recentlyDone = t && (now - t) / 864e5 < 3;
+      if (n14 >= 3 && !recentlyDone) s -= Math.min(2.5, (n14 - 1) * 1) * (ctx.favorites.has(ex.id) ? 0.5 : 1);
       if (t) {
         const days = (now - t) / 864e5;
         if (days < 3) s -= 2;
@@ -1524,15 +1530,20 @@
       let essential = s.essential;
       const need = slotNeed(s.m, ctx);
       const fat = Math.max(...s.m.map((m) => ctx.fatigue[m] || 0));
-      // A full-body essential (squat / press / pull) can step aside when its muscles are already covered this
-      // week or still recovering — the other areas get the session instead.
-      if (balance && essential && (need <= 0 || fat >= 8)) {
+      // Days since any of this slot's muscles was last a main target (Infinity if never)
+      const since = Math.min(...s.m.map((m) => (ctx.muscleLast[m] ? (ctx.now - ctx.muscleLast[m]) / 864e5 : Infinity)));
+      // A full-body essential (squat / press / pull) can step aside while its muscles are still recovering, or
+      // when they already have the week's volume AND were trained in the last 3 days. Once recovered it comes
+      // back — a big session must not keep a muscle out of full-body plans for the rest of the week.
+      if (balance && essential && (fat >= 8 || (need <= 0 && since < 3))) {
         essential = false;
         w -= 3;
       }
       if (!essential) {
         if (s.m.some((m) => ctx.prioritize.has(m))) w += 1.5;
         if (ctx.hasHistory) w += need * 3;
+        // Rotation: muscles that haven't been a main target for a while come around, even when every area is behind
+        if (balance && since >= 6) w += since >= 10 ? 3.5 : 2;
         if (fat >= 8 && !focused) w -= 2.5;
         if (balance && analysis.lastEmphasis && s.m.every((m) => analysis.familyOf(m) === analysis.lastEmphasis)) w -= 1.5;
         if (s.m.every((m) => ctx.avoid.has(m))) w -= 20;
@@ -1938,7 +1949,9 @@
     if (!ss.length) return out({ type: pref, kind: 'strength', reason: 'Your preferred split — a great place to start.' });
     const now = Date.now();
     const t = (s) => new Date(s.endedAt || s.startedAt).getTime();
-    const week = ss.filter((s) => now - t(s) < 7 * 864e5);
+    // Weekly goals use the calendar week (Mon–Sun), exactly like Home's "This week" counts
+    const weekStart = WT.startOfWeek(new Date()).getTime();
+    const week = ss.filter((s) => new Date(s.startedAt).getTime() >= weekStart);
     const strength7 = week.filter(WT.isStrengthSession).length;
     const runs7 = week.filter(WT.isRunSession).length;
     const lastStrength = ss.filter(WT.isStrengthSession).slice(-1)[0];
@@ -1974,8 +1987,8 @@
     }
     // 2. Run: runs are behind and legs/lungs are the better use of today
     if (runsBehind && (hoursSinceStrength < 22 || !strengthBehind || (goalR - runs7) >= (goalS - strength7))) {
-      const why = hoursSinceStrength < 22 ? 'You lifted in the last day — a run keeps you moving while your muscles recover.' : !strengthBehind ? `You've done your ${goalS} strength sessions this week.` : 'Runs are furthest behind this week.';
-      return out({ type: 'cardio', kind: 'run', reason: `${why} ${runs7} of ${goalR} runs in the last 7 days.` });
+      const why = hoursSinceStrength < 22 ? 'You lifted in the last day — a run keeps you moving while your muscles recover.' : !strengthBehind ? `You've done your ${goalS} workouts this week.` : 'Runs are furthest behind this week.';
+      return out({ type: 'cardio', kind: 'run', reason: `${why} ${runs7} of ${goalR} runs this week.` });
     }
     // 3. Weekly goals met → optional session, nothing is due
     if (!strengthBehind && !runsBehind) {

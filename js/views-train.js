@@ -208,7 +208,12 @@
     else if (f.date === today) end = new Date();
     else end = new Date(N.parseDay(f.date).getTime() + 7 * 36e5 + Math.max(sec, 60) * 1000);
     const start = new Date(end.getTime() - Math.max(sec, 0) * 1000);
-    if (WT.startOfDay(start).getTime() !== N.parseDay(f.date).getTime()) start.setTime(N.parseDay(f.date).getTime() + 6 * 36e5);
+    // A run that would start before midnight of its date (e.g. a long run recorded just after midnight) starts at
+    // the beginning of that day instead, keeping start before end and the duration intact.
+    if (WT.startOfDay(start).getTime() !== N.parseDay(f.date).getTime()) {
+      start.setTime(N.parseDay(f.date).getTime());
+      end.setTime(start.getTime() + Math.max(sec, 0) * 1000);
+    }
     const set = { w: '', r: '', time: sec ? String(WT.round(sec / 60, 4)) : '', dist: dist ? String(dist) : '', done: true, at: end.toISOString() };
     if (existing) {
       let e = existing.exercises.find((x) => WT.ex(x.exId) && WT.ex(x.exId).tags.includes('run'));

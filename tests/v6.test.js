@@ -141,6 +141,32 @@ const V5 = {
   ok((await page.locator('.sheet [data-act="runEdit"]').count()) === 1, 'History → run → “Edit run”');
   await page.tap('.sheet [data-act="closeSheet"]');
 
+  console.log('A recorded run shows up everywhere');
+  {
+    const runsBefore = await page.evaluate(() => WT.runList().length);
+    const statsBefore = await page.evaluate(() => WT.stats().count);
+    const weekRunsBefore = await page.evaluate(() => { const st = WT.startOfWeek(new Date()); return WT.db.history.filter((s) => new Date(s.startedAt) >= st && WT.isRunSession(s)).length; });
+    await page.goto(URL + '#/dashboard'); await page.waitForTimeout(150);
+    await page.tap('.hero [data-act="runRecord"]'); await page.waitForSelector('.sheet #runDist');
+    await page.fill('.sheet #runDist', '4');
+    await page.fill('.sheet [data-k="m"]', '36');
+    await page.tap('.sheet [data-act="runSave"]'); await page.waitForTimeout(400);
+    const rid = await page.evaluate(() => WT.db.history[WT.db.history.length - 1].id);
+    ok((await page.evaluate(() => WT.runList().length)) === runsBefore + 1, 'listed in All runs');
+    ok((await page.evaluate(() => WT.stats().count)) === statsBefore + 1, 'counted in statistics');
+    const strip = await page.locator('.week .dot.run, .week .dot.done').count();
+    ok(strip >= 1, 'shown on the week strip');
+    ok((await page.locator('.section-title .footnote').first().innerText()).includes(`${weekRunsBefore + 1} of 2 runs`), 'Home “This week” run count includes it: ' + (await page.locator('.section-title .footnote').first().innerText()));
+    await page.goto(URL + '#/history'); await page.waitForTimeout(150);
+    ok((await page.locator(`[data-entry][href="#/history/${rid}"]`).count()) === 1, 'listed in History');
+    await page.goto(URL + '#/history/' + rid); await page.waitForTimeout(150);
+    ok((await page.locator('main table').innerText()).includes('36:00 · 4 mi'), 'History detail shows time and distance');
+    ok(await page.evaluate((id) => WT.exerciseHistory('outdoor-run').some((h) => h.sessionId === id && h.metrics.time === 36 && h.metrics.dist === 4), rid), 'part of the Outdoor Run exercise history (pace / progress)');
+    ok(await page.evaluate(() => WT.ach.progress().find((p) => p.def.id === 'run-dist-25').value >= 4), 'distance achievements count it');
+    const sug = await page.evaluate(() => { const weekStart = WT.startOfWeek(new Date()); return { runs: WT.db.history.filter((s) => new Date(s.startedAt) >= weekStart && WT.isRunSession(s)).length, s: WT.suggestNext() }; });
+    ok(sug.runs >= 1 && !(sug.s.kind === 'run' && new RegExp(`\\b0 of 2 runs`).test(sug.s.reason)), 'the weekly recommendation counts recorded runs: ' + sug.s.reason);
+  }
+
   console.log('Meal ideas');
   await page.goto(URL + '#/meals'); await page.waitForTimeout(200);
   ok((await page.locator('[data-act="mlGenerate"]').isDisabled()), 'Suggest is disabled until something is picked');
@@ -217,9 +243,19 @@ const V5 = {
   await page.goto(URL + '#/settings'); await page.waitForTimeout(200);
   await page.locator('[data-act="pfToggleOn"][data-k="achievements"]').tap(); await page.waitForTimeout(150);
   ok((await db()).profile.achievements === false, 'achievements can be turned off');
+  // Reach "Finding Your Stride" (5 runs) while achievements are off
+  const runsNow = await page.evaluate(() => WT.runList().length);
+  await page.evaluate((n) => { for (let k = 0; k < n; k++) WT.saveRun({ date: WT.nut.dayKey(), h: '', m: '20', s: '', dist: '2', kind: 'outdoor-run', effort: '', notes: '' }); }, Math.max(0, 5 - runsNow));
+  await page.waitForTimeout(1200);
+  ok((await page.locator('.ach-toast').count()) === 0 && !(await db()).achievements.unlocked['runs-5'], 'nothing is recorded or shown while achievements are off');
   await page.goto(URL + '#/achievements'); await page.waitForTimeout(150);
   ok((await page.locator('[data-act="achEnable"]').count()) === 1, 'turned-off screen offers to turn them back on');
-  await page.tap('[data-act="achEnable"]');
+  const earnedBefore = await page.evaluate(() => JSON.stringify(Object.fromEntries(Object.entries(WT.db.achievements.unlocked).map(([k, v]) => [k, v.at]))));
+  await page.tap('[data-act="achEnable"]'); await page.waitForTimeout(1500);
+  ok((await page.locator('.ach-toast').count()) === 0, 'turning achievements back on replays no celebration');
+  const after = (await db()).achievements.unlocked;
+  ok(after['runs-5'] && after['runs-5'].retro, 'the milestone reached while off is now listed, quietly');
+  ok(Object.entries(JSON.parse(earnedBefore)).every(([k, at]) => after[k] && after[k].at === at), 'previously earned achievements keep their original dates');
 
   console.log('Intensity settings and editable stages');
   await page.goto(URL + '#/settings'); await page.waitForTimeout(200);

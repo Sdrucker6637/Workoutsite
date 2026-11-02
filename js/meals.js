@@ -268,14 +268,14 @@
     }),
     T({
       id: 'tuna-melt', method: 'No-cook / toaster', prep: 8, cook: 5,
-      protein: { ok: ['tuna', 'chicken-breast', 'eggs'] }, second: { ok: ['greek-yogurt', 'cottage-cheese'] }, carb: { ok: ['bread', 'tortilla'], need: 'required' },
+      protein: { ok: ['tuna', 'chicken-breast', 'eggs'] }, second: { ok: ['greek-yogurt', 'cottage-cheese'] }, carb: { ok: ['bread', 'tortilla'], need: 'optional' },
       veg: { ok: ['spinach', 'tomato', 'onion', 'bell-pepper', 'jalapeno'], min: 0, max: 3 },
       extras: ['mustard', 'lemon', 'salt', 'cheese'],
-      name: (s) => `${s.p.id === 'eggs' ? 'Egg salad' : s.p.id === 'tuna' ? 'Tuna' : 'Chicken salad'} ${s.c.kind === 'tortilla' ? 'wraps' : 'melt'}${andVeg(s, ' with ')}`,
+      name: (s) => `${s.p.id === 'eggs' ? 'Egg salad' : s.p.id === 'tuna' ? (s.c ? 'Tuna' : 'Tuna salad') : 'Chicken salad'}${s.c ? (s.c.kind === 'tortilla' ? ' wraps' : ' melt') : ' bowl'}${andVeg(s, ' with ')}`,
       steps: (s) => [
         s.p.id === 'eggs' ? 'Hard-boil the eggs (10 minutes), cool and chop.' : s.p.id === 'chicken-breast' ? proteinCook(s.p, 'air') + ' Let it cool, then chop.' : proteinCook(s.p),
         `Mix with ${s.p2 ? `the ${lower(s.p2)} (instead of mayo)` : 'a little mustard'}, lemon, salt and pepper${s.v.some((v) => v.id !== 'spinach') ? `, and the chopped ${s.v.filter((v) => v.id !== 'spinach').map(lower).join(', ')}` : ''}.`,
-        s.c.kind === 'tortilla' ? `Spread over the tortillas${has(s, 'spinach') ? ', add the spinach' : ''} and roll up.` : `Pile onto the bread${has(s, 'spinach') ? ' with the spinach' : ''}, top with a little cheese and toast or broil until melted.`,
+        !s.c ? `Serve it as is${has(s, 'spinach') ? ' over the spinach' : ''}, or spooned into lettuce leaves.` : s.c.kind === 'tortilla' ? `Spread over the tortillas${has(s, 'spinach') ? ', add the spinach' : ''} and roll up.` : `Pile onto the bread${has(s, 'spinach') ? ' with the spinach' : ''}, top with a little cheese and toast or broil until melted.`,
       ],
     }),
     T({
@@ -662,6 +662,9 @@
         );
       });
     });
+    if (!cands.length && P.every((x) => x.kind === 'dairy')) {
+      return { ideas: [], reason: `${WT.listJoin(P.map((x) => x.name))} works best as a sauce or side in these recipes — add another protein (eggs, chicken, tuna…), or pasta or potatoes to build a meal around it.` };
+    }
     if (!cands.length) {
       const why = st.unavailable.length || st.prefs.disliked.length || st.prefs.diets.length ? ' with your diet, dislikes and out-of-stock items' : '';
       return { ideas: [], reason: `No bundled recipe fits this combination${why}. Try adding a vegetable or a carbohydrate — or a different protein.` };
@@ -687,15 +690,18 @@
     // Diverse pick: one per template; spread proteins and methods
     const out = [];
     const usedTpl = new Set();
+    const usedDish = new Set(); // same ingredients cooked the same way = near-identical meal; show only one
+    const dishKey = (x) => [x.s.p.id, x.s.p2 ? x.s.p2.id : '', x.s.c ? x.s.c.id : '', x.s.v.map((v) => v.id).sort().join('+'), x.tpl.method].join('|');
     const pCount = {};
     const mCount = {};
     for (let pass = 0; pass < 2 && out.length < count; pass++) {
       for (const x of cands) {
         if (out.length >= count) break;
-        if (usedTpl.has(x.tpl.id)) continue;
+        if (usedTpl.has(x.tpl.id) || usedDish.has(dishKey(x))) continue;
         if (pass === 0 && ((pCount[x.s.p.id] || 0) >= Math.ceil(count / Math.max(1, P.length)) || (mCount[x.tpl.method] || 0) >= 2)) continue;
         out.push(x);
         usedTpl.add(x.tpl.id);
+        usedDish.add(dishKey(x));
         pCount[x.s.p.id] = (pCount[x.s.p.id] || 0) + 1;
         mCount[x.tpl.method] = (mCount[x.tpl.method] || 0) + 1;
       }
@@ -739,8 +745,9 @@
     if (n == null) return unit || '';
     let u = unit || '';
     // oz over a pound reads better in pounds; tsp over 3 → tbsp
-    if (u === 'oz' && n >= 16) return `${M.fmtQty(n / 16)} lb (≈${Math.round(n * 28.35 / 10) * 10} g)`;
-    if (u === 'oz') return `${M.fmtQty(n)} oz (≈${Math.round(n * 28.35 / 5) * 5} g)`;
+    // Pounds only for exact quarter-pounds (20 oz is 1 ¼ lb; 18 oz stays "18 oz" rather than being rounded)
+    if (u === 'oz' && n >= 16 && Math.abs(n / 4 - Math.round(n / 4)) < 1e-6) return `${M.fmtQty(n / 16)} lb (≈${Math.round(n * 28.35 / 10) * 10} g)`;
+    if (u === 'oz') return `${Math.round(n * 10) / 10} oz (≈${Math.round(n * 28.35 / 5) * 5} g)`;
     if (u === 'tsp' && n >= 3) return `${M.fmtQty(n / 3)} tbsp`;
     if (u === 'can' && n !== 1) u = 'cans';
     if (/^cup\b/.test(u) && n > 1.1) u = u.replace(/^cup/, 'cups');

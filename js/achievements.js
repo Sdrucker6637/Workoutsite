@@ -270,8 +270,25 @@
     opts = opts || {};
     const st = S();
     if (!st) return [];
-    const first = !st.since;
     const now = new Date().toISOString();
+    // Turned off: remember when, and record nothing. Already-earned achievements stay as they are.
+    if (!A.enabled()) {
+      if (st.off !== true) {
+        st.off = true;
+        st.offAt = now;
+        WT.save();
+      }
+      return [];
+    }
+    // Turned back on: whatever was reached while off is recorded quietly, with its real date — no replayed
+    // celebrations. Only milestones reached from now on are celebrated.
+    if (st.off) {
+      st.off = false;
+      st.resumedAt = now;
+      opts = Object.assign({}, opts, { silent: true });
+      WT.save();
+    }
+    const first = !st.since;
     const fresh = [];
     A.progress().forEach((p) => {
       if (st.unlocked[p.def.id] || !p.at) return;
@@ -324,10 +341,11 @@
     return [h.length, h.length && h[h.length - 1].id, h.length && h[h.length - 1].endedAt, n.length, n.length && n[n.length - 1].id, p.proteinTarget, p.strengthPerWeek, p.unit, Object.keys(WT.db.achievements.unlocked).length].join('|');
   };
   A.schedule = function () {
-    if (!A.enabled() || !WT.db || !WT.db.achievements) return;
+    if (!WT.db || !WT.db.achievements) return;
     clearTimeout(timer);
     timer = setTimeout(() => {
-      const sig = signature();
+      // The on/off setting is part of the signature so turning achievements off or on is always noticed.
+      const sig = signature() + '|' + A.enabled();
       if (sig === lastSig) return; // nothing that achievements depend on has changed
       lastSig = sig;
       // Never interrupt an active workout with a celebration — it'll be noticed after saving.

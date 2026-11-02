@@ -57,6 +57,56 @@ section('Essential slots step aside when muscles are covered / recovering');
   console.log(`  chest exercises per full-body workout after a big chest week: ${(chest / N).toFixed(2)}`);
   ok(chest / N < 0.8, 'chest is not forced into every full-body session');
 }
+section('No overcorrection: a big session does not exclude a muscle for the rest of the week');
+{
+  const bigLegs = [['goblet-squat', 6], ['bulgarian-split-squat', 5], ['db-hip-thrust', 5], ['leg-extension', 4], ['slider-leg-curl', 4]];
+  const legShare = (daysAgo) => {
+    reset();
+    sess(daysAgo, 'legs', bigLegs.map(([id, n]) => [id, Array.from({ length: n }, () => [30, 10])]));
+    let c = 0;
+    for (let k = 0; k < 100; k++) c += groupsOf(WT.generate(WT.defaultSettings('full'))).includes('legs') ? 1 : 0;
+    return c;
+  };
+  const d1 = legShare(1), d3 = legShare(3), d5 = legShare(5);
+  console.log(`  legs in full-body plans after a 24-set leg day: 1 day later ${d1}%, 3 days ${d3}%, 5 days ${d5}%`);
+  ok(d1 <= 10, 'the day after: legs are still recovering and step aside');
+  ok(d3 >= 90 && d5 >= 90, 'from 3 days later legs are back in full-body plans');
+}
+section('No overcorrection: a favorite done often is rotated, not shut out');
+{
+  reset();
+  for (let k = 0; k < 6; k++) sess(2 + k * 2.3, 'full', [['pullup', S3(0, 8)]]);
+  let c = 0;
+  for (let k = 0; k < 200; k++) c += WT.generate(WT.defaultSettings('full')).exercises.some((i) => i.exId === 'pullup') ? 1 : 0;
+  console.log(`  favorite pull-up done 6× in 2 weeks → in ${c / 2}% of full-body plans`);
+  ok(c >= 30, 'still appears regularly (≥ 15% of plans)');
+  ok(c < 200, 'but not in every plan');
+}
+section('Rotation: every main group comes around in full-body plans');
+{
+  // Simulate 4 weeks of Mon / Wed / Fri full-body sessions, logging whatever is generated
+  reset();
+  const G = ['chest', 'back', 'shoulders', 'arms', 'legs', 'core'];
+  const gap = {}, maxGap = {};
+  G.forEach((g) => (gap[g] = maxGap[g] = 0));
+  const offsets = [];
+  for (let w = 3; w >= 0; w--) for (const d of [4, 2, 0]) offsets.push(w * 7 + d + 1);
+  offsets.forEach((daysAgo) => {
+    const ctxNow = Date.now;
+    Date.now = () => ctxNow() - daysAgo * 864e5; // generate as of that day
+    const w = WT.generate(WT.defaultSettings('full'));
+    Date.now = ctxNow;
+    const s = WT.sessionFromWorkout(w);
+    s.exercises.forEach((e) => e.sets.forEach((x) => { x.done = true; x.w = '20'; x.r = String(e.repMax); (x.stages || []).forEach((st) => { st.done = true; st.w = '20'; st.r = String(st.tr); }); }));
+    s.startedAt = s.endedAt = ago(daysAgo);
+    s.durationSec = 3000;
+    WT.db.history.push(s);
+    const gs = new Set(groupsOf(w));
+    G.forEach((g) => (gs.has(g) ? (gap[g] = 0) : (maxGap[g] = Math.max(maxGap[g], ++gap[g]))));
+  });
+  console.log('  longest run of sessions without each group:', JSON.stringify(maxGap));
+  ok(G.every((g) => maxGap[g] <= 4), 'no main muscle group is left out of more than 4 sessions in a row');
+}
 section('Exercise variety: recently repeated exercises rotate out');
 {
   reset();
@@ -136,6 +186,38 @@ section('Automatic drop and build-up sets');
   ok(rec.stages && rec.stages.length === 3 && rec.stages.every((s, j) => s.w > 0 && (!j || s.w < rec.stages[j - 1].w)), 'drop-set stage loads derived from history and decreasing: ' + rec.stages.map((s) => s.w).join(' → '));
   const rb = WT.recommend('cable-curl', { repMin: 6, repMax: 12, sets: 2, intensity: 'buildup', stages: 3 });
   ok(rb.stages.every((s, j) => s.w > 0 && (!j || s.w > rb.stages[j - 1].w)) && rb.stages[0].r >= rb.stages[2].r, 'build-up stage loads increase while reps fall: ' + rb.stages.map((s) => `${s.w}×${s.r}`).join(' → '));
+}
+section('Drop / build-up frequency by workout size, and odds of 0 per size');
+{
+  reset();
+  const odds = WT.db.profile.intensityOdds;
+  const T = ['full', 'push', 'pull', 'legs', 'arms', 'back', 'shoulders'];
+  const rate = (n, k) => {
+    let items = 0, hit = 0, wk = 0;
+    for (const t of T) for (let i = 0; i < 80; i++) {
+      const w = WT.generate(Object.assign(WT.defaultSettings(t), { count: n }));
+      const c = w.exercises.filter((x) => x.intensity === k).length;
+      items += w.exercises.length; hit += c; wk += c ? 1 : 0;
+    }
+    return { perEx: hit / items, perWorkout: wk / (T.length * 80) };
+  };
+  for (const n of [3, 6, 10]) {
+    const d = rate(n, 'drop'), b = rate(n, 'buildup');
+    console.log(`  ${n} exercises: drop ${(d.perEx * 100).toFixed(1)}% of exercises (${(d.perWorkout * 100).toFixed(0)}% of workouts), build-up ${(b.perEx * 100).toFixed(1)}% (${(b.perWorkout * 100).toFixed(0)}%)`);
+    ok(d.perWorkout > 0.03 && b.perWorkout > 0.03, `${n} exercises: both appear in ordinary generation`);
+    odds.drop = 0;
+    ok(rate(n, 'drop').perEx === 0, `${n} exercises: drop odds 0 → never`);
+    odds.drop = 7; odds.buildup = 0;
+    ok(rate(n, 'buildup').perEx === 0, `${n} exercises: build-up odds 0 → never`);
+    odds.buildup = 7;
+  }
+  // Higher odds → more often (the slider is a real control)
+  const lo = rate(6, 'drop').perEx;
+  odds.drop = 25;
+  const hi = rate(6, 'drop').perEx;
+  odds.drop = 7;
+  console.log(`  drop odds 7 → ${(lo * 100).toFixed(1)}%, odds 25 → ${(hi * 100).toFixed(1)}% of exercises`);
+  ok(hi > lo * 1.4, 'raising the drop-set odds makes them clearly more frequent');
 }
 section('Intensity settings');
 {
@@ -244,9 +326,10 @@ section('What to do next');
   s = WT.suggestNext();
   ok(s.kind === 'recovery' && /in a row/.test(s.reason), '4 days in a row → recovery');
   reset();
-  sess(6, 'full', [['goblet-squat', S3(50, 10)]]); sess(4, 'full', [['db-bench-press', S3(50, 10)]]); sess(2, 'full', [['db-row', S3(50, 10)].filter(() => WT.ex('db-row'))].filter((x) => x[0]).concat([['seated-cable-row', S3(100, 10)]].filter((x) => WT.ex(x[0]))));
+  // Goals are counted per calendar week (like Home), so put everything in this week: today
+  sess(0, 'full', [['goblet-squat', S3(50, 10)]]); sess(0, 'full', [['db-bench-press', S3(50, 10)]]); sess(0, 'full', [['db-row', S3(50, 10)].filter(() => WT.ex('db-row'))].filter((x) => x[0]).concat([['seated-cable-row', S3(100, 10)]].filter((x) => WT.ex(x[0]))));
   const runSet = [['outdoor-run', [[0, 0]]]];
-  for (const d of [6, 4]) { const r = sess(d, 'cardio', runSet); r.exercises[0].sets = [{ w: '', r: '', time: '30', dist: '3', done: true }]; }
+  for (const d of [0, 0]) { const r = sess(d, 'cardio', runSet); r.exercises[0].sets = [{ w: '', r: '', time: '30', dist: '3', done: true }]; }
   s = WT.suggestNext();
   ok(s.kind === 'recovery' && /met this week/.test(s.reason), 'weekly goals met → optional / rest');
   // Split rotation by readiness

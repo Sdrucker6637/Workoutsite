@@ -83,6 +83,43 @@ section('Meal generation — the brief’s examples and more');
   ok(/Pick/.test(M.generate().reason), 'nothing selected → prompt');
 }
 
+section('QA: no near-identical ideas, sensible quantities, protein adds up');
+{
+  const P = M.sorted('protein').map((x) => x.id), C = [null, ...M.sorted('carb').map((x) => x.id)];
+  const V = [[], ['spinach'], ['broccoli', 'garlic'], ['bell-pepper', 'onion', 'jalapeno'], ['bok-choy', 'asparagus']];
+  let batches = 0, dup = 0, empty = 0, bad = 0, sumOff = 0;
+  for (const p of P) for (const c of C) for (const v of V) {
+    pick([p, c, ...v].filter(Boolean));
+    const r = M.generate({ count: 4 });
+    batches++;
+    if (!r.ideas.length) { empty++; ok(!!r.reason, 'an empty result always explains why'); continue; }
+    const seen = new Set();
+    r.ideas.forEach((x) => {
+      const k = x.uses.slice().sort().join('+') + '|' + x.method;
+      if (seen.has(k)) dup++;
+      seen.add(k);
+      if (/undefined|NaN|null|\s{2}| with $| and $/.test(x.name + x.steps.join(' ') + x.mine.map((m) => m.amount).join(' '))) bad++;
+      // Protein per serving = sum of the listed portions (yours + pantry additions)
+      const sum = x.mine.concat(x.extras).reduce((a, m) => a + ((m.m && +m.m.p) || 0), 0);
+      if (Math.abs(Math.round(sum) - x.macros.p) > 1) sumOff++;
+      ok(x.macros.p >= 15 && x.macros.p <= 65, `protein per serving in a realistic range (${x.name}: ${x.macros.p} g)`);
+    });
+  }
+  console.log(`  ${batches} selections: ${empty} without ideas, ${dup} near-identical pairs, ${bad} malformed texts`);
+  ok(dup === 0, 'no two ideas in a batch use the same ingredients cooked the same way');
+  ok(bad === 0, 'no malformed names, steps or amounts');
+  ok(sumOff === 0, 'protein per serving equals the sum of the listed portions');
+  pick(['tuna', 'spinach', 'tomato']);
+  ok(M.generate().ideas.length >= 1, 'tuna with just vegetables gives an idea (tuna salad)');
+  pick(['cottage-cheese']);
+  ok(/sauce or side/.test(M.generate().reason), 'dairy-only selection explains what to add');
+  ok(M.fmtAmount(18, 'oz') === '18 oz (≈510 g)' && M.fmtAmount(20, 'oz') === '1 ¼ lb (≈570 g)', 'pounds only for exact quarter-pounds');
+  ok(M.fmtAmount(2.25, 'cup cooked') === '2 ¼ cups cooked' && M.fmtAmount(1.5, 'can') === '1 ½ cans', 'plural units');
+  // Spot-check against typical (USDA-style) values for one portion
+  const ref = { 'chicken-breast': 38, 'chicken-thigh': 33, 'ground-beef': 28, 'ground-turkey': 32, shrimp: 34, salmon: 29, tuna: 26, eggs: 19, 'greek-yogurt': 17, 'cottage-cheese': 12, tofu: 22 };
+  Object.entries(ref).forEach(([id, g]) => ok(Math.abs(M.get(id).per.p - g) <= 2, `${id}: ${M.get(id).per.p} g per portion ≈ ${g} g reference`));
+}
+
 section('Variety, regenerate, favourites');
 {
   pick(['chicken-breast', 'rice', 'broccoli', 'bell-pepper', 'onion']);
@@ -210,6 +247,39 @@ section('Achievements');
   WT.resetAll();
   WT.importData(json, 'replace');
   ok(WT.db.achievements.unlocked['streak-2'], 'achievements survive backup and restore');
+  // Turning achievements off and back on never replays celebrations
+  {
+    WT.resetAll();
+    const w = (d) => WT.db.history.push({ id: WT.uid(), type: 'full', title: 'W', startedAt: ago(d), endedAt: ago(d), durationSec: 3000, prs: [], totals: { sets: 1 }, exercises: [{ uid: WT.uid(), exId: 'db-curl', intensity: 'regular', targetSets: 1, repMin: 8, repMax: 12, sets: [{ w: '20', r: '10', done: true }] }] });
+    A.check();
+    w(1);
+    const f1 = A.check();
+    ok(f1.some((d) => d.id === 'first-workout'), 'a milestone reached while on is celebrated');
+    const firstAt = WT.db.achievements.unlocked['first-workout'].at;
+    WT.db.profile.achievements = false;
+    ok(A.check().length === 0 && WT.db.achievements.off === true, 'while off nothing is recorded');
+    w(0.5); w(0.4); // 3 workouts reached while achievements are off
+    ok(!WT.db.achievements.unlocked['workouts-3'], 'not recorded while off');
+    WT.db.profile.achievements = true;
+    const f2 = A.check();
+    ok(f2.length === 0, 'turning them back on replays no celebration');
+    ok(WT.db.achievements.unlocked['workouts-3'] && WT.db.achievements.unlocked['workouts-3'].retro, 'milestones reached while off are recorded quietly');
+    ok(Math.abs(new Date(WT.db.achievements.unlocked['workouts-3'].at) - new Date(ago(0.4))) < 1000, '…with the date they actually happened');
+    ok(WT.db.achievements.unlocked['first-workout'].at === firstAt && !WT.db.achievements.unlocked['first-workout'].retro, 'earlier unlocks keep their original date and status');
+    // After re-enabling, genuinely new milestones are celebrated again
+    for (let k = 0; k < 7; k++) w(0.01);
+    ok(A.check().some((d) => d.id === 'workouts-10'), 'a new milestone after re-enabling is celebrated');
+    // Off → on → off → on with nothing new: nothing at all
+    WT.db.profile.achievements = false; A.check(); WT.db.profile.achievements = true;
+    ok(A.check().length === 0, 'toggling again with nothing new does nothing');
+    // Celebrations switched off: recorded, never replayed when switched back on
+    WT.db.profile.achCelebrate = false;
+    for (let k = 0; k < 15; k++) w(0.005);
+    const f3 = A.check();
+    ok(f3.some((d) => d.id === 'workouts-25'), 'recorded while celebrations are off');
+    WT.db.profile.achCelebrate = true;
+    ok(A.check().length === 0, 'turning celebrations back on replays nothing');
+  }
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
