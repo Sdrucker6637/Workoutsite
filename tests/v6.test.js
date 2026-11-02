@@ -179,15 +179,20 @@ const V5 = {
   await shot('meals');
   await page.locator('.meal-card [data-act="mlOpen"]').first().tap(); await page.waitForSelector('.sheet ol.steps');
   const sheetTxt = await page.locator('.sheet').innerText();
-  ok(/From your kitchen/i.test(sheetTxt) && /Common additions/i.test(sheetTxt) && /Prep/.test(sheetTxt) && /Protein/.test(sheetTxt), 'recipe shows your ingredients, pantry additions, times and protein');
+  ok(/Your ingredients/i.test(sheetTxt) && /Pantry additions/i.test(sheetTxt) && /Prep/.test(sheetTxt) && /Total/.test(sheetTxt) && /Protein/.test(sheetTxt) && /Carbs/.test(sheetTxt) && /Fat/.test(sheetTxt) && /Calories/.test(sheetTxt), 'recipe shows your ingredients, pantry additions, times and calories / protein / carbs / fat');
+  ok((await page.locator('.sheet .table tbody tr').count()) >= 4, 'per-ingredient nutrition breakdown is available');
+  const footOk = await page.evaluate(() => [...document.querySelectorAll('.sheet-foot .btn')].every((b) => b.scrollWidth <= b.clientWidth + 1));
+  ok(footOk, 'footer buttons fit on a phone');
   ok((await page.locator('.sheet ol.steps li').count()) >= 2, 'cooking steps listed');
   const amt0 = await page.locator('.sheet .list .tnum').first().innerText();
   await page.tap('.sheet [data-act="mlOpenServ"][data-d="1"]'); await page.waitForTimeout(100);
   ok((await page.locator('.sheet .list .tnum').first().innerText()) !== amt0, 'changing servings rescales quantities');
   await shot('recipe');
   await page.tap('.sheet [data-act="mlFavOpen"]'); await page.waitForTimeout(100);
+  const shownRecipe = await page.evaluate(() => WT.ui.meals.ideas[0]);
   await page.tap('.sheet [data-act="mlLog"]'); await page.waitForTimeout(200);
-  ok((await db()).nutrition.entries.some((e) => e.note === 'Meal idea estimate'), 'a serving can be logged to the food diary');
+  const logged = (await db()).nutrition.entries.find((e) => /^Meal idea/.test(e.note));
+  ok(logged && logged.name === shownRecipe.name && Math.abs(logged.per.p - shownRecipe.macros.exact.p) <= 0.6, 'logging a serving puts this recipe’s calculated totals in the food diary');
   await page.tap('.sheet [data-act="closeSheet"]');
   ok((await db()).meals.favorites.length === 1, 'recipe saved');
   const keys = () => page.evaluate(() => WT.ui.meals.ideas.map((x) => x.key));
@@ -196,8 +201,9 @@ const V5 = {
   const second = await keys();
   console.log('    then: ' + (await page.locator('.meal-card .ti').allInnerTexts()).join(' | '));
   ok(second.length && second.every((k) => !first.includes(k)), 'Different ideas shows new recipes');
-  const tpl = (k) => k.split('|')[0];
-  ok(second.filter((k) => !first.map(tpl).includes(tpl(k))).length >= Math.min(2, second.length), 'and mostly different recipes, not just different combinations');
+  const dish = (k) => k.split('|').slice(0, 2).join('|'); // dish type + flavor
+  const fl = (k) => k.split('|')[1];
+  ok(second.every((k) => !first.map(dish).includes(dish(k))) && second.filter((k) => !first.map(fl).includes(fl(k))).length >= 3, 'and genuinely different dishes: new flavor profiles, never the same dish type + flavor');
   await page.tap('[data-act="mlTab"][data-v="saved"]'); await page.waitForTimeout(150);
   ok((await page.locator('.meal-card').count()) === 1, 'Saved tab lists the saved recipe');
   await page.reload(); await page.waitForTimeout(300);
@@ -210,25 +216,55 @@ const V5 = {
   ok((await page.locator('[data-act="mlStock"][data-id="shrimp"].out').count()) === 1 && !(await db()).meals.selected.includes('shrimp'), 'Ran out marks shrimp unavailable and deselects it');
   await page.tap('[data-act="mlMode"][data-v="select"]');
   // Custom ingredient
-  await page.tap('[data-act="mlAddIng"][data-cat="protein"]'); await page.waitForSelector('.sheet [data-k="name"]');
-  await page.fill('.sheet [data-k="name"]', 'Cod');
-  await page.fill('.sheet [data-k="p"]', '26');
+  await page.tap('[data-act="mlAddIng"][data-cat="protein"]'); await page.waitForSelector('.sheet #mlfName');
+  await page.fill('.sheet #mlfName', 'turkey kielbasa'); await page.waitForTimeout(250);
+  ok(/8\s*g\s*protein/.test((await page.locator('#mlEst').innerText()).replace(/\n/g, ' ')) && /Estimate/.test(await page.locator('#mlEst').innerText()), 'typing a name shows an automatic estimate (≈ 8 g protein per 2 oz)');
+  await page.tap('.sheet [data-act="mlfSave"]'); await page.waitForTimeout(200);
+  m = await db();
+  const kb = m.meals.custom.find((x) => x.name === 'turkey kielbasa');
+  ok(kb && kb.macros.p > 7 && kb.status === 'estimated' && m.meals.selected.includes(kb.id), 'added with estimated nutrition — no numbers entered');
+  await page.tap('[data-act="mlAddIng"][data-cat="protein"]'); await page.waitForSelector('.sheet #mlfName');
+  await page.fill('.sheet #mlfName', 'Cod');
+  await page.evaluate(() => { const d = [...document.querySelectorAll('.sheet details')].find((x) => /Serving size/.test(x.textContent)); d.open = true; });
+  await page.fill('.sheet [data-in="mlfM"][data-k="p"]', '26');
   await page.tap('.sheet [data-act="mlfSave"]'); await page.waitForTimeout(200);
   m = await db();
   const cod = m.meals.custom.find((x) => x.name === 'Cod');
-  ok(cod && m.meals.selected.includes(cod.id), 'custom ingredient added and selected');
+  ok(cod && cod.macros.p === 26 && cod.status === 'user' && m.meals.selected.includes(cod.id), 'label value entered by hand is used and marked as yours');
+  await page.tap(`[data-act="mlPick"][data-id="${kb.id}"]`);
   await page.tap('[data-act="mlGenerate"]'); await page.waitForTimeout(400);
-  ok((await page.locator('.meal-card .su.t3').allInnerTexts()).some((t) => /cod/.test(t)) && !(await page.locator('.meal-card .su.t3').allInnerTexts()).some((t) => /shrimp/.test(t)), 'ideas use cod and skip the run-out shrimp');
+  ok((await page.locator('.meal-card .su.t3').allInnerTexts()).some((t) => /cod/.test(t)) && !(await page.locator('.meal-card .su.t3').allInnerTexts()).some((t) => /Uses[^·]*shrimp/.test(t)), 'ideas use cod and skip the run-out shrimp');
+  // Another idea replaces just one
+  await page.locator('.meal-card [data-act="mlOpen"]').first().tap(); await page.waitForSelector('.sheet [data-act="mlSwapOne"]');
+  const before1 = await page.evaluate(() => WT.ui.meals.ideas.map((x) => x.key));
+  await page.tap('.sheet [data-act="mlSwapOne"]'); await page.waitForTimeout(250);
+  const after1 = await page.evaluate(() => WT.ui.meals.ideas.map((x) => x.key));
+  ok(after1[0] !== before1[0] && after1.slice(1).join() === before1.slice(1).join(), '“Another idea” replaces just that recipe');
+  await page.tap('.sheet [data-act="closeSheet"]');
+  // Ingredient details from the kitchen
+  await page.tap('[data-act="mlManage"]'); await page.waitForSelector('.sheet [data-act="mlEditIng"]');
+  await page.locator('.sheet [data-act="mlEditIng"][data-id="chicken-breast"]').tap(); await page.waitForSelector('#mlEst');
+  ok(/Typical values for chicken breast/.test(await page.locator('#mlEst').innerText()), 'kitchen shows where an ingredient’s nutrition comes from');
+  await page.evaluate(() => { const d = [...document.querySelectorAll('.sheet details')].find((x) => /Serving size/.test(x.textContent)); d.open = true; });
+  await page.fill('.sheet [data-in="mlfS"][data-k="g"]', '227');
+  await page.tap('.sheet [data-act="mlfSave"]'); await page.waitForTimeout(200);
+  ok(await page.evaluate(() => Math.round(WT.meals.get('chicken-breast').macros.p) >= 50), 'changing a built-in serving to 8 oz is remembered and scales its nutrition');
+  await page.evaluate(() => WT.closeSheet(true));
   // Search
   await page.fill('#mlSearch', 'pota'); await page.waitForTimeout(100);
   ok((await page.locator('#mlPicker .chip.ing').count()) === 2, 'search filters ingredients');
   await page.fill('#mlSearch', ''); await page.waitForTimeout(100);
   // Preferences
-  await page.tap('details.adv summary'); await page.waitForTimeout(100);
+  await page.tap('summary:has-text("Preferences")'); await page.waitForTimeout(100);
   await page.fill('#mlDislikeIn', 'spinach'); await page.tap('[data-act="mlDislikeAdd"]'); await page.waitForTimeout(150);
   ok((await db()).meals.prefs.disliked.includes('spinach') && !(await db()).meals.selected.includes('spinach'), 'disliked ingredient recorded and removed from the selection');
   await page.tap('[data-act="mlDiet"][data-k="pescatarian"]'); await page.waitForTimeout(100);
   ok((await page.locator('[data-act="mlPick"][data-id="chicken-breast"][disabled]').count()) === 1, 'pescatarian greys out chicken');
+  await page.tap('[data-act="mlDiet"][data-k="pescatarian"]'); await page.waitForTimeout(100);
+  await page.evaluate(() => { const d = [...document.querySelectorAll('details')].find((x) => /Meal & style/.test(x.querySelector('summary').textContent)); d.open = true; }); await page.waitForTimeout(100);
+  await page.tap('[data-act="mlStyle"][data-k="quick"]'); await page.waitForTimeout(100);
+  ok((await db()).meals.prefs.styles.includes('quick'), 'style chips are saved');
+  await page.tap('[data-act="mlStyle"][data-k="quick"]');
   ok(await noOverflow(), 'meal planner fits the phone width');
   await shot('meals-prefs');
 
@@ -295,7 +331,7 @@ const V5 = {
   console.log('Export / import includes the new data');
   const json = await page.evaluate(() => WT.exportData());
   const data = JSON.parse(json).data;
-  ok(data.meals.favorites.length === 1 && data.meals.custom.length === 1 && Object.keys(data.achievements.unlocked).length >= 3, 'export includes saved recipes, custom ingredients and achievements');
+  ok(data.meals.favorites.length === 1 && ['turkey kielbasa', 'Cod'].every((n) => data.meals.custom.some((x) => x.name === n && x.macros.p > 0)) && data.meals.overrides['chicken-breast'] && Object.keys(data.achievements.unlocked).length >= 3, 'export includes saved recipes, custom ingredients with nutrition, your corrections and achievements');
   await page.evaluate((j) => { WT.resetAll(); WT.importData(j, 'replace'); }, json);
   m = await db();
   ok(m.meals.favorites.length === 1 && m.history.some((s) => s.id === 'w1') && m.nutrition.entries.some((e) => e.id === 'n1'), 'restore brings everything back');

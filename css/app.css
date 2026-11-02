@@ -3086,3 +3086,68 @@ a.callout {
     animation: none;
   }
 }
+
+/* ═════════════ Meal planner v2: nutrition grids, estimates ═════════════ */
+.nutri {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  padding: 12px 4px;
+  border-radius: var(--r-md);
+  background: var(--bg);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.nutri .v {
+  font-size: 19px;
+  font-weight: 640;
+  letter-spacing: -0.01em;
+}
+.nutri .v small {
+  font-size: 12px;
+  font-weight: 520;
+  color: var(--text-3);
+  margin-left: 1px;
+}
+.nutri .k {
+  font-size: 12px;
+  color: var(--text-3);
+  margin-top: 2px;
+}
+.nutri.sm {
+  padding: 8px 2px;
+}
+.nutri.sm .v {
+  font-size: 16px;
+}
+.est {
+  padding: 12px 14px;
+  border-radius: var(--r-md);
+  box-shadow: 0 0 0 1px var(--line);
+}
+.meal-main .su.desc {
+  color: var(--text-2);
+  line-height: 1.45;
+}
+.seg.ing-cats {
+  flex-wrap: wrap;
+}
+.seg.ing-cats button {
+  flex: 1 1 30%;
+}
+.callout.mb {
+  margin-bottom: 4px;
+}
+.sheet .table th {
+  font-size: 12px;
+  font-weight: 560;
+  color: var(--text-3);
+  text-align: right;
+  padding: 4px 6px;
+}
+.sheet .table td + td {
+  text-align: right;
+}
+.sheet-body ol.steps {
+  padding-bottom: 8px;
+}

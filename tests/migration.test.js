@@ -7,6 +7,7 @@
  * Step 2 opens the v6 app on that storage and checks that everything survived, then exercises backup / restore.
  *
  * Setup:  git worktree add /tmp/forge-v5 5d64e76 && (cd /tmp/forge-v5 && python3 -m http.server 8766 &)
+ *         git worktree add /tmp/forge-main f7f52cf && (cd /tmp/forge-main && python3 -m http.server 8767 &)   (previous release, meal store schema 1)
  *         python3 -m http.server 8765 &      (this repo)
  * Run:    node tests/migration.test.js       (requires playwright)
  */
@@ -176,6 +177,72 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   ok((await page.locator('.cur').count()) === 1, 'in-progress workout resumes');
   const rec = await page.evaluate(() => { const w = WT.generate(WT.defaultSettings('full')); return { n: w.exercises.length, notes: w.notes, ex: w.exercises.map((i) => i.exId) }; });
   ok(rec.n === 7 && !rec.ex.some((id) => ['crunch', 'db-bent-row'].includes(id)), 'generation honours saved count and exclusions');
+
+  console.log('Meal planner data from the previous release (schema 1) → new ingredient model');
+  {
+    const PREV = process.env.PREV_URL || 'http://localhost:8767/';
+    const pctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const pp = await pctx.newPage();
+    await pp.goto(PREV); await pp.waitForTimeout(300);
+    const prevData = await pp.evaluate(() => {
+      localStorage.clear();
+      WT.resetAll();
+      const M = WT.meals;
+      M.saveIngredient({ name: 'Turkey kielbasa', cat: 'protein' }); // no values — the old planner had none for it
+      M.saveIngredient({ name: 'Cod', cat: 'protein', p: 26, cal: 120, tags: ['fish'] });
+      M.saveIngredient({ id: 'bok-choy', name: 'Baby bok choy', cat: 'veg' });
+      WT.db.meals.selected = ['shrimp', 'sweet-potato', 'spinach'];
+      M.toggleStaple('rice');
+      M.toggleUnavailable('salmon');
+      M.toggleDisliked('mushroom');
+      WT.db.meals.prefs.dislikedText = ['honey'];
+      WT.db.meals.prefs.diets = ['gluten-free'];
+      WT.db.meals.prefs.servings = 3;
+      const idea = M.generate().ideas[0];
+      M.toggleFavorite(idea);
+      WT.nut.addItems([{ name: idea.name, qty: 1, unit: 'serving', per: { p: idea.macros.p, cal: idea.macros.cal, c: idea.macros.c, f: idea.macros.f }, src: 'manual', conf: 'estimated', note: 'Meal idea estimate' }]);
+      WT.saveRun({ date: WT.nut.dayKey(), h: '', m: '30', s: '', dist: '3', kind: 'outdoor-run', effort: 'good', notes: '' });
+      WT.ach.check();
+      WT.flush();
+      return { raw: localStorage.getItem('wt.data.v1'), backup: WT.exportData(), idea };
+    });
+    await pctx.close();
+    const prev = JSON.parse(prevData.raw);
+    ok(prev.version === 6 && !(prev.meals.schema >= 2) && prev.meals.custom.length === 2 && prev.meals.favorites.length === 1, 'previous release data built (meal store schema 1)');
+    const nctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const np = await nctx.newPage();
+    np.on('pageerror', (e) => errors.push(e.message));
+    await np.goto(NEW);
+    await np.evaluate((raw) => { WT.flush = WT.save = () => {}; localStorage.clear(); localStorage.setItem('wt.data.v1', raw); }, prevData.raw);
+    await np.reload(); await np.waitForTimeout(1200);
+    const up = await np.evaluate(() => JSON.parse(JSON.stringify(WT.db)));
+    ok(up.meals.schema === 2, 'meal store upgraded to schema 2');
+    ok(JSON.stringify(up.history) === JSON.stringify(prev.history) && JSON.stringify(up.nutrition.entries) === JSON.stringify(prev.nutrition.entries) && JSON.stringify(up.achievements) === JSON.stringify(prev.achievements), 'workouts, runs, food diary and achievements untouched');
+    const cod = up.meals.custom.find((x) => x.name === 'Cod');
+    const kb = up.meals.custom.find((x) => x.name === 'Turkey kielbasa');
+    ok(cod && cod.macros.p === 26 && cod.macros.cal === 120 && cod.status === 'user' && cod.tags.includes('fish') && cod.macros.f != null, 'Cod keeps your 26 g / 120 cal; carbs and fat filled from the estimate');
+    ok(kb && kb.status === 'estimated' && kb.base === 'turkey-kielbasa' && Math.abs(kb.macros.p - 8) < 1.5, 'Turkey kielbasa (no values before) now has an automatic estimate');
+    ok(up.meals.overrides['bok-choy'] && up.meals.overrides['bok-choy'].name === 'Baby bok choy', 'renamed built-in kept');
+    ok(up.meals.selected.join() === prev.meals.selected.join() && up.meals.staples.includes('rice') && up.meals.unavailable.includes('salmon') && up.meals.prefs.disliked.includes('mushroom'), 'selection, staples, out-of-stock and disliked kept');
+    ok(up.meals.prefs.dislikedText.join() === 'honey' && up.meals.prefs.diets.join() === 'gluten-free' && up.meals.prefs.servings === 3, 'preferences kept exactly (your avoid list is not replaced)');
+    ok(up.meals.favorites.length === 1 && JSON.stringify(up.meals.favorites[0]) === JSON.stringify(prev.meals.favorites[0]), 'saved recipe kept byte-for-byte');
+    await np.goto(NEW + '#/meals'); await np.waitForTimeout(250);
+    await np.click('[data-act="mlTab"][data-v="saved"]'); await np.waitForTimeout(150);
+    await np.click('.meal-card [data-act="mlOpen"]'); await np.waitForSelector('.sheet ol.steps');
+    const txt = await np.locator('.sheet').innerText();
+    ok(txt.includes(prevData.idea.name) && /Saved with the earlier meal planner/.test(txt) && txt.includes(String(prevData.idea.macros.p)), 'old saved recipe opens with its saved text and values');
+    await np.click('.sheet [data-act="mlLog"]'); await np.waitForTimeout(200);
+    ok((await np.evaluate(() => WT.db.nutrition.entries.length)) === prev.nutrition.entries.length + 1, 'and can be logged');
+    await np.evaluate(() => WT.closeSheet(true));
+    await np.click('[data-act="mlTab"][data-v="ideas"]'); await np.waitForTimeout(150);
+    await np.click('[data-act="mlGenerate"]'); await np.waitForTimeout(500);
+    ok((await np.locator('.meal-card').count()) >= 2, 'new ideas generate from the upgraded kitchen');
+    // The previous release's backup restores into the new version
+    await np.evaluate((b) => { WT.resetAll(); WT.importData(b, 'replace'); }, prevData.backup);
+    const rb = await np.evaluate(() => JSON.parse(JSON.stringify(WT.db)));
+    ok(rb.meals.schema === 2 && rb.meals.custom.find((x) => x.name === 'Cod').macros.p === 26 && rb.meals.favorites.length === 1 && rb.history.length === prev.history.length, 'a backup from the previous release restores and upgrades');
+    await nctx.close();
+  }
 
   console.log('Backups');
   // Old v5 backup → v6 (replace)

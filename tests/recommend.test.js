@@ -4,7 +4,7 @@
 const fs = require('fs'), path = require('path'), vm = require('vm');
 const mem = {};
 globalThis.localStorage = { getItem: (k) => mem[k] ?? null, setItem: (k, v) => (mem[k] = String(v)), removeItem: (k) => delete mem[k] };
-for (const f of ['exercises.js', 'core.js', 'foods.js', 'products.js', 'nutrition.js', 'engine.js', 'meals.js', 'achievements.js'])
+for (const f of ['exercises.js', 'core.js', 'foods.js', 'products.js', 'nutrition.js', 'engine.js', 'ingredients.js', 'meals.js', 'achievements.js'])
   vm.runInThisContext(fs.readFileSync(path.join(__dirname, '..', 'js', f), 'utf8'), { filename: f });
 const WT = globalThis.WT;
 let pass = 0, fail = 0;

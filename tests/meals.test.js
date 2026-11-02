@@ -1,188 +1,381 @@
-/* Meal planner and achievements logic. Run: node tests/meals.test.js */
+/* Meal planner (ingredient database, estimates, kitchen, recipe generation, nutrition, logging) and
+ * achievements logic. Run: node tests/meals.test.js — runs fully offline (fetch is disabled below). */
 const fs = require('fs'), path = require('path'), vm = require('vm');
 const mem = {};
 globalThis.localStorage = { getItem: (k) => mem[k] ?? null, setItem: (k, v) => (mem[k] = String(v)), removeItem: (k) => delete mem[k] };
-for (const f of ['exercises.js', 'core.js', 'foods.js', 'products.js', 'nutrition.js', 'engine.js', 'meals.js', 'achievements.js'])
+// Offline: any network use would throw
+globalThis.fetch = () => { throw new Error('network used'); };
+globalThis.XMLHttpRequest = function () { throw new Error('network used'); };
+for (const f of ['exercises.js', 'core.js', 'foods.js', 'products.js', 'nutrition.js', 'engine.js', 'ingredients.js', 'meals.js', 'achievements.js'])
   vm.runInThisContext(fs.readFileSync(path.join(__dirname, '..', 'js', f), 'utf8'), { filename: f });
-const WT = globalThis.WT, M = WT.meals, A = WT.ach, N = WT.nut;
+const WT = globalThis.WT, M = WT.meals, A = WT.ach, N = WT.nut, ING = WT.ING;
 let pass = 0, fail = 0;
 const ok = (c, m) => { if (c) pass++; else { fail++; console.log('  ✗ FAIL:', m); } };
 const section = (t) => console.log('\n' + t);
+const near = (a, b, tol) => Math.abs(a - b) <= tol;
 WT.load();
 const st = () => WT.db.meals;
 const pick = (ids) => { st().selected = []; ids.forEach((id) => M.toggleSelect(id)); };
 const show = (r) => r.ideas.forEach((x) => console.log(`   · ${x.name} — ${x.prep + x.cook} min, ≈${x.macros.p} g protein, ≈${x.macros.cal} cal`));
+const fresh = () => { WT.db.meals = M.fresh(); };
 
-section('Ingredient catalog and selection');
+section('1. A custom ingredient with no nutrition gets reasonable estimated macros automatically');
 {
-  const cats = { protein: 12, carb: 8, veg: 11 };
-  Object.entries(cats).forEach(([c, n]) => ok(M.sorted(c).length === n, `${n} preloaded ${c} ingredients`));
-  ['Chicken breast', 'Chicken thighs', 'Ground chicken', 'Ground beef', 'Ground turkey', 'Shrimp', 'Salmon', 'Tuna', 'Eggs', 'Greek yogurt', 'Cottage cheese', 'Tofu', 'Potatoes', 'Sweet potatoes', 'Rice', 'Pasta', 'Protein pasta', 'Bread', 'Tortillas', 'Quinoa', 'Spinach', 'Bok choy', 'Broccoli', 'Bell peppers', 'Onions', 'Mushrooms', 'Tomatoes', 'Zucchini', 'Asparagus', 'Jalapeños', 'Garlic']
-    .forEach((n) => ok(M.all().some((x) => x.name === n), 'has ' + n));
-  pick(['shrimp', 'sweet-potato', 'spinach', 'jalapeno']);
-  ok(st().selected.length === 4, 'multiple selections');
-  M.toggleSelect('spinach');
-  ok(!st().selected.includes('spinach'), 'tapping again deselects');
-  M.toggleSelect('spinach');
-  ok(M.search('pot').map((x) => x.id).sort().join() === 'potato,sweet-potato', 'search finds ingredients');
-  ok(M.search('') === null, 'empty search shows categories');
-  // Frequently used rise to the top
-  for (let k = 0; k < 4; k++) { M.toggleSelect('tofu'); M.toggleSelect('tofu'); }
-  ok(M.sorted('protein')[0].id === 'tofu', 'frequently selected ingredients sort first');
-  ok(M.frequent().some((x) => x.id === 'tofu'), 'and appear under Frequent');
-  M.toggleStaple('rice');
-  ok(M.sorted('carb')[0].id === 'rice' && M.frequent()[0].id === 'rice', 'staples are pinned first');
-  // Custom ingredients
-  const cod = M.saveIngredient({ name: 'Cod', cat: 'protein', p: 26, cal: 120, tags: ['fish'] });
-  ok(M.get(cod.id).name === 'Cod' && M.get(cod.id).custom, 'custom ingredient added');
-  let threw = false; try { M.saveIngredient({ name: 'cod', cat: 'protein' }); } catch (e) { threw = true; }
-  ok(threw, 'duplicate names are refused');
-  M.saveIngredient({ id: cod.id, name: 'Atlantic cod', cat: 'protein', p: 27, cal: 120, tags: ['fish'] });
-  ok(M.get(cod.id).name === 'Atlantic cod' && M.get(cod.id).per.p === 27, 'custom ingredient edited');
-  M.saveIngredient({ id: 'bok-choy', name: 'Baby bok choy', cat: 'veg' });
-  ok(M.get('bok-choy').name === 'Baby bok choy' && M.get('bok-choy').per.p === 3, 'built-in renamed, values kept');
-  M.deleteIngredient('bok-choy');
-  ok(M.get('bok-choy').name === 'Bok choy', 'built-in rename can be reset');
-  const kale = M.saveIngredient({ name: 'Kale', cat: 'veg' });
-  pick([cod.id, kale.id, 'rice']);
-  const rc = M.generate();
-  ok(rc.ideas.length >= 2 && rc.ideas.every((x) => x.uses.includes(cod.id)), 'custom protein is used in ideas');
-  ok(rc.ideas.some((x) => x.uses.includes(kale.id)), 'custom vegetable is used in ideas');
-  ok(rc.ideas.every((x) => x.mine.find((m) => m.id === kale.id) ? x.unknown.includes('Kale') : true), 'macros say which ingredient has no values');
-  M.deleteIngredient(kale.id);
-  ok(!M.get(kale.id) && !st().selected.includes(kale.id), 'custom ingredient deleted and deselected');
+  fresh();
+  const kb = M.saveIngredient({ name: 'turkey kielbasa' });
+  ok(kb.custom && kb.status === 'estimated' && kb.base === 'turkey-kielbasa', 'turkey kielbasa → typical turkey kielbasa profile, marked Estimate');
+  ok(kb.serving.n === 2 && kb.serving.unit === 'oz' && near(kb.macros.p, 8, 1.5) && near(kb.macros.cal, 85, 15) && kb.macros.f > 2, `≈ 8 g protein, ≈ 85 cal per 2 oz (${kb.macros.p} g, ${kb.macros.cal} cal)`);
+  ok(kb.kind === 'sausage' && kb.precooked, 'it cooks like a precooked sausage in recipes');
+  const bb = M.saveIngredient({ name: 'Butterball turkey kielbasa' });
+  ok(bb.base === 'turkey-kielbasa' && bb.status === 'estimated' && /Butterball-specific values aren’t on file/.test(bb.note), 'a brand with no product data uses the generic estimate and says so');
+  ok(M.preview('Oscar Mayer beef franks').status === 'verified' && M.preview('Oscar Mayer beef franks').macros.p === 5, 'a brand product already on file uses its verified label values');
+  const odd = M.saveIngredient({ name: 'mystery stew meat', cat: 'protein' });
+  ok(odd.macros.p > 10 && odd.macros.cal > 50, 'an unrecognised protein still gets a non-zero estimate');
+  const odd2 = M.saveIngredient({ name: 'dragonfruit', cat: 'fruit' });
+  ok(odd2.macros.cal > 0 && odd2.macros.c > 0 && odd2.status === 'estimated' && /Rough/.test(odd2.source), 'an unknown fruit gets a rough, clearly labelled category estimate');
+  let zero = 0;
+  ['quail eggs', 'bison burger', 'arctic char', 'farro', 'swiss chard', 'gochujang', 'plantains', 'ricotta', 'pumpkin seeds', 'whatever'].forEach((n) => {
+    const e = M.preview(n, 'other');
+    if (!(e.macros.cal > 0)) zero++;
+  });
+  ok(zero === 0, 'no ingredient is ever given zero calories');
+  ok(st().kitchen.includes(kb.id) && M.sorted('protein').some((x) => x.id === kb.id), 'custom ingredient appears once, in its category');
 }
 
-section('Meal generation — the brief’s examples and more');
+section('2. Manually entered nutrition facts are used');
 {
-  for (const [label, ids] of [['shrimp + sweet potato + spinach + jalapeños', ['shrimp', 'sweet-potato', 'spinach', 'jalapeno']], ['chicken thighs + protein pasta + bok choy + garlic', ['chicken-thigh', 'protein-pasta', 'bok-choy', 'garlic']], ['eggs + spinach + bread', ['eggs', 'spinach', 'bread']], ['ground turkey + rice + peppers + onions', ['ground-turkey', 'rice', 'bell-pepper', 'onion']], ['salmon only', ['salmon']], ['tofu + quinoa + broccoli', ['tofu', 'quinoa', 'broccoli']], ['tuna + tortillas + Greek yogurt', ['tuna', 'tortilla', 'greek-yogurt']]]) {
-    pick(ids);
-    const r = M.generate({ count: 4 });
-    console.log('  ' + label + ':');
-    show(r);
-    ok(r.ideas.length >= (ids.length === 1 ? 1 : 2), `${label}: multiple ideas`);
-    r.ideas.forEach((x) => {
-      ok(x.name && x.mine.length && x.steps.length >= 2 && x.prep > 0 && x.cook > 0, 'idea has name, ingredients, steps and times');
-      ok(x.mine.every((m) => m.amount), 'every ingredient has an approximate quantity');
-      ok(x.uses.every((id) => ids.includes(id)), 'only selected ingredients are listed as yours');
-      ok(x.extras.every((e) => !ids.includes(e.id)), 'pantry additions are listed separately');
-      ok(x.macros.p > 0 && x.macros.cal > 0, 'protein and calories estimated');
-      ok(x.uses.includes(x.mine[0].id) && M.get(x.mine[0].id).cat === 'protein', 'built around a protein');
-      ok(x.macros.p <= 70, 'protein per serving stays reasonable (' + x.macros.p + ')');
-    });
-    ok(new Set(r.ideas.map((x) => x.tpl)).size === r.ideas.length, 'no two ideas from the same recipe template');
-  }
-  pick(['shrimp', 'sweet-potato']);
-  const r1 = M.generate();
-  ok(r1.ideas.some((x) => !x.mine.some((m) => M.get(m.id).cat === 'veg')), 'a meal can skip a category (no vegetables needed)');
-  pick(['chicken-breast', 'broccoli']);
-  ok(M.generate().ideas.length >= 2, 'works without a carbohydrate');
-  pick(['rice', 'spinach']);
-  ok(M.generate().ideas.length === 0 && /protein/.test(M.generate().reason), 'no protein → explains instead of inventing');
-  pick([]);
-  ok(/Pick/.test(M.generate().reason), 'nothing selected → prompt');
+  fresh();
+  const x = M.saveIngredient({ name: 'Brand X chicken sausage', cat: 'protein', macros: { cal: 110, p: 14, c: 2, f: 5 } });
+  ok(x.status === 'user' && x.macros.p === 14 && x.macros.cal === 110 && x.macros.c === 2 && x.macros.f === 5, 'label values replace the estimate');
+  ok(x.fields.join() === 'cal,p,c,f' && /Your values/.test(x.source), 'source says they are yours');
+  const y = M.saveIngredient({ name: 'Homemade turkey patty', cat: 'protein', p: 24 });
+  ok(y.macros.p === 24 && y.macros.cal > 0 && y.status === 'user' && /others estimated/.test(y.source), 'partial values: entered ones kept, the rest estimated (and said so)');
+  pick([x.id, 'potato', 'bell-pepper']);
+  const r = M.generate({ seed: 3 });
+  const rec = r.ideas.find((i) => i.uses.includes(x.id));
+  const line = rec.lines.find((l) => l.id === x.id);
+  ok(near(line.macros.p, 14 * line.q, 0.01), 'recipes use the entered values');
 }
 
-section('QA: no near-identical ideas, sensible quantities, protein adds up');
+section('3. Generic estimates for common ingredients');
 {
-  const P = M.sorted('protein').map((x) => x.id), C = [null, ...M.sorted('carb').map((x) => x.id)];
-  const V = [[], ['spinach'], ['broccoli', 'garlic'], ['bell-pepper', 'onion', 'jalapeno'], ['bok-choy', 'asparagus']];
-  let batches = 0, dup = 0, empty = 0, bad = 0, sumOff = 0;
-  for (const p of P) for (const c of C) for (const v of V) {
-    pick([p, c, ...v].filter(Boolean));
-    const r = M.generate({ count: 4 });
+  const cases = [
+    ['chicken breast', 'raw', 1, 'breast', [33, 43], [180, 230]],
+    ['turkey kielbasa', 'sold', 2, 'oz', [7, 9], [75, 100]],
+    ['shrimp', 'raw', 4, 'oz', [20, 25], [85, 115]],
+    ['rice', 'cooked', 1, 'cup cooked', [3.5, 5], [190, 215]],
+    ['potatoes', 'raw', 1, 'medium potato', [3.5, 5], [150, 175]],
+    ['sweet potatoes', 'raw', 1, 'medium sweet potato', [1.5, 2.5], [100, 120]],
+    ['ground beef', 'raw', 4, 'oz', [21, 24], [185, 210]],
+  ];
+  cases.forEach(([n, state, sn, unit, p, cal]) => {
+    const e = M.preview(n);
+    ok(e.serving.state === state && e.serving.n === sn && e.serving.unit === unit && e.macros.p >= p[0] && e.macros.p <= p[1] && e.macros.cal >= cal[0] && e.macros.cal <= cal[1], `${n}: ${e.macros.p} g protein, ${e.macros.cal} cal per ${sn} ${unit} ${state}`);
+  });
+  ok(/90% lean/.test(M.preview('ground beef').note), 'ground beef states its fat assumption (90% lean)');
+  ok(M.preview('80/20 ground beef').macros.cal > M.preview('ground beef').macros.cal * 1.3, '80/20 ground beef is recognised separately');
+}
+
+section('4. Raw vs cooked measurements');
+{
+  const raw = M.preview('chicken breast'), cooked = M.preview('rotisserie chicken');
+  ok(raw.serving.state === 'raw' && cooked.serving.state === 'cooked', 'raw chicken breast vs cooked chicken');
+  ok(ING.get('cooked-chicken').per100.p > ING.get('chicken-breast').per100.p, 'cooked meat is denser per gram than raw');
+  const ckd = M.preview('rice'), dry = M.preview('dry rice');
+  ok(ckd.serving.state === 'cooked' && dry.serving.state === 'dry' && ING.get('rice-dry').per100.cal > ING.get('rice').per100.cal * 2.5, 'cooked rice vs dry rice');
+  ok(M.preview('pasta').serving.state === 'dry' && M.preview('pasta').serving.unit === 'oz dry', 'pasta is measured dry');
+  fresh();
+  pick(['chicken-breast', 'rice', 'broccoli']);
+  const r = M.generate({ seed: 2 }).ideas[0];
+  const cl = r.lines.find((l) => l.id === 'chicken-breast');
+  ok(/raw\)/.test(M.lineAmount(cl, r.servings)), 'recipe amounts say raw where it matters: ' + M.lineAmount(cl, r.servings));
+  ok(/cooked/.test(M.lineAmount(r.lines.find((l) => l.id === 'rice'), r.servings)), 'and cooked for rice');
+}
+
+section('5. Editing and reusing a custom ingredient');
+{
+  fresh();
+  let kb = M.saveIngredient({ name: 'turkey kielbasa' });
+  const p2oz = kb.macros.p;
+  kb = M.saveIngredient({ id: kb.id, name: 'turkey kielbasa', serving: { n: 4, unit: 'oz', g: 112 } });
+  ok(kb.serving.n === 4 && near(kb.macros.p, p2oz * 2, 0.2) && kb.status === 'estimated', 'changing only the serving size scales the nutrition (2 oz → 4 oz)');
+  kb = M.saveIngredient({ id: kb.id, name: 'Turkey kielbasa (Hillshire)' });
+  ok(kb.name === 'Turkey kielbasa (Hillshire)' && kb.base === 'turkey-kielbasa', 'renamed');
+  const diary = WT.db.nutrition.foods.find((f) => f.ingredientId === kb.id);
+  ok(diary && diary.name === kb.name && near(diary.per.p, kb.macros.p, 0.01), 'the ingredient is available in the food diary (My foods) and stays in sync');
+  const parsed = N.parse('Turkey kielbasa (Hillshire)')[0];
+  ok(parsed && !parsed.unknown && near(parsed.per.p * parsed.qty, kb.macros.p, 0.5), 'typing it in the food diary uses the same values');
+  pick([kb.id, 'rice', 'bell-pepper']);
+  ok(M.generate({ seed: 1 }).ideas.length >= 2, 'reused in meal ideas');
+  M.deleteIngredient(kb.id);
+  ok(!M.get(kb.id) && !WT.db.nutrition.foods.some((f) => f.ingredientId === kb.id), 'deleting removes it from the kitchen and My foods');
+  // A food from My foods can come into the kitchen with its values
+  const f = N.saveFood({ name: 'Protein bagel', qty: 1, unit: 'bagel', per: { p: 15, cal: 230, c: 40, f: 2 }, status: 'user' }, false);
+  const imp = M.importDiaryFood(f.id, 'carb');
+  ok(imp && imp.macros.p === 15 && imp.cat === 'carb' && imp.status === 'user', 'a My foods item can be added to the kitchen with its values');
+}
+
+section('6. User corrections are remembered');
+{
+  fresh();
+  M.saveIngredient({ id: 'chicken-breast', name: 'Chicken breast', serving: { n: 1, unit: 'breast', g: 227 } });
+  ok(near(M.get('chicken-breast').macros.p, 51, 1.5), 'bigger breasts (8 oz): values scale with the grams');
+  M.saveIngredient({ id: 'shrimp', name: 'Shrimp', macros: { p: 20, cal: 90 } });
+  ok(M.get('shrimp').status === 'user' && M.get('shrimp').macros.p === 20, 'label values for a built-in are stored as your correction');
+  WT.flush();
+  WT.load();
+  ok(M.get('shrimp').macros.p === 20 && near(M.get('chicken-breast').serving.g, 227, 0.1), 'corrections survive a reload');
+  pick(['shrimp', 'rice', 'spinach']);
+  const r = M.generate({ seed: 4 }).ideas[0];
+  ok(near(r.lines.find((l) => l.id === 'shrimp').macros.p, 20 * r.lines.find((l) => l.id === 'shrimp').q, 0.01), 'recipes use the corrected values');
+  M.resetIngredient('shrimp');
+  ok(M.get('shrimp').status === 'estimated' && near(M.get('shrimp').macros.p, 22.6, 0.2), 'reset returns to typical values');
+}
+
+section('7. Recipes with custom ingredients');
+{
+  fresh();
+  const kb = M.saveIngredient({ name: 'turkey kielbasa' });
+  pick([kb.id, 'sweet-potato', 'bok-choy']);
+  const r = M.generate({ seed: 5 });
+  show(r);
+  ok(r.ideas.length === 4 && r.ideas.every((x) => x.uses.includes(kb.id)), 'four ideas built around turkey kielbasa');
+  ok(r.ideas.some((x) => x.steps.some((s) => /precooked/.test(s))), 'cooked as a precooked sausage');
+  ok(r.ideas.every((x) => !x.steps.join(' ').match(/\beggs?\b/i)), 'no egg appears in the instructions (eggs were not selected)');
+  ok(new Set(r.ideas.map((x) => x.format)).size === 4 && new Set(r.ideas.map((x) => x.flavor)).size === 4, 'four different dish types and flavors');
+  const odd = M.saveIngredient({ name: 'kohlrabi', cat: 'veg' });
+  pick(['chicken-thigh', odd.id, 'rice']);
+  ok(M.generate({ seed: 1 }).ideas.some((x) => x.uses.includes(odd.id)), 'an unknown custom vegetable is used too');
+}
+
+section('8. Instructions never use unlisted ingredients (sweep)');
+{
+  fresh();
+  ['turkey-kielbasa', 'chicken-sausage', 'steak', 'pork-chop', 'cod', 'black-beans', 'chickpeas', 'cooked-chicken', 'bacon', 'ham', 'brown-rice', 'couscous', 'oats', 'egg-noodles', 'rice-noodles', 'pita', 'kale', 'cabbage', 'cauliflower', 'green-beans', 'carrot', 'cucumber', 'lettuce', 'green-onion', 'ginger', 'canned-tomatoes', 'mozzarella', 'milk', 'mango', 'pineapple', 'almonds', 'strawberries', 'apple'].forEach((id) => M.addToKitchen(id));
+  const K = M.kitchen();
+  const by = (c) => K.filter((x) => x.cat === c).map((x) => x.id);
+  let seed = 7;
+  const R = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const take = (a, n) => { const c = a.slice(), o = []; while (o.length < n && c.length) o.push(c.splice(Math.floor(R() * c.length), 1)[0]); return o; };
+  M._fails.length = 0;
+  const allNames = ING.DB.flatMap((x) => [x.name].concat(x.a || []).map((n) => ({ id: x.id, n: ING.norm(n) }))).sort((a, b) => b.n.length - a.n.length);
+  let ideas = 0, leaks = [], unusedListed = 0, sumOff = 0, dups = 0, batches = 0;
+  for (let i = 0; i < 220; i++) {
+    pick([...take(by('protein'), 1 + (R() < 0.3)), ...take(by('carb'), R() < 0.8 ? 1 : 0), ...take(by('veg'), Math.floor(R() * 4)), ...take(by('fruit'), R() < 0.2 ? 1 : 0), ...take(by('dairy'), R() < 0.25 ? 1 : 0)]);
+    const r = M.generate({ seed: i + 1 });
     batches++;
-    if (!r.ideas.length) { empty++; ok(!!r.reason, 'an empty result always explains why'); continue; }
     const seen = new Set();
     r.ideas.forEach((x) => {
-      const k = x.uses.slice().sort().join('+') + '|' + x.method;
-      if (seen.has(k)) dup++;
+      ideas++;
+      // independent check: mask every listed name, then look for any other database ingredient name
+      let t = ' ' + ING.norm(x.steps.join(' ')) + ' ';
+      const listed = x.lines.map((l) => l.name).concat(x.optional.map((o) => o.name));
+      const ids = new Set(x.lines.map((l) => l.id));
+      x.lines.forEach((l) => { const d = ING.get(l.id); if (d) (d.a || []).forEach((a) => listed.push(a)); });
+      ['chicken', 'turkey', 'kielbasa', 'sausage', 'steak', 'pork', 'fish', 'potatoes', 'sweet potatoes', 'eggs', 'ground turkey', 'ground beef', 'ground chicken'].forEach((sh) => x.lines.some((l) => ING.norm(l.name).includes(sh.split(' ').pop().replace(/s$/, '')) || (ING.get(l.id) && ING.get(l.id).kind && ['poultry', 'sausage', 'beef', 'pork', 'fish-fatty', 'fish-lean', 'potato', 'egg', 'ground'].includes(ING.get(l.id).kind))) && listed.push(sh));
+      listed.map(ING.norm).sort((a, b) => b.length - a.length).forEach((n) => { t = t.split(' ' + n + ' ').join(' # ').split(' ' + n + 's ').join(' # '); });
+      allNames.forEach((e) => { if (!ids.has(e.id) && t.includes(' ' + e.n + ' ')) leaks.push(`${x.name}: “${e.n}”`); });
+      if (/ (oil) /.test(' ' + ING.norm(x.steps.join(' ')) + ' ') && !x.lines.some((l) => /oil|spray/i.test(l.name))) leaks.push(`${x.name}: oil not listed`);
+      // listed ingredients are all used
+      x.lines.filter((l) => !l.pantry).forEach((l) => { if (!new RegExp(ING.norm(l.name).split(' ').pop().replace(/s$/, '')).test(ING.norm(x.steps.join(' ')))) unusedListed++; });
+      const s = x.lines.reduce((a, l) => a + (+l.macros.p || 0), 0);
+      if (Math.abs(Math.round(s) - x.macros.p) > 1) sumOff++;
+      const k = x.uses.slice().sort().join('+') + '|' + x.family;
+      if (seen.has(k)) dups++;
       seen.add(k);
-      if (/undefined|NaN|null|\s{2}| with $| and $/.test(x.name + x.steps.join(' ') + x.mine.map((m) => m.amount).join(' '))) bad++;
-      // Protein per serving = sum of the listed portions (yours + pantry additions)
-      const sum = x.mine.concat(x.extras).reduce((a, m) => a + ((m.m && +m.m.p) || 0), 0);
-      if (Math.abs(Math.round(sum) - x.macros.p) > 1) sumOff++;
-      ok(x.macros.p >= 15 && x.macros.p <= 65, `protein per serving in a realistic range (${x.name}: ${x.macros.p} g)`);
     });
   }
-  console.log(`  ${batches} selections: ${empty} without ideas, ${dup} near-identical pairs, ${bad} malformed texts`);
-  ok(dup === 0, 'no two ideas in a batch use the same ingredients cooked the same way');
-  ok(bad === 0, 'no malformed names, steps or amounts');
-  ok(sumOff === 0, 'protein per serving equals the sum of the listed portions');
-  pick(['tuna', 'spinach', 'tomato']);
-  ok(M.generate().ideas.length >= 1, 'tuna with just vegetables gives an idea (tuna salad)');
-  pick(['cottage-cheese']);
-  ok(/sauce or side/.test(M.generate().reason), 'dairy-only selection explains what to add');
-  ok(M.fmtAmount(18, 'oz') === '18 oz (≈510 g)' && M.fmtAmount(20, 'oz') === '1 ¼ lb (≈570 g)', 'pounds only for exact quarter-pounds');
-  ok(M.fmtAmount(2.25, 'cup cooked') === '2 ¼ cups cooked' && M.fmtAmount(1.5, 'can') === '1 ½ cans', 'plural units');
-  // Spot-check against typical (USDA-style) values for one portion
-  const ref = { 'chicken-breast': 38, 'chicken-thigh': 33, 'ground-beef': 28, 'ground-turkey': 32, shrimp: 34, salmon: 29, tuna: 26, eggs: 19, 'greek-yogurt': 17, 'cottage-cheese': 12, tofu: 22 };
-  Object.entries(ref).forEach(([id, g]) => ok(Math.abs(M.get(id).per.p - g) <= 2, `${id}: ${M.get(id).per.p} g per portion ≈ ${g} g reference`));
+  console.log(`  ${batches} selections → ${ideas} ideas; generator integrity rejections: ${M._fails.length}`);
+  ok(M._fails.length === 0, 'the generator never had to reject a recipe for mentioning an unlisted ingredient');
+  ok(leaks.length === 0, 'independent scan: no instruction mentions an unlisted ingredient' + (leaks.length ? ': ' + leaks.slice(0, 5).join(' | ') : ''));
+  ok(unusedListed === 0, 'every listed ingredient is used in the steps');
+  ok(sumOff === 0, 'per-serving protein equals the sum of the ingredient lines');
+  ok(dups === 0, 'no two ideas in a batch use the same ingredients cooked the same way');
 }
 
-section('Variety, regenerate, favourites');
+section('9. Nutrition is calculated from ingredient quantities');
 {
-  pick(['chicken-breast', 'rice', 'broccoli', 'bell-pepper', 'onion']);
+  fresh();
+  pick(['chicken-breast', 'rice', 'broccoli']);
+  const r = M.generate({ seed: 9 }).ideas[0];
+  let exp = { cal: 0, p: 0 };
+  r.lines.forEach((l) => {
+    const d = l.pantry ? ING.pantry(l.id) : ING.get(l.id);
+    const grams = l.q * d.serving.g;
+    exp.cal += (d.per100.cal * grams) / 100;
+    exp.p += (d.per100.p * grams) / 100;
+  });
+  ok(near(r.macros.exact.p, exp.p, 0.6) && near(r.macros.exact.cal, exp.cal, 6), `per serving = Σ grams × per-100 g values (${Math.round(exp.p)} g protein, ${Math.round(exp.cal)} cal)`);
+  ok(r.macros.p === Math.round(r.macros.exact.p) && r.macros.cal % 10 === 0, 'display rounds protein to whole grams and calories to 10 (no false precision)');
+  ok(r.macros.estimated === 3 && r.macros.ingredients === 3, 'says how many values are estimates');
+  const chicken = r.lines.find((l) => l.id === 'chicken-breast');
+  ok(chicken.q === 1, 'one chicken breast per serving');
+}
+
+section('10. Serving-size adjustments');
+{
+  fresh();
+  pick(['shrimp', 'rice', 'spinach']);
+  const r = M.generate({ seed: 2 }).ideas[0];
+  const r4 = M.rescale(r, 4);
+  const amt = (rec, id) => M.lineAmount(rec.lines.find((l) => l.id === id), rec.servings);
+  ok(amt(r, 'shrimp') !== amt(r4, 'shrimp') && /20 oz|1 ¼ lb/.test(amt(r4, 'shrimp')), `amounts scale (${amt(r, 'shrimp')} → ${amt(r4, 'shrimp')})`);
+  ok(r4.macros.p === r.macros.p && r4.macros.cal === r.macros.cal, 'per-serving nutrition stays the same');
+  const before = WT.db.nutrition.entries.length;
+  const e = M.logServing(r4);
+  ok(WT.db.nutrition.entries.length === before + 1 && near(e.per.p, r.macros.exact.p, 0.6) && near(e.per.cal, r.macros.exact.cal, 1) && e.name === r.name, 'logging transfers this recipe’s per-serving totals to the food diary');
+  ok(e.conf === 'estimated' && /1 of 4 servings/.test(e.note) && e.recipe && e.recipe.ingredients.length === 3, 'the diary entry is labelled as an estimate and linked to the recipe');
+  M.saveIngredient({ id: 'shrimp', name: 'Shrimp', macros: { cal: 90, p: 21, c: 0, f: 1 } });
+  M.saveIngredient({ id: 'rice', name: 'Rice', macros: { cal: 200, p: 4, c: 44, f: 0.5 } });
+  M.saveIngredient({ id: 'spinach', name: 'Spinach', macros: { cal: 14, p: 2, c: 2, f: 0 } });
+  ok(M.logServing(r).conf === 'user', 'with your own values for every ingredient it logs as “Confirmed by you”');
+  M.toggleFavorite(r);
+  const saved = M.normalizeRecipe(st().favorites[0]);
+  ok(saved.lines.length === r.lines.length && M.rescale(saved, 3).servings === 3, 'saved recipes keep their lines and can be rescaled');
+}
+
+section('11. Variety and near-duplicates');
+{
+  fresh();
+  pick(['chicken-thigh', 'rice', 'broccoli', 'bell-pepper', 'onion']);
   st().recent = [];
-  const a = M.generate({ count: 4 });
-  const b = M.generate({ count: 4, exclude: a.ideas.map((x) => x.key) });
-  ok(b.ideas.length && b.ideas.every((x) => !a.ideas.some((y) => y.key === x.key)), 'regenerate shows different ideas');
-  const tplCount = {};
-  for (let k = 0; k < 12; k++) M.generate({ count: 4 }).ideas.forEach((x) => (tplCount[x.tpl] = (tplCount[x.tpl] || 0) + 1));
-  console.log('  templates across 12 rounds:', JSON.stringify(tplCount));
-  ok(Object.keys(tplCount).length >= 6, 'suggestions rotate through many recipes over time');
-  const fav = a.ideas[0];
-  ok(M.toggleFavorite(fav) === true && M.isFavorite(fav.key), 'save a recipe');
-  ok(st().favorites[0].steps.length === fav.steps.length, 'saved recipe keeps its full text');
-  const r4 = M.rescale(st().favorites[0], 4);
-  ok(r4.servings === 4 && r4.mine[0].amount !== fav.mine[0].amount && r4.macros.p === fav.macros.p, 'rescaling changes amounts, not per-serving macros');
-  ok(M.toggleFavorite(fav) === false && !M.isFavorite(fav.key), 'unsave a recipe');
-  M.toggleFavorite(fav);
+  const a = M.generate({ seed: 21 });
+  const b = M.generate({ seed: 22, exclude: a.ideas.map((x) => x.key), avoidFormats: a.ideas.map((x) => x.format), avoidFlavors: a.ideas.map((x) => x.flavor) });
+  show(a);
+  console.log('   then:');
+  show(b);
+  ok(b.ideas.every((x) => !a.ideas.some((y) => y.key === x.key)), 'Different ideas never repeats an idea');
+  ok(b.ideas.filter((x) => !a.ideas.some((y) => y.format === x.format)).length >= 3, 'and mostly uses different dish types');
+  ok(b.ideas.filter((x) => !a.ideas.some((y) => y.flavor === x.flavor)).length >= 3, 'and different flavors');
+  const fm = new Set(), fl = new Set();
+  for (let k = 0; k < 15; k++) M.generate({ seed: 100 + k }).ideas.forEach((x) => (fm.add(x.format), fl.add(x.flavor)));
+  console.log(`   over 15 rounds: ${fm.size} dish types, ${fl.size} flavor profiles`);
+  ok(fm.size >= 8 && fl.size >= 12, 'repeated suggestions rotate through many dish types and flavors');
+  ok(M.FORMATS.length === 20 && M.FLAVORS.length === 26, `${M.FORMATS.length} dish formats × ${M.FLAVORS.length} flavor profiles`);
 }
 
-section('Unavailable, disliked and dietary restrictions');
+section('12. Dietary preferences and things to avoid');
 {
-  pick(['shrimp', 'chicken-breast', 'rice', 'broccoli']);
-  M.toggleUnavailable('shrimp');
-  ok(!st().selected.includes('shrimp') && M.unavailable('shrimp'), 'marking run-out removes it from the selection');
-  st().selected.push('shrimp');
-  ok(M.generate().ideas.every((x) => !x.uses.includes('shrimp')), 'run-out ingredients never appear even if selected');
-  M.toggleUnavailable('shrimp');
-  ok(!M.unavailable('shrimp'), 'restocked');
-  M.toggleDisliked('broccoli');
-  ok(M.generate().ideas.every((x) => !x.uses.includes('broccoli')), 'disliked ingredients are avoided');
-  M.toggleDisliked('broccoli');
-  st().prefs.dislikedText = ['honey', 'parmesan'];
-  pick(['salmon', 'rice', 'bok-choy', 'chicken-breast', 'pasta', 'spinach']);
-  for (let k = 0; k < 6; k++) M.generate().ideas.forEach((x) => ok(!x.extras.some((e) => /honey|parmesan/i.test(e.name)), 'disliked pantry extras are left out'));
+  fresh();
+  ok(st().prefs.dislikedText.join() === 'corn,cornstarch,flour', 'new kitchens start with your stated avoid list (corn, cornstarch, flour)');
+  pick(['tofu', 'rice', 'broccoli']);
+  let all = [];
+  for (let k = 0; k < 6; k++) all = all.concat(M.generate({ seed: k }).ideas);
+  ok(all.every((x) => !x.lines.some((l) => /cornstarch|flour/i.test(l.name))), 'no cornstarch or flour is added');
+  ok(all.some((x) => x.lines.some((l) => l.id === 'potato-starch')), 'potato starch is used instead (crispy tofu, sauces)');
+  M.addToKitchen('corn-tortilla');
+  ok(!M.usable(M.get('corn-tortilla')) && /corn/.test(M.blockReason(M.get('corn-tortilla'))), 'corn tortillas are blocked when you avoid corn');
   st().prefs.dislikedText = [];
   st().prefs.diets = ['vegetarian'];
   pick(['chicken-breast', 'tofu', 'eggs', 'rice', 'spinach']);
-  let r = M.generate();
+  let r = M.generate({ seed: 3 });
   ok(r.ideas.length && r.ideas.every((x) => !x.uses.includes('chicken-breast')), 'vegetarian: no meat');
   st().prefs.diets = ['gluten-free'];
   pick(['chicken-thigh', 'pasta', 'rice', 'bok-choy']);
-  r = M.generate();
-  ok(r.ideas.every((x) => !x.uses.includes('pasta')), 'gluten-free: no pasta');
-  ok(r.ideas.filter((x) => x.extras.some((e) => /tamari/.test(e.name))).length === r.ideas.filter((x) => x.extras.some((e) => /Soy sauce/.test(e.name))).length, 'gluten-free: soy sauce is swapped for tamari');
+  r = M.generate({ seed: 3 });
+  ok(r.ideas.every((x) => !x.uses.includes('pasta') && !x.lines.some((l) => l.id === 'soy-sauce')), 'gluten-free: no pasta, no regular soy sauce');
+  ok(r.ideas.some((x) => x.lines.some((l) => l.id === 'tamari')) || !r.ideas.some((x) => /soy|tamari/.test(x.steps.join(' '))), 'soy sauce becomes tamari');
   st().prefs.diets = ['dairy-free'];
-  pick(['ground-beef', 'potato', 'tomato', 'greek-yogurt']);
-  r = M.generate();
-  ok(r.ideas.every((x) => !x.uses.includes('greek-yogurt') && !x.extras.some((e) => /cheese|parmesan/i.test(e.name))), 'dairy-free: no yogurt or cheese');
+  pick(['shrimp', 'pasta', 'spinach', 'parmesan']);
+  r = M.generate({ seed: 4 });
+  ok(r.ideas.length && r.ideas.every((x) => !x.lines.some((l) => ['butter', 'pesto', 'parmesan'].includes(l.id))), 'dairy-free: no butter, pesto or parmesan');
+  st().prefs.diets = ['nut-free'];
+  pick(['chicken-breast', 'rice-noodles', 'cabbage', 'carrot']);
+  r = M.generate({ seed: 5 });
+  ok(r.ideas.every((x) => x.flavor !== 'peanut'), 'nut-free: no peanut sauce');
   st().prefs.diets = ['low-carb'];
   pick(['salmon', 'rice', 'asparagus']);
-  r = M.generate();
-  ok(r.ideas.length && r.ideas.every((x) => !x.uses.includes('rice')), 'lower carb: carbohydrates are skipped');
+  r = M.generate({ seed: 6 });
+  ok(r.ideas.length && r.ideas.every((x) => !x.uses.includes('rice')), 'lower carb: carbs left out');
   st().prefs.diets = [];
-  st().prefs.maxTime = 20;
-  pick(['chicken-breast', 'rice', 'broccoli', 'spinach', 'potato']);
-  ok(M.generate().ideas.every((x) => x.prep + x.cook <= 20), 'time limit respected');
-  st().prefs.maxTime = 0;
-  st().prefs.airFryer = true;
+  M.toggleDisliked('broccoli');
+  pick(['chicken-breast', 'rice', 'broccoli', 'spinach']);
+  ok(M.generate({ seed: 1 }).ideas.every((x) => !x.uses.includes('broccoli')), 'a disliked ingredient is never used');
+  M.toggleDisliked('broccoli');
+  st().prefs.dislikedText = ['honey'];
+  pick(['salmon', 'rice', 'broccoli']);
+  for (let k = 0; k < 5; k++) ok(M.generate({ seed: k }).ideas.every((x) => !x.lines.some((l) => l.id === 'honey')), 'avoided pantry item (honey) never added');
+  st().prefs.dislikedText = [];
+  st().prefs.airFryer = false;
   pick(['chicken-breast', 'potato', 'broccoli']);
-  let air = 0;
-  for (let k = 0; k < 10; k++) air += M.generate().ideas.filter((x) => x.airFryer).length;
-  ok(air >= 10, 'air-fryer recipes are favoured when you have one (' + air + ' in 10 rounds)');
+  ok(M.generate({ seed: 2 }).ideas.every((x) => !x.airFryer), 'no air fryer → no air-fryer steps');
+  st().prefs.airFryer = true;
+  st().prefs.styles = ['air'];
+  ok(M.generate({ seed: 2 }).ideas.filter((x) => x.airFryer).length >= 2, 'Air fryer style favors air-fryer recipes');
+  st().prefs.styles = ['onepan'];
+  ok(M.generate({ seed: 2 }).ideas.every((x) => x.onePan), 'One-pan style keeps every idea to one pan');
+  st().prefs.styles = ['quick'];
+  ok(M.generate({ seed: 2 }).ideas.every((x) => x.prep + x.cook <= 30), 'Quick & easy keeps ideas to 30 minutes');
+  st().prefs.styles = ['protein'];
+  const hp = M.generate({ seed: 2 }).ideas[0].macros.p;
+  st().prefs.styles = [];
+  ok(hp >= M.generate({ seed: 2 }).ideas[0].macros.p, 'High protein makes portions more protein-forward');
+  st().prefs.mealType = 'breakfast';
+  pick(['eggs', 'potato', 'bell-pepper', 'greek-yogurt', 'berries']);
+  ok(M.generate({ seed: 2 }).ideas.every((x) => ['scramble', 'frittata', 'hash', 'tacos', 'quesadilla', 'melt', 'yogurt', 'oats'].includes(x.format)), 'Breakfast shows breakfast-friendly dishes');
+  st().prefs.mealType = 'any';
+}
+
+section('13. Incomplete or incompatible selections');
+{
+  fresh();
+  pick([]);
+  ok(/Pick a few/.test(M.generate().reason), 'nothing picked → prompt');
+  pick(['rice', 'spinach']);
+  ok(!M.generate().ideas.length && /Add a protein/.test(M.generate().reason), 'no protein → explains what to add');
+  M.addToKitchen('bacon');
+  pick(['bacon']);
+  ok(/another protein/.test(M.generate().reason), 'bacon alone → suggests pairing it');
+  pick(['tuna']);
+  ok(/Canned fish needs a partner/.test(M.generate().reason), 'tuna alone → explains');
+  pick(['cottage-cheese']);
+  ok(/sauce or base/.test(M.generate().reason), 'dairy alone → explains what to add');
+  pick(['chicken-breast']);
+  const r = M.generate({ seed: 1 });
+  ok(r.ideas.length >= 2 && r.hints.some((h) => /vegetable/.test(h)) && r.hints.some((h) => /carb/.test(h)), 'protein only → simple ideas plus hints to add a vegetable and a carb');
+  pick(['chicken-breast', 'rice', 'broccoli', 'banana']);
+  const r2 = M.generate({ seed: 1 });
+  ok(r2.ideas.every((x) => !x.uses.includes('banana')) && r2.ideas.every((x) => x.unused.includes('Bananas')) && r2.hints.some((h) => /Bananas/.test(h)), 'an ingredient that doesn’t fit (banana with chicken dinner) is left out and named as unused');
+}
+
+section('14. Works offline');
+{
+  // fetch / XMLHttpRequest throw in this test (set at the top): estimation, generation and logging never touched them
+  fresh();
+  const x = M.saveIngredient({ name: 'Butterball turkey kielbasa' });
+  pick([x.id, 'rice', 'bell-pepper']);
+  const r = M.generate({ seed: 1 });
+  const e = M.logServing(r.ideas[0]);
+  ok(x.macros.p > 0 && r.ideas.length && e, 'estimate → generate → log ran with no network available');
+}
+
+section('Migration: first meal planner (schema 1) → schema 2');
+{
+  const old = {
+    custom: [{ id: 'ing-a', name: 'Cod', cat: 'protein', kind: 'custom', tags: ['fish'], per: { n: 1, unit: 'serving', p: 26, cal: 120, c: null, f: null } }, { id: 'ing-b', name: 'Kale', cat: 'veg', kind: 'custom', tags: [], per: null }],
+    edits: { 'bok-choy': { name: 'Baby bok choy' } },
+    selected: ['shrimp', 'ing-a'], unavailable: ['salmon'], staples: ['rice'], usage: { shrimp: 5 },
+    favorites: [{ key: 'garlic-pasta|shrimp||pasta|spinach|', tpl: 'garlic-pasta', name: 'Garlicky pasta with shrimp and spinach', method: 'Stovetop', prep: 5, cook: 20, servings: 2, mine: [{ id: 'shrimp', name: 'Shrimp', amount: '12 oz', m: { p: 34, cal: 145, c: 0, f: 1 } }], extras: [{ id: 'oil', name: 'Olive oil', amount: '2 tsp', m: { p: 0, cal: 40, c: 0, f: 4.5 } }], steps: ['Boil the pasta.', 'Cook the shrimp.'], macros: { p: 43, cal: 420, c: 40, f: 9 } }],
+    recent: [{ tpl: 'stir-fry', key: 'x' }],
+    prefs: { diets: ['gluten-free'], disliked: ['mushroom'], dislikedText: ['honey'], airFryer: false, servings: 3, maxTime: 30 },
+  };
+  const m = M.normalize(JSON.parse(JSON.stringify(old)));
+  ok(m.schema === 2, 'upgraded to schema 2');
+  const cod = m.custom.find((x) => x.id === 'ing-a');
+  ok(cod && cod.macros.p === 26 && cod.macros.cal === 120 && cod.status === 'user' && cod.macros.f != null && cod.base === 'cod', 'custom ingredient keeps your protein and calories; carbs and fat are estimated from the name');
+  const kale = m.custom.find((x) => x.id === 'ing-b');
+  ok(kale && kale.macros.cal > 0 && kale.status === 'estimated', 'a custom ingredient with no values gets an estimate');
+  ok(m.overrides['bok-choy'].name === 'Baby bok choy', 'renamed built-in kept');
+  ok(['shrimp', 'ing-a', 'salmon', 'rice', 'mushroom', 'ing-b'].every((id) => m.kitchen.includes(id)), 'everything selected, starred, out of stock or disliked is in the kitchen');
+  ok(m.selected.join() === 'shrimp,ing-a' && m.unavailable[0] === 'salmon' && m.staples[0] === 'rice' && m.usage.shrimp === 5, 'selection, stock and staples kept');
+  ok(m.favorites.length === 1 && m.favorites[0].name === old.favorites[0].name && m.favorites[0].steps.length === 2, 'saved recipe kept as-is');
+  ok(m.prefs.diets[0] === 'gluten-free' && m.prefs.disliked[0] === 'mushroom' && m.prefs.dislikedText.join() === 'honey' && m.prefs.airFryer === false && m.prefs.servings === 3 && m.prefs.maxTime === 30, 'preferences kept exactly (your avoid list is not replaced)');
+  ok(JSON.stringify(M.normalize(JSON.parse(JSON.stringify(m)))) === JSON.stringify(m), 'normalising again changes nothing (idempotent)');
+  WT.db.meals = m;
+  const legacy = M.normalizeRecipe(m.favorites[0]);
+  ok(legacy.legacy && legacy.lines.length === 2 && legacy.macros.p === 43, 'old saved recipe still displays with its saved values');
+  const e = M.logServing(m.favorites[0]);
+  ok(e && e.per.p === 43, 'and can still be logged');
 }
 
 section('Achievements');

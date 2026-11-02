@@ -202,6 +202,7 @@
 
   /* v6 stores. Each is self-contained so older data simply gains empty ones. */
   function freshMeals() {
+    if (WT.meals && WT.meals.fresh) return WT.meals.fresh();
     return { custom: [], edits: {}, selected: [], unavailable: [], staples: [], usage: {}, favorites: [], recent: [], prefs: { diets: [], disliked: [], dislikedText: [], airFryer: true, servings: 2, maxTime: 0 } };
   }
   function freshAch() {
@@ -215,6 +216,8 @@
   WT.freshMeals = freshMeals;
   const arr = (a) => (Array.isArray(a) ? a : []);
   function normalizeMeals(m) {
+    // The meal planner owns its schema (js/meals.js); this fallback only keeps the shape valid without it
+    if (WT.meals && WT.meals.normalize) return WT.meals.normalize(m);
     const f = freshMeals();
     m = m && typeof m === 'object' ? m : {};
     const out = Object.assign(f, m);
@@ -385,7 +388,10 @@
       const mIn = normalizeMeals(JSON.parse(JSON.stringify(data.meals || {})));
       const meals = (WT.db.meals = normalizeMeals(WT.db.meals));
       const mids = new Set(meals.custom.map((x) => x.id));
-      mIn.custom.forEach((x) => !mids.has(x.id) && meals.custom.push(x));
+      const mnames = new Set(meals.custom.map((x) => String(x.name).toLowerCase()));
+      mIn.custom.forEach((x) => !mids.has(x.id) && !mnames.has(String(x.name).toLowerCase()) && meals.custom.push(x));
+      if (Array.isArray(mIn.kitchen) && Array.isArray(meals.kitchen)) mIn.kitchen.forEach((id) => !meals.kitchen.includes(id) && (meals.custom.some((c) => c.id === id) || !id.startsWith('ing-')) && meals.kitchen.push(id));
+      if (mIn.overrides && meals.overrides) Object.entries(mIn.overrides).forEach(([k, v]) => !meals.overrides[k] && (meals.overrides[k] = v)); // this device's corrections win
       const rkeys = new Set(meals.favorites.map((x) => x.key));
       mIn.favorites.forEach((x) => !rkeys.has(x.key) && meals.favorites.push(x));
       mIn.staples.forEach((x) => !meals.staples.includes(x) && meals.staples.push(x));

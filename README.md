@@ -46,7 +46,7 @@ A quiet, precise interface in the spirit of Apple, Linear and Things: generous w
 | **Progress** | Workouts, per-week average, sets and volume; a workouts-per-week chart; a consistency heatmap; per-exercise charts (est. 1RM, top weight, volume, reps); PRs; weekly volume per muscle group against targets. Everything is calculated from logged data only. |
 | **Food & protein** | Type what you ate in plain words ("2 chicken breasts, a protein shake and 2 hot dogs"); each item is recognized and its protein estimated, with a live breakdown before you log. Edit name, amount and protein; delete entries; browse and edit any past day. Favorites and recent foods log with one tap, and your own saved foods are recognized when typed. A flexible daily target (default 150 g, ±10% counts as on target), friendly guidance, and 7/30-day trends that leave unlogged days out of averages. Calories, carbs and fat are optional secondary estimates. |
 | **Record a run** | From Home: distance, duration (h/m/s), date, optional effort and notes, live average pace. Edit or delete from Home → All runs or from History. Saved in the same format as live-tracked runs. |
-| **Meal ideas** | Pick ingredients you have (protein, carbohydrates, vegetables; search, staples, frequent picks, your own ingredients, “ran out” mode) and get several protein-forward recipes with approximate quantities, steps, times and estimated macros. Dietary needs, disliked ingredients, air fryer, servings and a time limit in Preferences. Save favorites, regenerate different ideas, log a serving to the food diary. Fully offline: bundled recipe templates, no API. |
+| **Meal ideas** | Your kitchen of ingredients (proteins, carbs, vegetables, fruits, dairy, other) — each a data object with a serving size and nutrition, estimated automatically when you add it. Recipes are composed offline from dish formats × flavor profiles × your ingredients, with quantities, steps, and calories / protein / carbs / fat calculated from the amounts used. Save, rescale, swap one idea, and log a serving to the food diary with its calculated totals. See *Meal ideas* below. |
 | **Achievements** | 28 milestones across consistency, strength, running, variety and nutrition, computed from logged data with their real dates, progress bars for locked ones, and a small celebration (can be turned off, as can achievements). |
 | **Data** | Export a JSON backup (workouts, runs, food log, meal planner and achievements), then import it to merge or fully restore. Erase all data. Storage is persisted between sessions. |
 
@@ -132,6 +132,22 @@ Specific products are matched **before** generic foods, from two places: your li
 
 **Storage.** The food log lives in the same local store as workouts (`wt.data.v1`, now data version 6 — v6 only adds `meals`, `achievements` and `learn`) under `nutrition: { entries, foods }`, keyed by local date. Version 4 → 5 only adds fields (product brand / flavor / aliases / status / source, and each entry's confidence); workout data is untouched. Export includes the log and the library with aliases. *Replace* restores them exactly. *Merge* adds missing entries and products by id without duplicates.
 
+## Meal ideas
+
+Everything runs on the device: no recipe service, no AI service, no account.
+
+**Ingredients** (`js/ingredients.js`). 123 built-in ingredients (with about 450 alternative names) plus 46 pantry items, each with a category, a cooking role, a familiar default serving (one chicken breast ≈ 6 oz raw, one medium potato, 1 cup cooked rice, 4 oz shrimp…) marked raw / cooked / dry / as sold, and nutrition per 100 g (calories, protein, carbs, fat, fiber, sugar) from rounded typical (USDA-style) values. Assumptions are stated (ground beef = 90% lean; farmed salmon; precooked turkey kielbasa).
+
+**Automatic estimates.** Adding an ingredient never needs numbers: (1) a branded product already in the product table uses its recorded label values; (2) an exact name or alias match uses that ingredient; (3) otherwise the closest generic ingredient in the name is used ("Butterball turkey kielbasa" → typical turkey kielbasa, labelled as not brand-specific); (4) keyword classes cover the rest ("halibut" → lean white fish); (5) a rough, clearly labelled category default as the last resort — never zero. Label values you enter replace the estimate for those fields and are marked as yours; changing only the serving size scales the nutrition. Corrections to built-ins are stored separately and can be reset. Custom ingredients also appear in the food diary's My foods, and My foods can be added to the kitchen.
+
+**Recipes** (`js/meals.js`). 20 dish formats (skillet, hash, stir-fry, fried rice, bowl, pasta, noodles, sheet pan, air fryer, soup, stew/curry, salad, tacos & wraps, quesadillas, scramble, frittata, stuffed potatoes, melts, yogurt bowls, protein oats) × 26 flavor profiles (Cajun, smoky paprika, BBQ, chili-lime, chipotle-honey, Korean-style, teriyaki, garlic-ginger, Thai-style peanut, lemon-herb, Greek, Tuscan garlic, marinara, pesto, coconut curry, jerk, honey-mustard, Buffalo, Moroccan, lemon-pepper, miso-ginger, garlic-butter, Southwest, herb-and-garlic, two breakfast profiles). Each ingredient cooks according to its own profile (precooked sausage is crisped, shrimp 3–4 minutes, chicken to 165°F…). Candidates are scored for protein, how many of your ingredients they use, flavor pairing, time, style preferences and recent repeats; four are chosen with different dish types and flavors, and "Different ideas" moves away from the ones shown.
+
+**Integrity.** Every step is written through a builder that records each ingredient it mentions; a recipe is kept only if everything listed is used and everything used is listed, and a second pass scans the finished text for any other ingredient name (plus oil and salt). Pantry additions (oil, salt and pepper, spices, sauces) are listed with amounts and counted in the nutrition; optional garnishes are listed separately and not counted.
+
+**Nutrition** per serving = Σ (amount used ÷ serving) × that ingredient's values, using your corrections. Shown as ≈ calories to the nearest 10 and whole grams, with a per-ingredient breakdown. Logging a serving sends those totals to the food diary, labelled as an estimate unless every ingredient uses your own or verified values.
+
+**Preferences.** Diets (vegetarian, pescatarian, dairy-, gluten-, egg-, soy-, nut-free, no shellfish, no pork, lower carb), an avoid list (pre-set to corn, cornstarch and flour; cornstarch is replaced by potato starch, soy sauce by tamari), prioritize protein, everyday ingredients, air fryer, servings, time limit; optional meal type and styles (quick & easy, high protein, adventurous, minimal cleanup, one-pan, air fryer).
+
 ## Recommendations (v6)
 
 All calculations run on the device; nothing is sent anywhere.
@@ -175,7 +191,7 @@ node tests/settypes.test.js                         # drop sets, build-up sets, 
 node tests/nutrition.test.js                        # food parser, brands, ambiguity, library, estimates, trends, migration, backup
 node tests/food.test.js                             # food tracker in the browser: logging, brands, lookup (mocked), favorites, dates, export/restore
 node tests/recommend.test.js                        # v6 recommendations: weekly balance, variety, drop/build-up assignment, caps, progression, learning, migration
-node tests/meals.test.js                            # meal planner + achievements logic
+node tests/meals.test.js                            # ingredients, estimates, recipe integrity sweep, nutrition, diets, migration + achievements
 node tests/v6.test.js                               # v6 in the browser: navigation, Record a run, Meal ideas, Achievements, settings, upgrade from v5
 node tests/migration.test.js                        # builds realistic data with the previous version (worktree of 5d64e76 on :8766) and upgrades / restores it
 node tests/offline.test.js                          # service worker: fresh install offline, and updating an installed v5 copy (serves its own files)
@@ -198,7 +214,8 @@ js/foods.js           bundled generic food reference (typical values per serving
 js/products.js        branded products with sources, serving sizes and status
 js/nutrition.js       food parser, food-log store, trends, guidance
 js/views-food.js      Food screen, review/edit sheets, My foods
-js/meals.js           ingredient catalog, bundled recipe templates, offline meal-idea generator
+js/ingredients.js     ingredient nutrition database + offline estimator
+js/meals.js           kitchen store, recipe composer (formats × flavors), nutrition, logging
 js/achievements.js    achievement definitions, evaluation and celebration
 js/views-meals.js     Meal ideas and Achievements screens
 fonts/                Inter (OFL) + license
