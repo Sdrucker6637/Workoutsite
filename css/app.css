@@ -2564,3 +2564,214 @@ button.demo:active {
     opacity: 1;
   }
 }
+
+/* ───────── Food & protein ───────── */
+.fstack {
+  display: flex;
+  flex-direction: column;
+}
+.food-date {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: calc(var(--sp-6) * -1) 0 var(--sp-5);
+}
+.food-date .icon-btn.off {
+  opacity: 0.3;
+  pointer-events: none;
+}
+.food-day {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 10px;
+  border-radius: var(--r-sm);
+  color: var(--text);
+  cursor: pointer;
+}
+.food-day svg {
+  color: var(--text-3);
+}
+.food-day:hover {
+  background: var(--bg-2);
+}
+.food-day input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  width: 100%;
+  cursor: pointer;
+}
+.food-sum {
+  padding: var(--sp-6);
+}
+.food-sum .kicker {
+  font-size: var(--fs-footnote);
+  font-weight: 560;
+  color: var(--accent);
+}
+.food-big {
+  font-size: 44px;
+  font-weight: 660;
+  letter-spacing: -0.035em;
+  line-height: 1.1;
+  margin: 6px 0 14px;
+}
+.food-big small {
+  font-size: 18px;
+  font-weight: 540;
+  color: var(--text-3);
+  margin-left: 3px;
+  letter-spacing: 0;
+}
+.food-track {
+  height: 8px;
+  overflow: visible;
+}
+.food-track i {
+  z-index: 1;
+}
+.food-track .band {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 6px;
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+.food-track .tgt {
+  z-index: 2;
+}
+.food-msg {
+  margin-top: var(--sp-4);
+  color: var(--text);
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  line-height: 1.45;
+}
+.food-msg svg {
+  color: var(--accent);
+  flex: none;
+  transform: translateY(2px);
+}
+.food-mini {
+  display: block;
+  padding: var(--sp-4) var(--sp-5);
+  transition: background 0.15s;
+}
+.food-mini:hover {
+  background: var(--bg-2);
+}
+.food-mini .food-track {
+  margin-top: 10px;
+  height: 6px;
+}
+.food-entry {
+  display: flex;
+  gap: var(--sp-3);
+  align-items: flex-end;
+}
+.food-entry textarea.input {
+  min-height: 52px;
+  resize: vertical;
+  line-height: 1.4;
+}
+.food-entry .btn {
+  height: 52px;
+  padding: 0 22px;
+}
+.li.pv {
+  min-height: 48px;
+  align-items: flex-start;
+}
+.li.pv .tnum {
+  padding-top: 1px;
+}
+.li.pv.unk .ti {
+  color: var(--burn);
+}
+.chip svg {
+  margin-right: 4px;
+}
+.tag {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 560;
+  color: var(--text-2);
+  background: var(--bg-2);
+  border-radius: 5px;
+  padding: 1px 6px;
+  vertical-align: 1px;
+  margin-left: 4px;
+  letter-spacing: 0;
+}
+.food-quick .label {
+  margin-bottom: 8px;
+}
+.qa-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.chip.qa {
+  max-width: 100%;
+  gap: 6px;
+}
+.chip.qa .ellipsis {
+  max-width: 220px;
+}
+.chip.qa svg {
+  margin: 0;
+  color: var(--accent);
+}
+.food-row {
+  gap: var(--sp-2);
+}
+.food-main {
+  text-align: left;
+  min-width: 0;
+  padding: 2px 0;
+}
+.li.muted .ti,
+.li.muted .su {
+  color: var(--text-3);
+}
+.rv {
+  padding: var(--sp-4);
+  border-radius: var(--r-lg);
+  box-shadow: 0 0 0 1px var(--line);
+}
+.rv.unk {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--burn) 45%, transparent);
+}
+.rv-name {
+  font-weight: 560;
+}
+.num-in {
+  width: 76px;
+  height: 36px;
+  text-align: right;
+}
+.rv-nums {
+  gap: var(--sp-3);
+}
+@media (max-width: 860px) {
+  .food-date {
+    margin-top: calc(var(--sp-4) * -1);
+  }
+  .food-sum {
+    padding: var(--sp-5);
+  }
+  .food-big {
+    font-size: 40px;
+  }
+  .food-entry .btn {
+    padding: 0 18px;
+  }
+  .chip.qa .ellipsis {
+    max-width: 200px;
+  }
+}

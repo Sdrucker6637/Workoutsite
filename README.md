@@ -1,6 +1,6 @@
 # Forge
 
-A free, private, offline-first workout app. It generates workouts from your goals, equipment and recent training, tracks every set, and recommends progressive overload from your logged numbers.
+A free, private, offline-first workout app. It generates workouts from your goals, equipment and recent training, tracks every set, and recommends progressive overload from your logged numbers. A lightweight food diary keeps an approximate count of your daily protein.
 
 - **No accounts, no servers, no paid APIs.** Your data lives in your browser's local storage.
 - **Works offline** once it has loaded. YouTube videos are the only thing that needs a connection.
@@ -16,11 +16,11 @@ A quiet, precise interface in the spirit of Apple, Linear and Things: generous w
 - **Color:** a soft neutral background, near-black text and a single pine-green accent, used only for the primary action and completion. Heavy and burnout appear as small rust and amber dots; nothing else is colored. A dark theme is in Settings.
 
 **Navigation**
-- **Desktop:** a quiet sidebar with Home, Generate, Train, Exercises, History, Progress and Settings.
-- **Phone:** a 5-tab bar (Home, Generate, Train, History, Progress). Exercises and Settings sit in the top bar.
+- **Desktop:** a quiet sidebar with Home, Generate, Train, Exercises, History, Progress, Food and Settings.
+- **Phone:** a 6-tab bar (Home, Generate, Train, History, Progress, Food). Exercises and Settings sit in the top bar.
 
 **Screens**
-- **Home:** one focal "Generate workout" panel, a 7-day strip, the three most recent workouts, and a three-number summary of the last 30 days.
+- **Home:** one focal "Generate workout" panel, a 7-day strip, a small "Protein today" card (can be turned off), the three most recent workouts, and a three-number summary of the last 30 days.
 - **Generate:**
   - Type chips plus two options (exercise count and duration); everything else sits under *More options*.
   - The plan is a single list. Each row shows the name, muscle, sets × reps, the suggested weight from your history and a subtle intensity marker, with video, swap and more buttons.
@@ -43,7 +43,8 @@ A quiet, precise interface in the spirit of Apple, Linear and Things: generous w
 | **Library** | 185 exercises, each with muscles, equipment, category, movement pattern, difficulty, sets, reps, rest, intensity class and a video link. Search, filters, favorites, exclusions, custom exercises and editing are supported. |
 | **History** | Permanent log with every set. Open any workout, repeat it, use it as a template, edit notes or delete it. |
 | **Progress** | Workouts, per-week average, sets and volume; a workouts-per-week chart; a consistency heatmap; per-exercise charts (est. 1RM, top weight, volume, reps); PRs; weekly volume per muscle group against targets. Everything is calculated from logged data only. |
-| **Data** | Export a JSON backup, then import it to merge or fully restore. Erase all data. Storage is persisted between sessions. |
+| **Food & protein** | Type what you ate in plain words ("2 chicken breasts, a protein shake and 2 hot dogs"); each item is recognized and its protein estimated, with a live breakdown before you log. Edit name, amount and protein; delete entries; browse and edit any past day. Favorites and recent foods log with one tap, and your own saved foods are recognized when typed. A flexible daily target (default 150 g, ±10% counts as on target), friendly guidance, and 7/30-day trends that leave unlogged days out of averages. Calories, carbs and fat are optional secondary estimates. |
+| **Data** | Export a JSON backup (workouts **and** food log), then import it to merge or fully restore. Erase all data. Storage is persisted between sessions. |
 
 ### Your profile (pre-loaded, editable in Settings)
 - **Goals:** lean out; lower-chest emphasis; bigger arms; obliques. Priority muscles are chest, biceps, triceps, abs and obliques.
@@ -68,6 +69,24 @@ Single-pose references are labelled "Still image". Attribution appears under eve
 
 ### About the videos
 No video IDs are hard-coded, because they can't be checked offline and they break over time. Each exercise opens a **YouTube search** for that exercise's form tutorial. If you find a video you like, paste its link into the exercise (Library → exercise → paste link, or Edit). After that it **plays embedded** inside the app.
+
+## Food & protein tracker
+
+Built for speed, not precision: no weighing, no grams, no calorie targets. Every number is an estimate.
+
+**How recognition works** (`js/nutrition.js`, fully local and deterministic — no AI service, no network):
+1. The text is normalized: fractions (`½`, `1 1/2`), number words (`two`, `half a`, `a couple of`, `a dozen`), `x2`, `6-inch` / `footlong`.
+2. It is split into items on commas, new lines, `and`, `with`, `plus`… except inside names that contain them (*rice and beans*, *mac and cheese*, *PB&J*, your own saved foods).
+3. Each item is matched against **your saved foods first**, then the bundled table in `js/foods.js` (≈115 foods, ≈460 aliases), by whole words, ignoring plurals; the longest match wins.
+4. The quantity, serving word (`scoop`, `cup`, `bowl`, `handful`, `serving`, `shake`, `package`, `slice`, `can`, `oz`/`g`/`lb`…) and size word (`small`, `large`) set the amount. Each food defines what its servings mean (a scoop of Greek yogurt ≈ ¾ of a single cup; a bowl of protein pasta ≈ 1½ servings).
+5. Leftover words are kept honestly: a known **brand** is named but uses the typical estimate for that kind of food ("Oscar Mayer recognized · typical hot dog estimate, not label data"); an unknown flavor marks the item **Generic**. A handful of widely published products (Premier Protein, Fairlife Core Power / Core Power Elite, Fairlife milk, Oikos Pro, Oikos Triple Zero, Quest bars, Kodiak) use their typical label values and still say "check your package".
+6. If nothing matches, the item is **never logged with a made-up value**: you pick a suggestion (typo-tolerant) or type your own protein, optionally saving it to My foods.
+
+Protein shows as whole grams, calories to the nearest 5–10; there are no decimals on screen.
+
+**Favorites and custom foods.** *My foods* (Food screen or Settings → Nutrition) holds foods with your own protein per serving. Saved foods are recognized when you type their name and override the generic estimate; starred ones appear as one-tap buttons. The star on any logged entry saves it the same way. *Recent* shows the last distinct foods you logged.
+
+**Storage.** The food log lives in the same local store as workouts (`wt.data.v1`, data version 4) under `nutrition: { entries, foods }`, keyed by local date. Upgrading from version 3 only adds this empty section; workout data is untouched. Export includes it; *Replace* restores it exactly and *Merge* adds missing entries and foods by id without duplicates (merging an older backup without food data keeps your log).
 
 ## Run locally
 
@@ -99,6 +118,8 @@ node tests/engine.test.js                          # generator, intensity statis
 python3 -m http.server 8765 & node tests/e2e.test.js   # full browser flow (needs Playwright)
 node tests/features.test.js                         # exercise demonstrations + More options panel
 node tests/settypes.test.js                         # drop sets, build-up sets, plain set types unchanged
+node tests/nutrition.test.js                        # food parser, estimates, totals, trends, guidance, migration, backup
+node tests/food.test.js                             # food tracker in the browser: logging, editing, favorites, dates, export/restore
 ```
 The end-to-end test generates every workout type, swaps exercises, logs a full session, refreshes mid-workout, saves, and checks that the next session shows previous weights and an increase recommendation that is only applied on approval. It also checks the v1 → v2 data upgrade, intensity variety across repeated generations through the UI, the intensity picker, PR detection, the charts, export → wipe → import, persistence after refresh, the theme toggle and offline loading.
 
@@ -114,6 +135,9 @@ js/charts.js          SVG line/bar charts + rings
 js/ui.js              shell, router, sheets, toasts, rest timer
 js/views-train.js     Home, Generate, Train (active workout)
 js/views-data.js      Exercises, History, Progress, Settings
+js/foods.js           bundled food reference (typical values per serving)
+js/nutrition.js       food parser, food-log store, trends, guidance
+js/views-food.js      Food screen, review/edit sheets, My foods
 fonts/                Inter (OFL) + license
 sw.js, manifest.webmanifest, icons/   PWA
 ```

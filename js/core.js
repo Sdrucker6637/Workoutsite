@@ -170,11 +170,15 @@
     rest: { heavy: 150, regular: 90, burnout: 60, superset: 75 },
     timerSound: true,
     lastBackup: null,
+    // Nutrition (protein first; the other macros are optional and easy to ignore)
+    proteinTarget: 150,
+    showMacros: true,
+    homeProtein: true,
   });
 
   /* ───────── Store ───────── */
   const KEY = 'wt.data.v1';
-  const DATA_VERSION = 3;
+  const DATA_VERSION = 4;
   const fresh = () => ({
     version: DATA_VERSION,
     profile: WT.defaultProfile(),
@@ -183,6 +187,7 @@
     history: [],
     active: null,
     draft: null,
+    nutrition: { entries: [], foods: [] },
     createdAt: new Date().toISOString(),
   });
 
@@ -210,6 +215,9 @@
     out.history = Array.isArray(out.history) ? out.history : [];
     out.customExercises = Array.isArray(out.customExercises) ? out.customExercises : [];
     out.overrides = out.overrides || {};
+    // v3 → v4: food & protein log. Purely additive — workout data is untouched.
+    out.nutrition = normalizeNutrition(out.nutrition);
+    if (!(+out.profile.proteinTarget > 0)) out.profile.proteinTarget = 150;
     // v2 → v3: multi-stage sets (drop / build-up). Existing sets need no change — a set without
     // `stages` is a plain set. Only sanitise staged sets so later code can rely on their shape.
     if ((out.version || 1) < DATA_VERSION) out.version = DATA_VERSION;
@@ -217,6 +225,13 @@
     out.history.forEach((sess) => (sess.exercises || []).forEach(fixSets));
     if (out.active) (out.active.exercises || []).forEach(fixSets);
     return out;
+  }
+  function normalizeNutrition(n) {
+    if (WT.nut && WT.nut.normalize) return WT.nut.normalize(n);
+    n = n && typeof n === 'object' ? n : {};
+    n.entries = Array.isArray(n.entries) ? n.entries : [];
+    n.foods = Array.isArray(n.foods) ? n.foods : [];
+    return n;
   }
   const normalizeStagedSet = (e) => (set) => {
     if (!set || set.stages == null) return;
@@ -300,6 +315,14 @@
         if (!cids.has(e.id)) WT.db.customExercises.push(e);
       });
       WT.db.overrides = Object.assign({}, data.overrides || {}, WT.db.overrides);
+      // Food log: add entries and saved foods that aren't here yet (matched by id)
+      const nIn = normalizeNutrition(JSON.parse(JSON.stringify(data.nutrition || {})));
+      const nut = (WT.db.nutrition = normalizeNutrition(WT.db.nutrition));
+      const eids = new Set(nut.entries.map((e) => e.id));
+      nIn.entries.forEach((e) => !eids.has(e.id) && nut.entries.push(e));
+      const fids = new Set(nut.foods.map((f) => f.id));
+      const fnames = new Set(nut.foods.map((f) => String(f.name).toLowerCase()));
+      nIn.foods.forEach((f) => !fids.has(f.id) && !fnames.has(String(f.name).toLowerCase()) && nut.foods.push(f));
     } else {
       WT.db = migrate(data);
     }

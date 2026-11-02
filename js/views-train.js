@@ -101,6 +101,7 @@
         <div class="section-title"><h2>This week</h2><span class="footnote t2 tnum">${week.strength} of ${p.strengthPerWeek} workouts${p.runsPerWeek ? ` · ${runs} of ${p.runsPerWeek} runs` : ''}</span></div>
         <div class="week">${days.join('')}</div>
       </section>
+      ${WT.foodHomeSummary ? WT.foodHomeSummary() : ''}
       <section class="section">
         <div class="section-title"><h2>Recent</h2>${ss.length ? `<a class="btn-link footnote" href="#/history">See all</a>` : ''}</div>
         ${recentHtml}

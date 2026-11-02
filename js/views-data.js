@@ -535,10 +535,15 @@
         ${H.li({ title: '<span class="int burnout">Burnout</span>', trail: num('burnout', p.rest.burnout, 5, 'rest') })}
         ${H.li({ title: 'After a superset', trail: num('superset', p.rest.superset, 5, 'rest') })}
         ${H.li({ title: 'Sound and vibration', trail: H.toggle(p.timerSound, 'pfToggle', 'data-k="timerSound"') })}`, 'In seconds.')}
+      ${grp('Nutrition', `
+        ${H.li({ title: 'Daily protein target', sub: `Flexible: about ${WT.nut ? WT.nut.band(p.proteinTarget || 150).lo + '–' + WT.nut.band(p.proteinTarget || 150).hi : ''} g counts as on target`, trail: `<span class="row" style="gap:6px"><input class="input tnum" style="width:84px;text-align:right;height:34px" type="number" inputmode="numeric" min="20" max="400" step="5" data-in="pfProtein" value="${p.proteinTarget || 150}" aria-label="Daily protein target in grams"><span class="footnote t3">g</span></span>` })}
+        ${H.li({ title: 'Show calories, carbs and fat', sub: 'Secondary estimates — no targets', trail: H.toggle(p.showMacros !== false, 'pfToggleOn', 'data-k="showMacros"') })}
+        ${H.li({ title: 'Protein on Home', trail: H.toggle(p.homeProtein !== false, 'pfToggleOn', 'data-k="homeProtein"') })}
+        ${H.li({ act: 'foodMine', title: 'My foods', sub: 'Saved foods and favorites', trail: `<span class="footnote t2">${(WT.db.nutrition.foods || []).length}</span>`, chev: true })}`, 'Food logging is independent of workouts. Every value is an estimate.', 'nutrition')}
       ${grp('Data', `
         ${H.li({ act: 'exportJson', title: 'Export backup', sub: `Last backup: ${p.lastBackup ? WT.fmtRelDay(p.lastBackup) : 'never'}`, trail: `<span class="t3">${I('download', 16)}</span>` })}
         <label class="li" style="cursor:pointer"><div class="grow"><div class="ti">Import or restore</div><div class="su">From a Forge JSON backup</div></div><span class="t3">${I('upload', 16)}</span><input type="file" accept="application/json,.json" data-in="importFile" hidden></label>
-        ${H.li({ act: 'resetAll', title: 'Erase all data', cls: 'danger' })}`, `<span id="storageInfo">${plural(WT.db.history.length, 'workout')} stored on this device. No account, no server.</span>`)}
+        ${H.li({ act: 'resetAll', title: 'Erase all data', cls: 'danger' })}`, `<span id="storageInfo">${plural(WT.db.history.length, 'workout')} and ${plural(WT.db.nutrition.entries.length, 'food entry').replace('entrys', 'entries')} stored on this device. Backups include both. No account, no server.</span>`)}
       ${grp('About', `
         ${(() => {
           const M = WT.MEDIA, n = M.counts(), S = M.sources, total = Object.keys(M.map).length;
@@ -644,6 +649,25 @@
     WT.ui.gen = null;
     WT.rerender();
   };
+  // Toggles whose default is "on" (stored value undefined counts as on)
+  A.pfToggleOn = (d) => {
+    P()[d.k] = P()[d.k] === false;
+    WT.save();
+    WT.rerender();
+  };
+  WT.I.pfProtein = (el, ev) => {
+    if (ev.type !== 'change') return;
+    const v = Math.round(parseFloat(el.value));
+    if (!(v >= 20 && v <= 400)) {
+      WT.toast('Choose a target between 20 and 400 g', 'error');
+      el.value = P().proteinTarget || 150;
+      return;
+    }
+    if (!el.isConnected || v === P().proteinTarget) return; // a repeat 'change' from the input being re-rendered away
+    P().proteinTarget = v;
+    WT.save();
+    WT.rerender();
+  };
   A.pfToggleDemos = () => {
     P().trainDemos = P().trainDemos === false;
     WT.save();
@@ -696,9 +720,9 @@
       el.value = '';
       WT.openSheet(() => ({
         title: 'Restore backup',
-        body: `<p class="t2">This backup contains ${plural(data.history.length, 'workout')} and ${plural((data.customExercises || []).length, 'custom exercise')}.</p>
+        body: `<p class="t2">This backup contains ${plural(data.history.length, 'workout')}, ${plural((data.customExercises || []).length, 'custom exercise')} and ${((data.nutrition && data.nutrition.entries) || []).length} food ${((data.nutrition && data.nutrition.entries) || []).length === 1 ? 'entry' : 'entries'}.</p>
           <div class="list inset mt16">
-            ${H.li({ act: 'doImport', attrs: 'data-mode="merge"', title: 'Merge', sub: 'Add workouts that aren’t here yet. Keeps your settings.' })}
+            ${H.li({ act: 'doImport', attrs: 'data-mode="merge"', title: 'Merge', sub: 'Add workouts and food entries that aren’t here yet. Keeps your settings.' })}
             ${H.li({ act: 'doImport', attrs: 'data-mode="replace"', title: 'Replace everything', sub: 'Restore exactly as backed up.', cls: 'danger' })}
           </div>`,
       }));
@@ -718,7 +742,7 @@
     reader.readAsText(el.files[0]);
   };
   A.resetAll = () =>
-    WT.confirm('Erase all data?', 'This permanently deletes your history, custom exercises and settings from this device.', 'Erase everything', () => {
+    WT.confirm('Erase all data?', 'This permanently deletes your workout history, food log, custom exercises and settings from this device.', 'Erase everything', () => {
       WT.resetAll();
       WT.applyTheme();
       WT.ui.gen = null;

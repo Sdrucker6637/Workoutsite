@@ -2,6 +2,7 @@
 (function () {
   const WT = (globalThis.WT = globalThis.WT || {});
   const P = {
+    food: '<path d="M7 3v7a2 2 0 0 0 4 0V3M9 3v18M17 21V3c-2.2.8-3.5 3.4-3.5 6.5 0 2.2 1.3 3.5 3.5 3.5"/>',
     home: '<path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',
     sparkles: '<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.7 1.8 1.8.7-1.8.7L19 20l-.7-1.8-1.8-.7 1.8-.7z"/>',
     play: '<path d="M7 4.5v15a1 1 0 0 0 1.5.86l12-7.5a1 1 0 0 0 0-1.72l-12-7.5A1 1 0 0 0 7 4.5z"/>',

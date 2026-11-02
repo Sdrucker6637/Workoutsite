@@ -17,6 +17,7 @@
     { id: 'library', name: 'Exercises', icon: 'book' },
     { id: 'history', name: 'History', icon: 'clock' },
     { id: 'progress', name: 'Progress', icon: 'chart' },
+    { id: 'food', name: 'Food', icon: 'food' },
     { id: 'settings', name: 'Settings', icon: 'settings' },
   ];
   WT.NAV = NAV;
@@ -24,7 +25,7 @@
   /* ───────── Shell ───────── */
   function shell() {
     const navLink = (n) => `<a href="#/${n.id}" class="nav" data-nav="${n.id}">${I(n.icon, 17)}<span>${n.name}</span><span class="slot"></span></a>`;
-    const tabs = ['dashboard', 'generate', 'workout', 'history', 'progress']
+    const tabs = ['dashboard', 'generate', 'workout', 'history', 'progress', 'food']
       .map((id) => NAV.find((n) => n.id === id))
       .map((n) => `<a href="#/${n.id}" class="tab" data-nav="${n.id}">${I(n.icon, 23)}<span>${n.name}</span><span class="slot"></span></a>`)
       .join('');
@@ -33,7 +34,7 @@
         <a href="#/dashboard" class="brand"><span class="brand-mark">${I('dumbbell', 15)}</span>Forge</a>
         ${NAV.filter((n) => n.id !== 'settings').map(navLink).join('')}
         <div class="side-spacer"></div>
-        ${navLink(NAV[6])}
+        ${navLink(NAV.find((n) => n.id === 'settings'))}
       </aside>
       <header class="mtop" id="mtop"></header>
       <main class="main" id="main"></main>

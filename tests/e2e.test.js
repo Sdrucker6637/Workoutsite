@@ -24,15 +24,15 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
     history: [{ id: 'old1', type: 'push', title: 'Push', startedAt: '2026-10-01T17:00:00.000Z', endedAt: '2026-10-01T18:00:00.000Z', durationSec: 3600, totals: { sets: 3, volume: 1200 }, prs: [], exercises: [{ uid: 'u1', exId: 'db-bench-press', name: 'Dumbbell Bench Press', intensity: 'regular', targetSets: 3, repMin: 6, repMax: 10, sets: [{ w: '40', r: '10', done: true }, { w: '40', r: '10', done: true }, { w: '40', r: '10', done: true }] }] }], customExercises: [], overrides: {} })));
   await page.reload();
   let m = await db();
-  ok(m.version === 3 && m.history.length === 1 && m.profile.name === 'Old' && m.profile.excluded[0] === 'crunch', 'v1 history and settings preserved');
+  ok(m.version === 4 && m.history.length === 1 && m.profile.name === 'Old' && m.profile.excluded[0] === 'crunch', 'v1 history and settings preserved');
   ok(m.profile.theme === 'light' && m.profile.goals[0].startsWith('Reduce overall') && m.profile.intensityRandom === true, 'new defaults applied (theme, unedited goals, intensity odds)');
   ok((await page.evaluate(() => WT.personalRecords('db-bench-press').heaviest.w)) === 40, 'old history feeds records');
   await page.evaluate(() => { WT.flush = WT.save = () => {}; localStorage.clear(); });
   await page.reload();
 
   console.log('Navigation');
-  ok((await page.locator('.tabs .tab').count()) === 5, 'compact 5-tab bar on mobile');
-  for (const r of ['dashboard', 'generate', 'workout', 'library', 'history', 'progress', 'settings']) {
+  ok((await page.locator('.tabs .tab').count()) === 6, 'compact 6-tab bar on mobile (incl. Food)');
+  for (const r of ['dashboard', 'generate', 'workout', 'library', 'history', 'progress', 'food', 'settings']) {
     await page.goto(URL + '#/' + r); await page.waitForTimeout(120);
     const over = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth);
     ok(!over, `${r}: no horizontal overflow`);
