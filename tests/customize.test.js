@@ -234,6 +234,38 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   ok(chestCovered === 6, 'chest coverage kept: every substitute still trains the chest');
   ok(personalized === 6, 'every plan says it was personalized from your notes');
   ok((await page.locator('details.learned').count()) === 1, 'the plan lists the adjustments');
+  // Knuckle push-ups are a TRIAL, not an assumption: one per plan, labelled, and you're asked afterwards
+  const trials = await page.evaluate(() => WT.db.draft.exercises.filter((e) => e.trial));
+  ok(trials.length === 1 && trials[0].trial.joint === 'wrist' && trials[0].variation === trials[0].trial.mod, 'one labelled wrist trial in the plan: ' + (trials[0] ? trials[0].exId + ' · ' + trials[0].variation : 'none'));
+  ok((await page.locator('.ex-row .trial-tag').count()) === 1, 'trial tag shown on the plan row');
+  await page.click('.sticky-cta [data-act="startDraft"]');
+  await page.waitForSelector('.cur');
+  const trialUid = await page.evaluate(() => WT.db.active.exercises.find((e) => e.trial).uid);
+  await page.evaluate((u) => { const it = WT.db.active.exercises.find((x) => x.uid === u); it.sets.slice(0, -1).forEach((st) => { st.done = true; st.r = '10'; }); WT.db.active.focus = u; WT.save(true); }, trialUid);
+  await page.reload(); await page.waitForSelector('.cur');
+  await page.fill('.field-num input[data-f="r"]', '10');
+  await page.click(`[data-act="woCheck"][data-uid="${trialUid}"]`);
+  ok((await page.locator('.effort.trial').count()) === 1, 'after the last set: “How did your wrists feel?”');
+  await page.click(`.effort.trial [data-act="woTrial"][data-v="1"]`);
+  const tr = await page.evaluate(() => WT.db.learn.trials);
+  ok(Object.keys(tr).length === 1 && Object.values(tr)[0].ok === true, 'answer stored: ' + Object.keys(tr)[0]);
+  ok((await page.locator('.effort:not(.trial)').count()) === 1, 'then the usual effort question');
+  await page.evaluate(() => { WT.db.active = null; WT.save(true); });
+  await page.goto(URL + '#/generate');
+  await page.click('[data-act="genType"][data-k="chest"]');
+  await page.click('[data-act="genEquipMode"][data-v="none"]');
+  await page.click('[data-act="generate"]'); await page.waitForTimeout(450);
+  const after = await page.evaluate(() => WT.db.draft.exercises.map((e) => ({ id: e.exId, v: e.variation, trial: !!e.trial })));
+  ok(after.every((e) => !e.trial) && after.some((e) => e.v === 'knuckles'), 'confirmed modification used in the next plan, no longer a trial');
+  // "Doesn't work" from the variation sheet removes it again
+  const kn = after.find((e) => e.v === 'knuckles');
+  const knUid = await page.evaluate((id) => WT.db.draft.exercises.find((e) => e.exId === id).uid, kn.id);
+  await page.locator(`.ex-row[data-uid="${knUid}"] .var-tag`).click();
+  ok((await page.locator('.sheet [data-act="varTrial"]').count()) >= 2, 'variation sheet: works / doesn’t for your wrists');
+  await page.click('.sheet [data-act="varTrial"][data-k="wrist|knuckles"][data-v="0"]');
+  await page.click('.sheet-head [data-act="closeSheet"]');
+  await page.click('[data-act="generate"]'); await page.waitForTimeout(450);
+  ok(await page.evaluate(() => WT.db.draft.exercises.every((e) => e.variation !== 'knuckles' || e.exId !== WT.db.draft.exercises[0].exId) && !WT.db.draft.exercises.some((e) => e.variation === 'knuckles' && !e.trial && (WT.ex(e.exId).families || []).includes('push-up') && WT.trialStatus('wrist', WT.ex(e.exId), 'knuckles', WT.learnedPrefs()) === 'bad')), 'a modification marked “doesn’t work” is not prescribed');
   // Lunges disliked → legs day avoids them
   await page.click('[data-act="genType"][data-k="legs"]');
   let lunges = 0;

@@ -310,6 +310,9 @@
   X('t-pushup', 'T Push-Up (Push-Up with Rotation)', 'chest', 'obliques front-delts triceps', 'bw', 'c', 'h-push', 2, 'r', '6-12', 60, 'bw', '', {
     cue: 'Do a push-up; at the top rotate into a side plank with the top arm reaching to the ceiling (a "T"). Return and repeat to the other side.',
     easier: 'pushup', mods: [M('knees', 'From the knees', -1, 'Push-up from the knees, rotate to a kneeling side plank.')] });
+  X('pushup-bottom-hold', 'Push-Up Bottom Hold', 'chest', 'triceps front-delts abs', 'bw', 'i', 'h-push', 1, 'rb', '15-40', 45, 'time', 'isometric', {
+    cue: 'Lower to the bottom of a push-up — chest a fist from the floor, elbows about 45° — and hold there without resting on the floor. Keeps the chest under load at its longest working length, a different stimulus from repping push-ups. Good as a finisher after push-up sets.',
+    easier: 'pushup', mods: [KNEE, KNUCKLE, M('high', 'Halfway hold', -1, 'Hold halfway down instead of at the bottom.')] });
   X('palm-press', 'Palm-Press Chest Squeeze', 'chest', 'front-delts', 'bw', 'i', 'fly', 1, 'rb', '20-40', 30, 'time', 'isometric low-load', {
     cue: 'Stand or kneel tall, palms together in front of the chest, elbows up and out. Press the palms into each other as hard as you can and hold. Self-resisted horizontal adduction — the movement a fly trains — with no equipment and no wrist load.',
     mods: [M('pulses', 'Moving squeeze', 0, 'Keep the press on and slowly move the hands forward and back a few inches.'), M('high', 'Hands high', 0, 'Press at eye level to bias the upper chest.'), M('low', 'Hands low', 0, 'Press at belly-button level, arms angled down, to bias the lower chest.')] });
@@ -504,7 +507,7 @@
    * knee flexion;  shoulder: overhead, dips, deep stretch;  back: lumbar extension / spinal load;
    * elbow: heavy triceps extension;  neck: curl-ups;  impact: jumping / running.            */
   const JOINTS = {
-    wrist: 'pushup incline-pushup decline-pushup wide-pushup archer-pushup mb-pushup diamond-pushup close-grip-pushup staggered-pushup typewriter-pushup one-arm-pushup hindu-pushup dive-bomber-pushup explosive-pushup clap-pushup spiderman-pushup t-pushup pseudo-planche-pushup planche-lean pike-pushup handstand-pushup freestanding-handstand freestanding-hspu pike-shoulder-tap shoulder-tap sphinx-pushup tiger-bend-pushup floor-dip bench-dip reverse-plank floor-l-sit bear-plank mountain-climber bear-crawl burpee squat-thrust plank-jack crab-walk renegade-row db-wrist-curl reverse-wrist-curl donkey-kick bird-dog',
+    wrist: 'pushup pushup-bottom-hold incline-pushup decline-pushup wide-pushup archer-pushup mb-pushup diamond-pushup close-grip-pushup staggered-pushup typewriter-pushup one-arm-pushup hindu-pushup dive-bomber-pushup explosive-pushup clap-pushup spiderman-pushup t-pushup pseudo-planche-pushup planche-lean pike-pushup handstand-pushup freestanding-handstand freestanding-hspu pike-shoulder-tap shoulder-tap sphinx-pushup tiger-bend-pushup floor-dip bench-dip reverse-plank floor-l-sit bear-plank mountain-climber bear-crawl burpee squat-thrust plank-jack crab-walk renegade-row db-wrist-curl reverse-wrist-curl donkey-kick bird-dog',
     knee: 'goblet-squat heel-elevated-goblet db-front-squat db-squat db-sumo-squat bulgarian-split-squat db-reverse-lunge db-walking-lunge db-step-up lateral-lunge cossack-squat sissy-squat wall-sit jump-squat bb-back-squat leg-press leg-extension db-thruster mb-wall-ball air-squat split-squat reverse-lunge forward-lunge walking-lunge curtsy-lunge jump-lunge shrimp-squat pistol-squat broad-jump tuck-jump skater-jumps burpee',
     shoulder: 'db-shoulder-press standing-db-press arnold-press machine-shoulder-press pike-pushup handstand-pushup freestanding-handstand freestanding-hspu chest-dip triceps-dip bench-dip floor-dip db-upright-row cable-upright-row pseudo-planche-pushup planche-lean dive-bomber-pushup hindu-pushup clap-pushup one-arm-pushup db-pullover db-fly',
     back: 'superman-hold superman-raise swimmer back-extension kb-swing situp lying-leg-raise flutter-kick v-up mb-v-up hanging-leg-raise windshield-wiper bw-russian-twist mb-russian-twist bb-row db-bent-row bb-back-squat',
@@ -515,6 +518,19 @@
   const byId = Object.fromEntries(list.map((e) => [e.id, e]));
   list.forEach((e) => (e.joints = []));
   Object.entries(JOINTS).forEach(([j, ids]) => ids.split(' ').forEach((id) => byId[id] && byId[id].joints.push(j)));
+
+  /* Which joint a modification takes load off (eases). Each exercise gets its own copies of shared modifications.
+   * wrist: fists / forearms keep the wrist straight;  knee: a shorter range of knee bend;  impact: no jumping. */
+  const EASES = { knee: ['partial', 'short'], impact: ['step-switch', 'squat-calf', 'small', 'step'] };
+  list.forEach((e) => {
+    if (!e.mods) return;
+    e.mods = e.mods.map((m) => {
+      const c = Object.assign({}, m, { eases: (m.eases || []).slice() });
+      if (c.wrist && !c.eases.includes('wrist')) c.eases.push('wrist');
+      Object.entries(EASES).forEach(([j, ids]) => ids.includes(c.id) && e.joints.includes(j) && !c.eases.includes(j) && c.eases.push(j));
+      return c;
+    });
+  });
 
   /* Movement family: the plain word people use in notes ("push-ups", "lunges", "planks"…). */
   const FAMILIES = [

@@ -70,7 +70,8 @@ WT.db.profile.experience = 'beginner';
 ok(WT.pickVariation(WT.ex('pistol-squat'), null).id === 'eccentric' || WT.modOf(WT.ex('pistol-squat'), WT.pickVariation(WT.ex('pistol-squat'), null).id).level < 0, 'beginner → easier pistol variation');
 ok(!WT.pickVariation(WT.ex('pushup'), null).id, 'beginner-level exercise stays as written');
 WT.db.profile.experience = 'intermediate';
-ok(!WT.pickVariation(WT.ex('pistol-squat'), null).id, 'intermediate: pistol as written');
+ok(WT.modOf(WT.ex('pistol-squat'), WT.pickVariation(WT.ex('pistol-squat'), null).id).level === -1, 'intermediate, never done an advanced exercise → one step easier');
+ok(!WT.pickVariation(WT.ex('split-squat'), null).id, 'intermediate: a beginner exercise stays as written');
 
 /* ───────── Plan editing helpers ───────── */
 console.log('Plan editing');
@@ -228,6 +229,123 @@ const r3 = WT.recommend('pushup');
 ok(r3 && r3.headline, 'recommend without a plan still works');
 
 /* Migration */
+/* ───────── Audit pass: phrasing robustness, trials, joints, allocation, quality ───────── */
+console.log('Natural-language phrasings (tests/note-phrasings.json)');
+{
+  // Each case lists signals that must appear (prefix match on kind:type:key[@of][:persistence]); '' = nothing.
+  const cases = JSON.parse(fs.readFileSync(path.join(__dirname, 'note-phrasings.json'), 'utf8'));
+  const sigs = (t, ex) => WT.parseNote(t, { exId: ex }).map((s) => `${s.kind}:${s.target.type}:${s.target.key}${s.target.of ? '@' + s.target.of : ''}:${s.persistence}`);
+  cases.forEach(([t, ex, want]) => {
+    const got = sigs(t, ex);
+    const w = want.split(' ').filter(Boolean);
+    ok(w.length ? w.every((x) => got.some((g) => g.startsWith(x))) : !got.length, `"${t}" → ${got.join(' ') || '(nothing)'} (want ${want || 'nothing'})`);
+  });
+}
+
+console.log('Conflicts and time');
+reset();
+addSession(10, [['air-squat', '', null]], 'I hate lunges');
+addSession(2, [['air-squat', '', null]], 'Actually I like lunges now');
+ok(!WT.learnedSignals().some((s) => s.kind === 'dislike') && WT.learnedSignals().some((s) => s.kind === 'like' && s.target.key === 'lunge'), 'newer “like lunges now” overrides “hate lunges”');
+reset();
+addSession(10, [['pistol-squat', "Can't do these yet"]]);
+addSession(1, [['pistol-squat', 'Fine now']]);
+ok(WT.prefEffect(WT.ex('pistol-squat'), WT.learnedPrefs()).varDir === 0, '“fine now” clears an earlier “too hard”');
+reset();
+addSession(1, [['outdoor-run', 'Sore from yesterday’s legs session']]);
+ok(!WT.learnedSignals().length, 'muscle soreness from earlier training (DOMS) is not treated as a problem with the exercise');
+reset();
+addSession(3, [['pushup', 'Knee push ups are too easy now', 'knees']]);
+ok(WT.pickVariation(WT.ex('pushup'), WT.learnedPrefs()).id !== 'knees' && WT.modOf(WT.ex('pushup'), WT.pickVariation(WT.ex('pushup'), WT.learnedPrefs()).id).level > -2, '“knee push-ups are too easy” → one step up from the knee variation');
+
+console.log('Wrist discomfort: trials, not assumptions');
+reset();
+addSession(2, [['pushup', 'Push-ups are tough on my wrists']]);
+let P1 = WT.learnedPrefs();
+ok(WT.prefEffect(WT.ex('pushup'), P1).trial && WT.prefEffect(WT.ex('pushup'), P1).trialOnly, 'knuckle push-ups are a trial, not a default');
+ok(WT.prefEffect(WT.ex('pike-pushup'), P1).avoid, 'wrist-loading exercise without a wrist-friendly version is left out');
+ok(!WT.prefEffect(WT.ex('dolphin-pushup'), P1).avoid && !WT.prefEffect(WT.ex('palm-press'), P1).avoid, 'forearm and hands-free alternatives stay available');
+for (const t of ['chest', 'push', 'full']) {
+  const ws = many(Object.assign(WT.defaultSettings(t), { equipment: ['bw'] }), 30);
+  ok(ws.every((w) => w.exercises.filter((i) => i.trial).length <= 1), `${t}: at most one trial per workout`);
+  ok(ws.every((w) => w.exercises.every((i) => !(WT.ex(i.exId).joints || []).includes('wrist') || i.trial || (WT.modOf(WT.ex(i.exId), i.variation) || {}).eases)), `${t}: every other exercise keeps weight off the wrists`);
+  ok(ws.every((w) => w.exercises.every((i) => !i.trial || i.variation === i.trial.mod)), `${t}: the trial uses its modification`);
+}
+WT.recordTrial('wrist', 'pushup', 'knuckles', true);
+P1 = WT.learnedPrefs();
+ok(WT.prefEffect(WT.ex('wide-pushup'), P1).useMod === 'knuckles', 'a confirmed modification carries to the same family (wide push-up on knuckles)');
+let ws = many(Object.assign(WT.defaultSettings('chest'), { equipment: ['bw'] }), 30);
+ok(ws.every((w) => !w.exercises.some((i) => i.trial && i.trial.mod === 'knuckles')) && ws.some((w) => w.exercises.some((i) => i.variation === 'knuckles')), 'confirmed → used without the trial label');
+ok(ws.every((w) => fam(w, 'push-up') <= 2), 'still at most two push-ups per workout');
+WT.recordTrial('wrist', 'pushup', 'knuckles', false);
+ws = many(Object.assign(WT.defaultSettings('chest'), { equipment: ['bw'] }), 20);
+ok(ws.every((w) => !w.exercises.some((i) => (WT.ex(i.exId).families || []).includes('push-up'))), '“didn’t work” → no push-ups at all');
+ok(ws.every((w) => w.notes.some((n) => /Equipment → My equipment/.test(n))), 'a short no-equipment plan says why and what would open it up');
+reset();
+addSession(5, [['pushup', 'Push-ups are tough on my wrists']]);
+addSession(1, [['pushup', 'Knuckle push-ups felt fine on my wrists', 'knuckles']]);
+ok(WT.trialStatus('wrist', WT.ex('pushup'), 'knuckles', WT.learnedPrefs()) === 'ok', 'a note can confirm a modification (“knuckle push-ups felt fine on my wrists”)');
+ok(WT.learnedSignals().some((s) => s.kind === 'pain' && s.target.type === 'joint'), '…without clearing the wrist limitation itself');
+addSession(0, [['pushup', 'Knuckles still hurt my wrists', 'knuckles']]);
+ok(WT.trialStatus('wrist', WT.ex('pushup'), 'knuckles', WT.learnedPrefs()) === 'bad', 'a later note overrides it (“knuckles still hurt”)');
+
+console.log('Other joints');
+reset();
+addSession(3, [['air-squat', 'My knees are always cranky']]);
+P1 = WT.learnedPrefs();
+['pistol-squat', 'jump-squat', 'jump-lunge', 'tuck-jump'].forEach((id) => ok(WT.prefEffect(WT.ex(id), P1).avoid || WT.prefEffect(WT.ex(id), P1).trial, `knee limit: ${id} left out (or only as a trial)`));
+ok(!WT.prefEffect(WT.ex('glute-bridge'), P1).avoid && !WT.prefEffect(WT.ex('db-hip-thrust'), P1).avoid, 'knee limit: hip work unaffected');
+ok(WT.prefEffect(WT.ex('air-squat'), P1).trial && WT.prefEffect(WT.ex('air-squat'), P1).trial.mod === 'partial', 'knee limit: partial-range squat offered as the trial');
+ok(many(WT.defaultSettings('legs'), 20).every((w) => w.exercises.length >= 5), 'knee limit: legs day still full with equipment');
+
+console.log('Bodyweight allocation');
+reset();
+const fitCtx = (exp, eq) => ({ p: Object.assign({}, WT.db.profile, { experience: exp }), equipment: eq, excluded: new Set(), twin: {} });
+ok(WT.bodyweightFit(WT.ex('air-squat'), fitCtx('beginner', WT.db.profile.equipment)) === 0, 'beginner: bodyweight squat is a fine choice');
+ok(WT.bodyweightFit(WT.ex('air-squat'), fitCtx('intermediate', WT.db.profile.equipment)) < 0, 'intermediate with dumbbells: the loaded squat is preferred');
+ok(WT.bodyweightFit(WT.ex('air-squat'), fitCtx('advanced', ['bw'])) === 0, 'no equipment: no penalty');
+ok(WT.bodyweightFit(WT.ex('pistol-squat'), fitCtx('intermediate', WT.db.profile.equipment)) === 0, 'hard bodyweight work holds its own');
+ok(WT.bodyweightFit(WT.ex('hollow-rock'), fitCtx('advanced', WT.db.profile.equipment)) === 0, 'core work is bodyweight by nature');
+const share = (exp) => {
+  WT.db.profile.experience = exp;
+  let f = 0, n = 0;
+  many(WT.defaultSettings('legs'), 60).forEach((w) => w.exercises.forEach((i) => { n++; if (WT.isEquipmentFree(WT.ex(i.exId))) f++; }));
+  return f / n;
+};
+const sb = share('beginner'), si = share('intermediate');
+WT.db.profile.experience = 'intermediate';
+console.log(`  legs, bodyweight share: beginner ${Math.round(sb * 100)}% · intermediate ${Math.round(si * 100)}%`);
+ok(sb > si, 'bodyweight share follows experience, not a fixed number');
+addSession(2, [['air-squat', 'I prefer bodyweight']]);
+let likeShare = 0, ln = 0;
+many(WT.defaultSettings('legs'), 60).forEach((w) => w.exercises.forEach((i) => { ln++; if (WT.isEquipmentFree(WT.ex(i.exId))) likeShare++; }));
+ok(likeShare / ln > si, '“I prefer bodyweight” raises it');
+
+console.log('Workout quality');
+reset();
+const bwChest2 = Object.assign(WT.defaultSettings('chest'), { equipment: ['bw'] });
+ok(many(bwChest2, 100).every((w) => w.exercises.filter((i) => WT.ex(i.exId).pattern === 'plyo').length <= 1), 'at most one explosive push-up per session');
+ok(many(Object.assign(WT.defaultSettings('push'), { equipment: ['bw'] }), 60).every((w) => !w.exercises.some((i) => WT.ex(i.exId).primary === 'biceps')), 'bodyweight push day never falls back to biceps');
+ok(many(Object.assign(WT.defaultSettings('pull'), { equipment: ['bw'] }), 60).every((w) => !w.exercises.some((i) => WT.ex(i.exId).primary === 'triceps')), 'bodyweight pull day never falls back to triceps');
+ok(many(Object.assign(WT.defaultSettings('arms'), { equipment: ['bw'] }), 30).every((w) => w.exercises.length === 6), 'bodyweight arms day still fills (biceps + triceps)');
+ok(many(Object.assign(WT.defaultSettings('full'), { equipment: ['bw'] }), 80).every((w) => fam(w, 'push-up') <= 2), 'full body: no more than two push-up variants');
+ok(many(Object.assign(WT.defaultSettings('full'), { equipment: ['bw'] }), 80).every((w) => w.exercises.every((i) => WT.ex(i.exId).difficulty !== 'advanced' || i.variation)), 'advanced exercises start on an easier variation for an intermediate');
+ok(WT.ex('pushup-bottom-hold').primary === 'chest' && WT.isEquipmentFree(WT.ex('pushup-bottom-hold')) && WT.ex('pushup-bottom-hold').joints.includes('wrist'), 'push-up bottom hold: chest, no equipment, wrist-loading');
+
+console.log('Demonstrations');
+{
+  vm.runInThisContext(fs.readFileSync(path.join(__dirname, '..', 'js', 'media.js'), 'utf8'), { filename: 'media.js' });
+  const M = WT.MEDIA;
+  M.files().forEach((f) => ok(fs.existsSync(path.join(__dirname, '..', f)), 'frame exists: ' + f));
+  const att = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'media', 'workout-guide', 'attribution.json'), 'utf8'));
+  Object.values(M.map).concat(Object.values(M.variations)).filter(([s]) => s === 'wg').forEach(([, id, n]) => ok(att[id] && att[id].length === n, 'attribution for ' + id));
+  Object.keys(M.map).forEach((id) => ok(WT.BUILTIN_EXERCISES.some((e) => e.id === id), 'demo maps a real exercise: ' + id));
+  Object.keys(M.variations).forEach((k) => { const [id, v] = k.split('~'); ok(WT.modOf(WT.BUILTIN_EXERCISES.find((e) => e.id === id), v), 'variation demo maps a real modification: ' + k); });
+  ok(WT.demoFor('pushup', 'knees').frames[0].includes('knee-push-up') && WT.demoFor('pushup', null).frames[0] !== WT.demoFor('pushup', 'knees').frames[0], 'knee push-up shows its own drawing');
+  const free = WT.BUILTIN_EXERCISES.filter((e) => e.equipment.every((q) => q === 'bw'));
+  console.log(`  ${free.filter((e) => M.map[e.id]).length} of ${free.length} equipment-free exercises have a demonstration`);
+}
+
 console.log('Migration');
 for (const k in mem) delete mem[k];
 mem['wt.data.v1'] = JSON.stringify({ version: 5, profile: { equipment: ['db', 'bw'] }, history: [], customExercises: [], overrides: {} });

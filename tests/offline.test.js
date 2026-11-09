@@ -37,8 +37,8 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
     await page.goto(URL);
     ok(await swReady(page), 'service worker installed and controlling the page');
     const caches = await page.evaluate(() => caches.keys());
-    ok(caches.includes('forge-v14'), 'app cache forge-v14 created: ' + caches.join(', '));
-    const cached = await page.evaluate(async () => (await (await caches.open('forge-v14')).keys()).map((r) => new URL(r.url).pathname));
+    ok(caches.includes('forge-v15'), 'app cache forge-v15 created: ' + caches.join(', '));
+    const cached = await page.evaluate(async () => (await (await caches.open('forge-v15')).keys()).map((r) => new URL(r.url).pathname));
     ok(['/js/ingredients.js', '/js/meals.js', '/js/achievements.js', '/js/views-meals.js', '/js/feedback.js', '/index.html'].every((p) => cached.includes(p)), 'new scripts are in the cache');
     await ctx.setOffline(true);
     await page.reload(); await page.waitForTimeout(500);
@@ -91,17 +91,17 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
     await page.evaluate(async () => { const r = await navigator.serviceWorker.getRegistration(); await r.update(); });
     for (let i = 0; i < 50; i++) {
       const keys = await page.evaluate(() => caches.keys());
-      if (keys.includes('forge-v14') && !keys.includes('forge-v10')) break;
+      if (keys.includes('forge-v15') && !keys.includes('forge-v10')) break;
       await page.waitForTimeout(200);
     }
     const keys = await page.evaluate(() => caches.keys());
-    ok(keys.includes('forge-v14') && !keys.includes('forge-v10'), 'update installs forge-v14 and removes the old cache: ' + keys.join(', '));
-    const idx = await page.evaluate(async () => (await (await (await caches.open('forge-v14')).match('./index.html')).text()));
+    ok(keys.includes('forge-v15') && !keys.includes('forge-v10'), 'update installs forge-v15 and removes the old cache: ' + keys.join(', '));
+    const idx = await page.evaluate(async () => (await (await (await caches.open('forge-v15')).match('./index.html')).text()));
     ok(idx.includes('js/meals.js') && idx.includes('js/views-meals.js'), 'the new cache holds the NEW index.html (not a stale copy from the HTTP cache)');
     // Normal use right after the deploy: the shell is refreshed in the background on every load
     for (let i = 0; i < 3; i++) { await page.reload(); await page.waitForTimeout(400); }
     const stale = await page.evaluate(async () => {
-      const c = await caches.open('forge-v14');
+      const c = await caches.open('forge-v15');
       const out = [];
       for (const p of ['./index.html', './js/core.js', './js/ui.js', './sw.js']) {
         const r = await c.match(p);

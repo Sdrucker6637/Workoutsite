@@ -29,23 +29,36 @@
   const norm = (text) => flat(text).split(' ').map(stem).join(' ');
 
   /* ───────── Vocabulary ───────── */
-  const NEG = /\b(not|no|never|isn't|wasn't|didn't|doesn't|don't|without|nothing)\b[^.]{0,18}$/;
+  // A negation counts only when it sits right before the word ("not too hard", "didn't really hurt").
+  const NEG = /\b(not|no|never|isn't|wasn't|didn't|doesn't|don't|without|nothing)\b( [a-z']+){0,2} $/;
+  const J = '(wrists?|knees?|elbows?|shoulders?|back|neck|hips?|ankles?)';
   const KINDS = {
-    resolved: /\b(no (more )?(pain|discomfort)|pain ?free|(doesn't|does not|didn't|did not|don't|do not) (hurt|bother|ache)|feels? (fine|better|good|great|ok|okay) now|(fine|better|healed|recovered|okay|ok) now|no longer (hurt|bother|ache)\w*|all good now|easy on my)\b/,
-    dislike: /\b(hate[sd]?|hating|dislike[sd]?|(don't|do not|didn't|did not) (like|enjoy|love)|not a fan|boring|annoying|never again|can't stand|cannot stand|awful|terrible|not for me|no more of (these|this|those)|skip (this|these|those) next time|rather not)\b/,
-    pain: /\b(hurts?|hurting|hurted|pain|painful|aches?|aching|achy|sore|soreness|tweak\w*|strain\w*|pinch\w*|uncomfortable|discomfort|bother\w*|aggravat\w*|irritat\w*|flare\w*|injur\w*|tendonitis|tendinitis|arthritis|clicking|popping|tough on|hard on|rough on|kills? my|killed my|killing my|stress on)\b/,
-    tooHard: /\b(too (hard|difficult|heavy|tough|advanced|much)|(couldn't|could not|can't|cannot|unable to|wasn't able to) (do|finish|complete|get|manage|hold)|failed|struggl\w*|way too|impossible|brutal|form (broke|breaks|fell apart)|need(s)? (to be )?easier|too many)\b/,
-    tooEasy: /\b(too (easy|light)|very easy|so easy|really easy|pretty easy|easy|effortless|breeze|not (challenging|hard enough)|could (have )?(do|done) (a lot )?more|need(s)? (to be )?harder|more challenging|want(ed)? (it )?harder)\b/,
-    like: /\b(love[sd]?|loving|enjoy\w*|i like|like (it|this|these|them|that)|liked|really like|fun|favou?rite|awesome|amazing|felt (good|great|strong)|good pump|great pump|keep (this|these|it)|more of (this|these))\b/,
+    resolved: new RegExp(`\\b(no (more )?(pain|discomfort)|pain ?free|(doesn't|does not|didn't|did not|don't|do not) (hurt|bother|ache)|feels? (fine|better|good|great|ok|okay) (now|again)|(fine|better|healed|recovered|okay|ok|good) (now|again)|(is|are|feels?|felt) (much |a lot |way |so much )?better|no longer (hurt|bother|ache)\\w*|all good now|easy on my|${J} (is|are|feel|feels|felt) (fine|ok|okay|good|great))\\b`),
+    dislike: /\b(hate[sd]?|hating|dislike[sd]?|(don't|do not|didn't|did not) (like|enjoy|love)|not a fan|boring|annoying|never again|can't stand|cannot stand|awful|terrible|not for me|no more|skip (this|these|those|them)|rather not|sucks?|sucked|avoid|(don't|do not) (give|want|program|include)|stop (giving|including|programming)|less of)\b/,
+    pain: new RegExp(`\\b(hurts?|hurting|hurted|pain|painful|aches?|aching|achy|sore|soreness|tweak\\w*|strain\\w*|pinch\\w*|uncomfortable|discomfort|bother\\w*|aggravat\\w*|irritat\\w*|flare\\w*|injur\\w*|tendonitis|tendinitis|arthritis|clicks?|clicking|clicked|pops?|popping|tough on|hard on|rough on|kills? my|killed my|killing my|stress on|careful with|go easy on|watch my|protect my|bad ${J}|(dodgy|weak|sensitive|cranky|grumpy|stiff|unstable|tender|swollen) ${J}|${J} (is|are|was|were|feels?|felt|get|gets|got)( (always|often|usually|still|a bit|a little|really|so|very|kind of|getting))? (dodgy|weak|sensitive|cranky|grumpy|stiff|unstable|tender|swollen)|my ${J} (hate|hated|complain\\w*))\\b`),
+    tooHard: /\b(too (hard|difficult|heavy|tough|advanced|much)|way too (hard|difficult|heavy|tough|much)|(felt|was|were|is|are|got) (really |very |super |pretty |so |quite )?(hard|tough|difficult|brutal)(?! on)|(couldn't|could not|can't|cannot|unable to|wasn't able to) (do|finish|complete|get|manage|hold)|failed|struggl\w*|impossible|brutal|form (broke|breaks|fell apart)|need(s)? (to be )?easier|too many)\b/,
+    tooEasy: /\b(too (easy|light)|very easy|so easy|really easy|pretty easy|getting easy|easy|effortless|breeze|not (challenging|hard enough)|could (have )?(do|done) (a lot )?more|need(s)? (to be )?harder|more challenging|want(ed)? (it )?harder)\b/,
+    like: /\b(love[sd]?|loving|enjoy\w*|i like|like (it|this|these|them|that)|liked|really like|like \w+s now|fun|favou?rite|awesome|amazing|felt (good|great|strong)|good pump|great pump|keep (this|these|it|doing|including)|more of (this|these)|(big |huge )?fan of|prefer\w*|(want|need|give me|include|add) (some |a few |a lot )?more|always include)\b/,
   };
-  const ONGOING = /\b(always|every ?time|whenever|chronic|old injury|injury|injured|surgery|arthritis|tendonitis|tendinitis|bad (wrist|knee|shoulder|back|elbow|neck)s?|tend to|tends to|usually|keeps?|anymore|any more|every session|each time|again)\b/;
-  const TEMP = /\b(today|tonight|this (time|morning|evening|week|session|workout)|right now|a bit|a little|slightly|tired|fatigued|exhausted|didn't sleep|no sleep|bad sleep|hungover|sore from|still sore|yesterday|after (the )?run|doms)\b/;
+  const ONGOING = /\b(always|every ?time|whenever|chronic|old injury|injury|injured|surgery|arthritis|tendonitis|tendinitis|bad (wrist|knee|shoulder|back|elbow|neck)s?|tend to|tends to|usually|keeps?|anymore|any more|every session|each time|again|still)\b/;
+  const TEMP = /\b(today|tonight|this (time|morning|evening|week|session|workout)|right now|a bit|a little|slightly|tired|fatigued|exhausted|didn't sleep|no sleep|bad sleep|hungover|still sore|yesterday|after (the )?run)\b/;
+  // Muscle soreness from earlier training (DOMS) is not a reaction to an exercise: ignore it.
+  const DOMS = /\b(sore from|doms|muscle soreness|sore muscles|still sore from)\b/;
 
   const JOINT_WORDS = [
     ['wrist', /\bwrists?\b/], ['knee', /\bknees?\b/], ['elbow', /\belbows?\b/], ['neck', /\bneck\b/],
     ['back', /\b(lower back|low back|lumbar|back)\b/], ['shoulder', /\b(shoulders?|rotator cuff)\b/], ['impact', /\b(ankles?|shins?|achilles|feet|foot|impact|jumping|jumps)\b/],
   ];
-  const JOINT_NAMES = { wrist: 'wrists', knee: 'knees', elbow: 'elbows', neck: 'neck', back: 'lower back', shoulder: 'shoulders', impact: 'impact / jumping' };
+  // How a modification is described in a note → its id in ex.mods. Feedback on a modification is kept
+  // apart from the exercise ("knuckle push-ups are fine on my wrists" says nothing about flat-hand push-ups).
+  const VARIATION_WORDS = [
+    ['knuckles', /\b(on (my |the )?knuckles|knuckles?|on (my )?fists|fists?|fist push ups?)\b/],
+    ['forearms', /\b(on (my )?forearms|forearm (version|plank|ones?))\b/],
+    ['knees', /\b(knee push ups?|kneeling (push ups?|version|ones?)|from (my |the )?knees|on (my |the )?knees)\b/],
+    ['partial', /\b(partial( reps?| range)?|half (reps?|range|squats?)|reduced range|shallower)\b/],
+    ['eccentric', /\b(negatives|slow negatives|eccentrics?)\b/],
+  ];
+  const JOINT_NAMES = (WT.JOINT_NAMES = { wrist: 'wrists', knee: 'knees', elbow: 'elbows', neck: 'neck', back: 'lower back', shoulder: 'shoulders', impact: 'impact / jumping' });
   const MUSCLE_WORDS = [
     ['chest', /\b(chest|pecs?)\b/], ['biceps', /\bbiceps?\b/], ['triceps', /\btriceps?\b/], ['quads', /\bquads?\b/], ['hamstrings', /\bhamstrings?|hammies\b/],
     ['glutes', /\bglutes?\b/], ['calves', /\bcal(f|ves)\b/], ['abs', /\babs\b/], ['obliques', /\bobliques?\b/], ['forearms', /\bforearms?\b/],
@@ -102,79 +115,121 @@
         if (!negated) found.add(k);
         else if (k === 'pain') found.add('resolved');
         else if (k === 'like') found.add('dislike');
-        if (!g.global) break;
       }
     });
     // "easy on my wrists" is relief, not "too easy"; "too hard" isn't also "easy".
     if (found.has('resolved') && /\beasy on\b/.test(c)) found.delete('tooEasy');
     if (found.has('tooHard')) found.delete('tooEasy');
-    if (found.has('dislike')) found.delete('like');
+    if (found.has('dislike') && !/\b(not a fan|don't like|do not like|didn't like)\b/.test(c)) found.delete('like');
     if (found.has('resolved')) found.delete('pain');
+    // "felt fine on my wrists": a body part plus a plain all-clear is relief, not enjoyment
+    if (!found.has('pain') && JOINT_WORDS.some(([j, re]) => j !== 'impact' && re.test(c)) && /\b(fine|ok|okay|no problem|comfortable|better|good)\b/.test(c) && !found.has('dislike')) {
+      found.add('resolved');
+      found.delete('like');
+    }
     return [...found];
   }
 
   /**
    * Parse one note into signals.
    * ctx: { exId?: exercise the note is attached to }
-   * Returns [{ kind, target: {type, key}, joint?, persistence, clause }]
+   * Returns [{ kind, target: {type, key, of?}, joints, persistence, clause }]
+   *   target.type: exercise | family | variation (key = modification id, of = 'exercise:id' / 'family:f' / null)
+   *                | joint | muscle | group | equipment
    */
   WT.parseNote = function (text, ctx) {
     ctx = ctx || {};
-    const clauses = String(text || '').split(/[.!?;\n]+|\bbut\b|\bthough\b|\bhowever\b|\balthough\b/i).map((c) => c.trim()).filter(Boolean);
+    const clauses = String(text || '').split(/[.!?;\n]+|\bbut\b|\bthough\b|\bhowever\b|\balthough\b|\bwhereas\b/i).map((c) => c.trim()).filter(Boolean);
     const out = [];
     clauses.forEach((raw) => {
-      const toks = flat(raw).split(' ').filter(Boolean);
-      if (!toks.length) return;
-      const kinds = findKinds(' ' + toks.join(' ') + ' ');
-      if (!kinds.length) return;
-      // Targets: specific exercises (longest name first, matched on singularised words), then families,
-      // joints, muscles and equipment in the words that are left.
-      const st = toks.map(stem);
-      const used = toks.map(() => false);
-      const targets = [];
-      aliasIndex().forEach(([n, id]) => {
-        const nt = n.split(' ');
-        for (let i = 0; i + nt.length <= st.length; i++) {
-          if (nt.every((w, k) => st[i + k] === w && !used[i + k])) {
-            nt.forEach((w, k) => (used[i + k] = true));
-            if (!targets.some((t) => t.type === 'exercise' && t.key === id)) targets.push({ type: 'exercise', key: id });
-          }
-        }
-      });
-      const rest = toks.map((t, i) => (used[i] ? '#' : t)).join(' ');
-      const fl = ' ' + rest + ' ';
-      const flRaw = ' ' + flat(raw) + ' ';
-      FAMILY_WORDS.forEach(([f, re]) => re.test(fl) && targets.push({ type: 'family', key: f }));
-      const joints = JOINT_WORDS.filter(([, re]) => re.test(flRaw)).map(([j]) => j);
-      const painish = kinds.includes('pain') || kinds.includes('resolved');
-      // "back"/"shoulders" are joints when something hurts, muscle groups otherwise
-      if (!painish) MUSCLE_WORDS.forEach(([m, re]) => re.test(fl) && targets.push({ type: m.startsWith('g:') ? 'group' : 'muscle', key: m.replace('g:', '') }));
-      EQUIP_WORDS.forEach(([q, re]) => re.test(fl) && targets.push({ type: 'equipment', key: q }));
-      if (targets.some((t) => t.type === 'family' && t.key === 'jump') && joints.includes('impact') && !painish) joints.splice(joints.indexOf('impact'), 1);
-      const direct = targets.filter((t) => t.type === 'exercise' || t.type === 'family');
-      // Unnamed subject ("this", "it", or nothing) → the exercise the note is attached to.
-      if (!direct.length && ctx.exId && !(painish && joints.length && targets.length)) targets.unshift({ type: 'exercise', key: ctx.exId });
-      const persistence = (k) => {
-        if (k === 'like' || k === 'dislike') return 'lasting';
-        if (k === 'tooHard' || k === 'tooEasy') return TEMP.test(flRaw) && !ONGOING.test(flRaw) ? 'temporary' : 'progress';
-        if (k === 'resolved') return 'event';
-        if (ONGOING.test(flRaw)) return 'ongoing';
-        if (TEMP.test(flRaw) || /\bsore(ness)?\b/.test(flRaw)) return 'temporary';
-        return 'recurring';
-      };
-      kinds.forEach((kind) => {
-        const p = persistence(kind);
-        if (kind === 'pain' || kind === 'resolved') {
-          const exTargets = targets.filter((t) => t.type === 'exercise' || t.type === 'family');
-          exTargets.forEach((t) => out.push({ kind, target: t, joints, persistence: p, clause: raw }));
-          joints.forEach((j) => out.push({ kind, target: { type: 'joint', key: j }, joints: [j], persistence: p, clause: raw, viaExercise: exTargets.length > 0 }));
-          return;
-        }
-        targets.forEach((t) => out.push({ kind, target: t, joints, persistence: p, clause: raw }));
-      });
+      // "prefer dumbbells over cables" → like the first part, dislike the second
+      const pm = raw.match(/^(.*\bprefer\w*\b.*?)\b(over|to|rather than|instead of)\b(.*)$/i);
+      if (pm && pm[3].trim()) {
+        parseClause(pm[1], ['like'], ctx, out);
+        parseClause(pm[3], ['dislike'], ctx, out);
+        return;
+      }
+      parseClause(raw, null, ctx, out);
     });
     return out;
   };
+  function parseClause(raw, forced, ctx, out) {
+    let toks = flat(raw).split(' ').filter(Boolean);
+    if (!toks.length) return;
+    const flRaw0 = ' ' + toks.join(' ') + ' ';
+    if (DOMS.test(flRaw0)) return;
+    let kinds = forced || findKinds(flRaw0);
+    const anyVariation = VARIATION_WORDS.some(([, re]) => re.test(flRaw0));
+    // "the forearm version was fine": an all-clear about a modification
+    if (!kinds.length && anyVariation && /\b(fine|ok|okay|good|great|better|comfortable|works?|worked)\b/.test(flRaw0)) kinds = ['resolved'];
+    if (!kinds.length) return;
+    // Modifications mentioned ("on knuckles", "knee push-ups"); their words are taken out before looking
+    // for joints and exercises, so "knee push-ups" doesn't read as a knee problem.
+    const variations = [];
+    let flRaw = flRaw0;
+    VARIATION_WORDS.forEach(([id, re]) => {
+      if (re.test(flRaw)) {
+        variations.push(id);
+        flRaw = flRaw.replace(new RegExp(re.source, 'g'), (m) => (/push ups?/.test(m) ? ' push up ' : ' '));
+      }
+    });
+    toks = flRaw.trim().split(/\s+/).filter(Boolean);
+    // Targets: specific exercises (longest name first, matched on singularised words), then families,
+    // joints, muscles and equipment in the words that are left.
+    const st = toks.map(stem);
+    const used = toks.map(() => false);
+    const targets = [];
+    aliasIndex().forEach(([n, id]) => {
+      const nt = n.split(' ');
+      for (let i = 0; i + nt.length <= st.length; i++) {
+        if (nt.every((w, k) => st[i + k] === w && !used[i + k])) {
+          nt.forEach((w, k) => (used[i + k] = true));
+          if (!targets.some((t) => t.type === 'exercise' && t.key === id)) targets.push({ type: 'exercise', key: id });
+        }
+      }
+    });
+    const fl = ' ' + toks.map((t, i) => (used[i] ? '#' : t)).join(' ') + ' ';
+    FAMILY_WORDS.forEach(([f, re]) => re.test(fl) && targets.push({ type: 'family', key: f }));
+    const joints = JOINT_WORDS.filter(([, re]) => re.test(flRaw)).map(([j]) => j);
+    const painish = kinds.includes('pain') || kinds.includes('resolved');
+    // "back"/"shoulders" are joints when something hurts, muscle groups otherwise
+    if (!painish) MUSCLE_WORDS.forEach(([m, re]) => re.test(fl) && targets.push({ type: m.startsWith('g:') ? 'group' : 'muscle', key: m.replace('g:', '') }));
+    EQUIP_WORDS.forEach(([q, re]) => re.test(fl) && targets.push({ type: 'equipment', key: q }));
+    if (targets.some((t) => t.type === 'family' && t.key === 'jump') && joints.includes('impact')) joints.splice(joints.indexOf('impact'), 1);
+    const persistence = (k) => {
+      if (k === 'like' || k === 'dislike') return 'lasting';
+      if (k === 'tooHard' || k === 'tooEasy') return TEMP.test(flRaw0) && !ONGOING.test(flRaw0) ? 'temporary' : 'progress';
+      if (k === 'resolved') return 'event';
+      if (ONGOING.test(flRaw0)) return 'ongoing';
+      if (TEMP.test(flRaw0) || /\bsore(ness)?\b/.test(flRaw0)) return 'temporary';
+      return 'recurring';
+    };
+    const exTargets = targets.filter((t) => t.type === 'exercise' || t.type === 'family');
+    // Feedback about a modification: attach it to the exercise / family named, or the one the note is on.
+    if (variations.length) {
+      const of = exTargets[0] ? exTargets[0].type + ':' + exTargets[0].key : ctx.exId ? 'exercise:' + ctx.exId : null;
+      kinds.forEach((kind) => {
+        const p = kind === 'resolved' ? 'lasting' : persistence(kind);
+        variations.forEach((v) => out.push({ kind, target: { type: 'variation', key: v, of }, joints, persistence: p, clause: raw }));
+        // It still hurts on the modification → the joint is still a problem. Relief on a modification
+        // only clears that modification, not the joint.
+        if (kind === 'pain') joints.forEach((j) => out.push({ kind, target: { type: 'joint', key: j }, joints: [j], persistence: p, clause: raw, viaExercise: true }));
+      });
+      return;
+    }
+    // Unnamed subject ("this", "it", or nothing) → the exercise the note is attached to.
+    if (!exTargets.length && ctx.exId && !(painish && joints.length && targets.length)) targets.unshift({ type: 'exercise', key: ctx.exId });
+    kinds.forEach((kind) => {
+      const p = persistence(kind);
+      if (kind === 'pain' || kind === 'resolved') {
+        const exT = targets.filter((t) => t.type === 'exercise' || t.type === 'family');
+        exT.forEach((t) => out.push({ kind, target: t, joints, persistence: p, clause: raw }));
+        joints.forEach((j) => out.push({ kind, target: { type: 'joint', key: j }, joints: [j], persistence: p, clause: raw, viaExercise: exT.length > 0 }));
+        return;
+      }
+      targets.forEach((t) => out.push({ kind, target: t, joints, persistence: p, clause: raw }));
+    });
+  }
 
   /* ───────── Sources ───────── */
   /** Every note Forge learns from: [{ key, text, date, exId, where }], oldest first. */
@@ -200,8 +255,10 @@
     if (persistence === 'lasting') return Math.pow(0.5, days / 180);
     return 0;
   }
-  const OPPOSITE = { tooHard: 'tooEasy', tooEasy: 'tooHard', like: 'dislike', dislike: 'like', pain: 'resolved', resolved: 'pain' };
-  const tkey = (t) => t.type + ':' + t.key;
+  // Which later kinds cancel an earlier note about the same thing ("too hard" → "too easy now";
+  // "hurts" → "fine now"; "hate lunges" → "I like lunges now").
+  const CANCELS = { tooHard: ['tooEasy', 'resolved'], tooEasy: ['tooHard'], like: ['dislike'], dislike: ['like'], pain: ['resolved', 'like'], resolved: ['pain', 'dislike'] };
+  const tkey = (t) => t.type + ':' + t.key + (t.of ? '@' + t.of : '');
 
   /** All live signals (decayed, de-conflicted, minus forgotten ones), newest last. */
   WT.learnedSignals = function (now) {
@@ -221,7 +278,7 @@
     all.forEach((s, i) => {
       for (let j = i + 1; j < all.length; j++) {
         const later = all[j];
-        if (later.kind !== OPPOSITE[s.kind]) continue;
+        if (!CANCELS[s.kind].includes(later.kind)) continue;
         if (tkey(later.target) === tkey(s.target) || (s.kind === 'pain' && later.target.type === 'joint' && s.joints.includes(later.target.key))) {
           s.w = 0;
           s.supersededBy = later.key;
@@ -229,7 +286,8 @@
         }
       }
     });
-    return all.filter((s) => s.w > 0.05 && s.kind !== 'resolved');
+    // Relief about a modification is kept: it's how Forge knows that modification works for you.
+    return all.filter((s) => s.w > 0.05 && (s.kind !== 'resolved' || s.target.type === 'variation'));
   };
 
   /* ───────── Preferences used by the generator ───────── */
@@ -258,22 +316,97 @@
     return j;
   }
   const quote = (s) => `“${s.clause.length > 60 ? s.clause.slice(0, 57) + '…' : s.clause}”`;
-  const wristMod = (ex) => (ex.mods || []).find((m) => m.wrist);
+  /** Modifications that take load off a joint (knuckles / forearms for wrists, partial range for knees…). */
+  const easingMods = (ex, j) => (ex.mods || []).filter((m) => !m.needs && (m.eases || []).includes(j));
+  WT.easingMods = easingMods;
+  const ofMatches = (of, ex) => !of || of === 'exercise:' + ex.id || (of.startsWith('family:') && (ex.families || []).includes(of.slice(7)));
+  const sameFamily = (exId, ex) => {
+    const o = WT.ex(exId);
+    return !!o && (o.families || []).some((f) => (ex.families || []).includes(f));
+  };
+  const trialKey = (joint, exId, modId) => `${joint}|${exId}|${modId || ''}`;
+  WT.trialKey = trialKey;
+
+  /**
+   * Has this exercise — or one of its modifications — worked for a joint? 'ok' | 'bad' | null (untested).
+   * Evidence: your answer to "how did your wrists feel?" after a trial (db.learn.trials), and notes about
+   * the modification ("knuckle push-ups are fine on my wrists"). The latest evidence wins. An answer about a
+   * modification also counts for the same modification of a related exercise (knuckles on a wide push-up).
+   */
+  WT.trialStatus = function (joint, ex, modId, prefs) {
+    let best = null;
+    const consider = (s, at, exact, from) => {
+      if (!best || at > best.at || (at === best.at && exact && !best.exact)) best = { s, at, exact, from };
+    };
+    Object.entries((WT.db.learn && WT.db.learn.trials) || {}).forEach(([k, v]) => {
+      const [j, exId, m] = k.split('|');
+      if (j !== joint || (m || null) !== (modId || null) || !v) return;
+      if (exId !== ex.id && !(modId && sameFamily(exId, ex))) return;
+      consider(v.ok ? 'ok' : 'bad', +new Date(v.at || 0), exId === ex.id, 'answer');
+    });
+    if (modId && prefs)
+      prefs.signals.forEach((s) => {
+        if (s.target.type !== 'variation' || s.target.key !== modId || !ofMatches(s.target.of, ex)) return;
+        if (s.joints.length && !s.joints.includes(joint)) return;
+        const st = s.kind === 'resolved' || s.kind === 'like' ? 'ok' : s.kind === 'pain' || s.kind === 'dislike' ? 'bad' : null;
+        if (st) consider(st, +new Date(s.date), s.target.of === 'exercise:' + ex.id, 'note');
+      });
+    return best ? best.s : null;
+  };
 
   /**
    * How your notes affect one exercise.
-   * Returns { delta, avoid, varDir (-1 easier / +1 harder / 0), wrist (prefer wrist-friendly mod),
-   *           cap (limit to one of its family, one set fewer), reasons[] }.
+   * Returns { delta, avoid, varDir (-1 easier / +1 harder / 0), useMod (a modification confirmed to work for
+   * a sore joint), trial ({ joint, mod }: an untested joint-friendly modification worth trying), trialOnly
+   * (without that trial the exercise is left out), cap (limit to two of its family, one set fewer),
+   * varNotes ([{ mod, dir }]: "knee push-ups are too easy"), reasons[] }.
    */
   WT.prefEffect = function (ex, prefs) {
-    const r = { delta: 0, avoid: false, varDir: 0, wrist: false, cap: false, reasons: [] };
+    const r = { delta: 0, avoid: false, varDir: 0, useMod: null, trial: null, trialOnly: false, cap: false, varNotes: [], reasons: [] };
     if (!prefs || !ex) return r;
     if (prefs.cache[ex.id]) return prefs.cache[ex.id];
     const by = prefs.byTarget;
     const g = (WT.MUSCLES[ex.primary] || {}).group;
     const direct = [].concat(by['exercise:' + ex.id] || [], ...(ex.families || []).map((f) => by['family:' + f] || []));
     const say = (txt) => r.reasons.length < 3 && !r.reasons.includes(txt) && r.reasons.push(txt);
-    const wm = wristMod(ex);
+    const handled = new Set();
+    /**
+     * A sore joint and an exercise that loads it. Confirmed fine → no change. A confirmed modification →
+     * use it. An untested joint-friendly modification → one labelled trial per workout (you're asked how
+     * it felt). Otherwise: wrists (hands on the floor) and anything you named are left out; for other
+     * joints only demanding exercises are left out and the rest are de-prioritised.
+     */
+    const joint = (j, w, lasting, ongoing, q, named) => {
+      if (handled.has(j)) return;
+      handled.add(j);
+      const JN = JOINT_NAMES[j];
+      const exStatus = WT.trialStatus(j, ex, null, prefs);
+      if (exStatus === 'ok') return say(`Fine for your ${JN} — you confirmed it`);
+      const mods = easingMods(ex, j);
+      const okMod = mods.find((m) => WT.trialStatus(j, ex, m.id, prefs) === 'ok');
+      if (okMod) {
+        r.useMod = okMod.id;
+        r.delta -= 0.5 * w;
+        if (named) r.cap = true;
+        return say(`${okMod.name} — works for your ${JN}`);
+      }
+      const strict = j === 'wrist' || named;
+      const untried = exStatus === 'bad' ? [] : mods.filter((m) => WT.trialStatus(j, ex, m.id, prefs) !== 'bad');
+      if (untried.length && lasting) {
+        r.trial = { joint: j, mod: untried[0].id };
+        r.trialOnly = r.trialOnly || strict;
+        r.delta -= 3 * w;
+        r.cap = true;
+        return say(`Trial: ${untried[0].name.toLowerCase()} — you’ll be asked how your ${JN} felt`);
+      }
+      const demanding = ex.difficulty === 'advanced' || ex.pattern === 'plyo' || (ex.joints || []).includes('impact');
+      if (strict || demanding || exStatus === 'bad') {
+        r.delta -= 9 * w;
+        if ((lasting && w > 0.5) || exStatus === 'bad') r.avoid = true;
+      } else r.delta -= (ongoing ? 6 : 4.5) * w;
+      if (named) r.cap = true;
+      say(named ? `Uncomfortable for you: ${q}` : `Loads your ${JN}: ${q}`);
+    };
     direct.forEach((s) => {
       const fam = s.target.type === 'family';
       const w = s.w;
@@ -285,20 +418,14 @@
         r.delta += (fam ? 2 : 2.5) * w;
         say(`You enjoy it: ${quote(s)}`);
       } else if (s.kind === 'pain') {
+        const loaded = s.joints.filter((j) => (ex.joints || []).includes(j));
         // "Push-ups are tough on my wrists" is about wrist-loading push-ups: a forearm (dolphin) push-up is fine.
-        if (fam && s.joints.length && !s.joints.some((j) => (ex.joints || []).includes(j))) return;
-        const wristOnly = s.joints.length ? s.joints.every((j) => j === 'wrist') : (ex.joints || []).includes('wrist') && (ex.joints || []).length === 1;
-        if (wm && wristOnly) {
-          r.delta -= 2 * w;
-          r.wrist = true;
-          r.cap = true;
-          say(`Wrist-friendly version and fewer sets: ${quote(s)}`);
-        } else {
-          r.delta -= 9 * w;
-          if (w > 0.5 && s.persistence !== 'temporary') r.avoid = true;
-          r.cap = true;
-          say(`Uncomfortable for you: ${quote(s)}`);
-        }
+        if (s.joints.length && !loaded.length) return;
+        if (loaded.length) return loaded.forEach((j) => joint(j, w, s.persistence !== 'temporary', s.persistence === 'ongoing', quote(s), true));
+        r.delta -= 9 * w;
+        if (w > 0.5 && s.persistence !== 'temporary') r.avoid = true;
+        r.cap = true;
+        say(`Uncomfortable for you: ${quote(s)}`);
       } else if (s.kind === 'tooHard') {
         r.varDir = Math.min(r.varDir, -1);
         r.delta -= 1 * w;
@@ -310,17 +437,12 @@
     });
     // Joint limitations reach every exercise that loads that joint, not just the one you named.
     Object.entries(prefs.joints).forEach(([j, info]) => {
-      if (!(ex.joints || []).includes(j) || direct.some((s) => s.kind === 'pain')) return;
-      if (j === 'wrist' && wm) {
-        r.delta -= 1.5 * info.w;
-        r.wrist = true;
-        say(`Wrist-friendly version: ${quote({ clause: info.quote })}`);
-      } else {
-        r.delta -= (info.ongoing ? 6 : 4.5) * info.w;
-        // A lasting joint limit rules out exercises that load that joint with no friendlier version.
-        if (info.lasting && info.w > 0.6) r.avoid = true;
-        say(`Loads your ${JOINT_NAMES[j]}: ${quote({ clause: info.quote })}`);
-      }
+      if ((ex.joints || []).includes(j)) joint(j, info.w, info.lasting, info.ongoing, quote({ clause: info.quote }), false);
+    });
+    // Difficulty notes about one modification ("knee push-ups are too easy now")
+    prefs.signals.forEach((s) => {
+      if (s.target.type !== 'variation' || !ofMatches(s.target.of, ex) || !WT.modOf(ex, s.target.key)) return;
+      if (s.kind === 'tooEasy' || s.kind === 'tooHard') r.varNotes.push({ mod: s.target.key, dir: s.kind === 'tooEasy' ? 1 : -1, at: +new Date(s.date) });
     });
     // Muscle / group / equipment preferences (gentle)
     []
@@ -334,6 +456,14 @@
       });
     prefs.cache[ex.id] = r;
     return r;
+  };
+
+  /** Record the answer to "how did your <joint> feel on <exercise · modification>?" */
+  WT.recordTrial = function (joint, exId, modId, ok) {
+    const l = WT.db.learn;
+    l.trials = l.trials || {};
+    l.trials[trialKey(joint, exId, modId)] = { ok: !!ok, at: new Date().toISOString() };
+    WT.save();
   };
 
   /** Bonus for the next exercise down / up a progression when the current one is too hard / too easy. */
@@ -369,33 +499,44 @@
     const c = opts.filter((o) => (dir > 0 ? o.level > lv : o.level < lv)).sort((a, b) => (dir > 0 ? a.level - b.level : b.level - a.level));
     return c[0];
   };
+  const RANK = { beginner: 0, intermediate: 1, advanced: 2 };
   /**
-   * Variation to prescribe when an exercise is generated: your last one, nudged by notes
-   * (too hard → one step easier, too easy → one step harder, sore wrists → wrist-friendly), and
-   * an easier one for beginners on harder exercises. Never jumps to an advanced variation unprompted.
+   * Variation to prescribe when an exercise is generated: a modification confirmed to work for a sore joint;
+   * the trial modification when this item is the workout's trial (opts.trial); otherwise your last one,
+   * nudged by notes (too hard → one step easier, too easy → one step harder). An exercise above your
+   * experience level that you haven't done starts one step easier. Never jumps to a harder variation unprompted.
    */
-  WT.pickVariation = function (ex, prefs, equipment) {
+  WT.pickVariation = function (ex, prefs, equipment, opts) {
+    opts = opts || {};
     if (!ex || !(ex.mods || []).length) return { id: null };
     const eff = WT.prefEffect(ex, prefs);
-    const wm = wristMod(ex);
-    if (eff.wrist && wm) return { id: wm.id, why: 'Wrist-friendly version (from your notes)' };
+    if (eff.useMod) return { id: eff.useMod, why: `${WT.modOf(ex, eff.useMod).name} — works for you (from your notes)` };
+    if (opts.trial && eff.trial) return { id: eff.trial.mod, why: `Trial for your ${JOINT_NAMES[eff.trial.joint]} (from your notes)`, trial: eff.trial };
     const last = WT.lastVariation(ex.id);
     let cur = last === undefined ? null : last;
-    if (eff.varDir) {
-      const st = WT.stepVariation(ex, cur, eff.varDir, equipment);
-      if (st) return { id: st.id, why: eff.varDir < 0 ? `${st.name} — easier, from your notes` : `${st.name} — harder, from your notes` };
+    if (cur && !WT.modOf(ex, cur)) cur = null;
+    const vn = eff.varNotes.filter((v) => (v.mod || null) === cur).sort((a, b) => b.at - a.at)[0];
+    const dir = vn ? vn.dir : eff.varDir;
+    if (dir) {
+      const st = WT.stepVariation(ex, cur, dir, equipment);
+      if (st) return { id: st.id, why: dir < 0 ? `${st.name} — easier, from your notes` : `${st.name} — harder, from your notes` };
     }
-    if (last === undefined && WT.db.profile.experience === 'beginner' && ex.difficulty !== 'beginner') {
+    if (last === undefined && RANK[ex.difficulty] > RANK[WT.db.profile.experience || 'intermediate']) {
       const st = WT.stepVariation(ex, null, -1, equipment);
       if (st) return { id: st.id, why: 'Easier variation to start with' };
     }
-    if (cur && !WT.modOf(ex, cur)) cur = null;
     return { id: cur, why: cur ? 'Same variation as last time' : null };
   };
 
   /** Plain-language label for a signal, for the "Learned from your notes" lists. */
   WT.describeSignal = function (s) {
     const t = s.target;
+    if (t.type === 'variation') {
+      const ofName = t.of ? (t.of.startsWith('family:') ? t.of.slice(7) + 's' : (WT.ex(t.of.slice(9)) || { name: '' }).name) : '';
+      const mod = (WT.exercises.map((e) => WT.modOf(e, t.key)).find(Boolean) || { name: t.key }).name.toLowerCase();
+      const v = { resolved: 'Works for you:', like: 'Works for you:', pain: 'Doesn’t work for you:', dislike: 'Doesn’t work for you:', tooEasy: 'Too easy:', tooHard: 'Too hard:' }[s.kind];
+      return { title: `${v} ${ofName ? ofName + ' ' : ''}${mod}`, dur: s.kind === 'tooEasy' || s.kind === 'tooHard' ? 'until you progress' : 'lasting', quote: s.clause };
+    }
     const what = t.type === 'exercise' ? (WT.ex(t.key) || { name: t.key }).name : t.type === 'family' ? t.key + 's' : t.type === 'joint' ? 'your ' + JOINT_NAMES[t.key] : t.type === 'equipment' ? WT.EQUIPMENT[t.key] || t.key : t.type === 'muscle' ? WT.muscleName(t.key) : WT.GROUPS[t.key] || t.key;
     const verb = { pain: t.type === 'joint' ? 'Go easy on' : 'Uncomfortable:', tooHard: 'Too hard:', tooEasy: 'Too easy:', like: 'You enjoy', dislike: 'You don’t enjoy' }[s.kind];
     const dur = { temporary: 'temporary', ongoing: 'ongoing', recurring: 'recurring', progress: 'until you progress', lasting: 'lasting' }[s.persistence];

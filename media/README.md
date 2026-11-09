@@ -5,11 +5,11 @@ Forge shows a short looping demonstration for an exercise only when an openly li
 | Folder | Source | Creator | License | Exercises | Format |
 |---|---|---|---|---|---|
 | `everkinetic/` | [Everkinetic open data](https://github.com/everkinetic/data) | Greg Priday & contributors | CC BY-SA 4.0 | 75 | SVG, start/end pair |
-| `workout-guide/` | [Workout Guide](https://github.com/bryllim/workout-guide) (npm `@bryllim/workout-guide` 1.0.0) | Bryl Lim (some frames adapted from Everkinetic) | CC BY-SA 4.0 | 62 | WebP, 3 frames |
+| `workout-guide/` | [Workout Guide](https://github.com/bryllim/workout-guide) (npm `@bryllim/workout-guide` 1.0.0) | Bryl Lim (some frames adapted from Everkinetic) | CC BY-SA 4.0 | 79 (+1 variation) | WebP, 3 frames |
 | `open-exercise-illustrations/` | [Open Exercise Illustrations](https://github.com/hitmanrepo/open-exercise-illustrations) | Hitman Repo, **AI-generated** | CC0 1.0 | 22 | WebP, 1–3 frames |
 | `repdb/` | [RepDB free dataset](https://github.com/RepDB/exercise-dataset) | RepDB (Sergei Argutin), **AI-generated** | RepDB Free Tier License (in-app use with attribution; **not an open license**) | 9 | WebP, start/peak pair or single pose |
 
-**Coverage: 168 of 243 built-in exercises.** The 58 bodyweight exercises added later have no verified illustration yet. User-created exercises always show the placeholder. Single-pose references, such as running and the hollow hold, are labelled "Still image" in the app rather than presented as motion.
+**Coverage: 185 of 244 built-in exercises**, plus one variation (knee push-up). 17 drawings (16 bodyweight exercises plus Medicine Ball Russian Twist) were taken from the same Workout Guide package (1.0.0, already an accepted source) after a frame-by-frame review; see `workout-guide/README.md`. 43 of the bodyweight exercises still have no verified illustration. User-created exercises always show the placeholder. Single-pose references, such as running and the hollow hold, are labelled "Still image" in the app rather than presented as motion.
 
 **Exercise data by [RepDB](https://repdb.co)**: this credit is required by RepDB's free tier and also appears under every RepDB image and in Settings → About. The RepDB files are licensed for in-app use only. Unlike the other folders, they are not available for reuse; see `repdb/README.md`.
 
@@ -58,7 +58,7 @@ These images came from accepted sources but did not match the Forge exercise clo
 | Cable Triceps Kickback | WG | It shows a glute kickback; an OEI image was used instead. |
 | Hollow Hold, Ab Wheel, Cable Crunch | WG | The frames were inconsistent or malformed; OEI images were used instead. |
 | Kneeling Cable Crunch | Everkinetic 0288 | Seated, not kneeling. |
-| Medicine-Ball V-Up, Russian Twist | — | The candidates had no medicine ball. |
+| Medicine-Ball V-Up | — | The candidates had no medicine ball. (The Workout Guide `russian-twist` drawing does hold a medicine ball and is now used for Medicine Ball Russian Twist.) |
 | Outdoor Run | WG running | It shows a treadmill. |
 | Chin-Up Top Hold | RepDB `chin-ups` (peak), `flexed-arm-hang` | Underhand grip not distinguishable; the flexed-arm hang is drawn overhand. |
 | Close-Grip Dumbbell Press (Neutral Grip) | RepDB `close-grip-db-bench-press` | Dumbbells touching, but a neutral grip cannot be confirmed. |
@@ -68,7 +68,7 @@ These images came from accepted sources but did not match the Forge exercise clo
 | Medicine Ball Push-Up | RepDB `stability-ball-push-up-hands-on-ball` | Stability ball, not a medicine ball. |
 | Standing Cable Leg Curl | RepDB `banded-standing-curl` | Resistance band, not a cable. |
 
-## Exercises still without a demonstration (17)
+## Exercises still without a demonstration (16 older + 43 bodyweight)
 
 | Group | Exercise | Why |
 |---|---|---|
@@ -88,4 +88,23 @@ These images came from accepted sources but did not match the Forge exercise clo
 | Legs | Standing Cable Leg Curl | Only band and machine versions exist. |
 | Legs | Medicine Ball Wall Ball | No image shows the throw to a wall. |
 | Core | Medicine Ball V-Up | Every V-up image is bodyweight only. |
-| Core | Medicine Ball Russian Twist | Verified images show clasped hands; Flow's ball version has unverified provenance. |
+
+### Bodyweight library: Workout Guide candidates rejected on accuracy
+
+| Forge exercise | Workout Guide slug | Problem |
+|---|---|---|
+| Split Squat, Reverse Lunge, Walking Lunge | `split-squat`, `reverse-lunge`, `walking-lunge` | Drawn holding dumbbells; Forge's versions are bodyweight. |
+| Shrimp Squat | `shrimp-squat` | Holds a pole for balance. |
+| Calf Raise | `calf-raise`, `standing-calf-raise` | On a stand / in a machine. |
+| Side-Lying Hip Adduction | `side-lying-leg-raise` | Shows abduction (top leg raised). |
+| Glute Bridge Walkout | `lying-hamstring-walkout` | Feet in suspension straps. |
+| V-Up | `v-up` | Frames drawn at inconsistent scales. |
+| Flutter Kicks | `flutter-kick` | Propped on the elbows; Forge's cue is lying flat. |
+| Bear Plank Hold | `bear-plank` | Knees on the floor in two frames. |
+| Floor L-Sit | `l-sit-hold` | On parallettes. |
+| Reverse Snow Angel | `reverse-snow-angel` | Holds weight plates. |
+| Prone Y-T-W Raise | `prone-y-raise` | Y only, not the Y-T-W sequence. |
+| Explosive Push-Up | `explosive-push-up` | Frame 3 is a clap, so it is used for Clap Push-Up instead. |
+| Prone Swimmers | `swimming` | A swim-bench machine. |
+
+**Best route to the rest:** Everkinetic (`raw.githubusercontent.com/everkinetic/data`, CC BY-SA 4.0, reachable from this build environment) is the next free source to review frame by frame — it is gym-focused, so few matches are expected. Open Exercise Illustrations (CC0) and the RepDB free tier could not be listed from this environment (GitHub's web and API hosts are blocked) and should be checked when they are reachable. Commissioning drawings or recording your own photos are the remaining no-cost options. Paid APIs and sources with unclear rights (see above) stay out.

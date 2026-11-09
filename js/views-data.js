@@ -614,11 +614,29 @@
       ${grp('Install on iPhone', block(`<p class="t2" style="line-height:1.6">Open the site in Safari, tap Share, then <span class="strong" style="color:var(--text)">Add to Home Screen</span>. It runs full-screen and works offline. The home-screen app keeps its own storage, so export a backup before switching.</p>`))}
     </div>`;
   };
+  function trialsHtml() {
+    return Object.entries(WT.db.learn.trials || {})
+      .sort((a, b) => new Date(b[1].at) - new Date(a[1].at))
+      .map(([k, v]) => {
+        const [j, exId, mod] = k.split('|');
+        const ex = WT.ex(exId);
+        if (!ex) return '';
+        const m = WT.modOf(ex, mod);
+        return H.li({ title: `${v.ok ? 'Works' : 'Doesn’t work'} for your ${esc(WT.JOINT_NAMES[j] || j)}: ${esc(ex.name)}${m ? ' · ' + esc(m.name.toLowerCase()) : ''}`, sub: `Your answer · ${WT.fmtRelDay(v.at)}`, trail: `<button class="btn btn-plain btn-sm" data-act="forgetTrial" data-k="${esc(k)}">Forget</button>` });
+      })
+      .join('');
+  }
+  A.forgetTrial = (d) => {
+    delete WT.db.learn.trials[d.k];
+    WT.save();
+    WT.rerender();
+  };
   function learnedHtml() {
     const sig = WT.learnedSignals().slice().reverse();
     const forgotten = WT.db.learn.forgotten.length;
-    if (!sig.length) return H.li({ title: '<span class="t2">Nothing yet</span>', sub: 'Try a note like “push-ups are tough on my wrists” or “too easy” on an exercise.' }) + (forgotten ? H.li({ act: 'forgetReset', title: `Restore ${plural(forgotten, 'forgotten item')}` }) : '');
-    return sig.slice(0, 30).map((s) => {
+    const trials = trialsHtml();
+    if (!sig.length && !trials) return H.li({ title: '<span class="t2">Nothing yet</span>', sub: 'Try a note like “push-ups are tough on my wrists” or “too easy” on an exercise.' }) + (forgotten ? H.li({ act: 'forgetReset', title: `Restore ${plural(forgotten, 'forgotten item')}` }) : '');
+    return trials + sig.slice(0, 30).map((s) => {
       const d = WT.describeSignal(s);
       return H.li({ title: esc(d.title), sub: `“${esc(d.quote)}” · ${d.dur} · ${WT.fmtRelDay(s.date)}`, trail: `<button class="btn btn-plain btn-sm" data-act="forgetSignal" data-k="${esc(s.key)}">Forget</button>` });
     }).join('') + (forgotten ? H.li({ act: 'forgetReset', title: `Restore ${plural(forgotten, 'forgotten item')}` }) : '');

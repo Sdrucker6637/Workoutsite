@@ -218,7 +218,7 @@
   function freshLearn() {
     // Draft-level signals the history can't show: exercises removed or swapped out of a plan before starting.
     // v7: notes: standing exercise notes ({ id, exId, text, at }); forgotten: keys of note signals you dismissed.
-    return { dropped: {}, notes: [], forgotten: [] };
+    return { dropped: {}, notes: [], forgotten: [], trials: {} };
   }
   WT.freshMeals = freshMeals;
   const arr = (a) => (Array.isArray(a) ? a : []);
@@ -250,6 +250,8 @@
     out.dropped = out.dropped && typeof out.dropped === 'object' ? out.dropped : {};
     out.notes = arr(out.notes).filter((n) => n && typeof n.text === 'string');
     out.forgotten = arr(out.forgotten);
+    // trials: answers to "how did your <joint> feel on <exercise · modification>?" keyed joint|exId|modId → { ok, at }
+    out.trials = out.trials && typeof out.trials === 'object' && !Array.isArray(out.trials) ? out.trials : {};
     return out;
   }
   WT.normalizeMeals = normalizeMeals;
@@ -425,6 +427,7 @@
       const nids = new Set(lrn.notes.map((n) => n.id));
       lIn.notes.forEach((n) => !nids.has(n.id) && lrn.notes.push(n));
       lIn.forgotten.forEach((k) => !lrn.forgotten.includes(k) && lrn.forgotten.push(k));
+      Object.entries(lIn.trials).forEach(([k, v]) => (!lrn.trials[k] || new Date(v.at) > new Date(lrn.trials[k].at)) && (lrn.trials[k] = v));
     } else {
       WT.db = migrate(data);
     }

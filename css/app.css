@@ -3261,3 +3261,8 @@ button.ss-tag:hover {
     transition: none;
   }
 }
+.trial-tag {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--heavy);
+}

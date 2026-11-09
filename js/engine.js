@@ -1066,10 +1066,12 @@
     if (!ctx.allowAvoided && ctx.prefs && effOf(ex, ctx).avoid) return false;
     // A movement your notes flag as uncomfortable (e.g. push-ups on sore wrists) appears at most twice.
     if (ctx.prefs && ctx.chosen && effOf(ex, ctx).cap && ctx.chosen.filter((c) => (c.families || []).some((f) => (ex.families || []).includes(f))).length >= 2) return false;
+    // A sore joint gets one trial of a joint-friendly modification per workout, so you can tell what works.
+    if (ctx.prefs && ctx.chosen && ctx.trialUsed && effOf(ex, ctx).trialOnly) return false;
     return true;
   }
 
-  function slotMatch(ex, slot, level) {
+  function slotMatch(ex, slot, level, type) {
     if (slot.cardio) {
       const isCardio = ex.primary === 'cardio' || ex.tags.includes('conditioning');
       if (!isCardio) return false;
@@ -1079,9 +1081,34 @@
     if (ex.tags.includes('conditioning')) return false;
     if (level === 0) return slot.m.includes(ex.primary) && (!slot.p || slot.p.includes(ex.pattern));
     if (level === 1) return slot.m.includes(ex.primary);
+    // Widest level: same muscle group — but a push day never falls back to biceps work, nor a pull day to triceps.
+    if (type === 'push' && ex.primary === 'biceps') return false;
+    if (type === 'pull' && ex.primary === 'triceps') return false;
     const groups = new Set(slot.m.map((m) => (WT.MUSCLES[m] || {}).group));
     return groups.has((WT.MUSCLES[ex.primary] || {}).group);
   }
+
+  /* ───────── Bodyweight vs loaded work ─────────
+   * No fixed share. A no-equipment exercise is simply the right tool when nothing you own does the same job
+   * (same muscle, same movement), for core and conditioning work, and when it is hard enough for you. It
+   * steps back only when an equivalent loaded exercise is available AND the bodyweight version is below
+   * your level (a bodyweight squat for an intermediate lifter who owns dumbbells). Notes such as "I prefer
+   * bodyweight" (feedback.js) and dropping exercises from plans (adaptive learning) shift it further.
+   */
+  const RANK = { beginner: 0, intermediate: 1, advanced: 2 };
+  function loadedTwin(ex, ctx) {
+    ctx.twin = ctx.twin || {};
+    if (ctx.twin[ex.id] === undefined)
+      ctx.twin[ex.id] = WT.exercises.some((o) => o !== ex && o.primary === ex.primary && o.pattern === ex.pattern && !['bw', 'bwl', 'time', 'cardio'].includes(o.load) && WT.hasEquipment(o, ctx.equipment) && !ctx.excluded.has(o.id) && !WT.isRestricted(o, ctx.p));
+    return ctx.twin[ex.id];
+  }
+  WT.bodyweightFit = function (ex, ctx) {
+    if (!WT.isEquipmentFree(ex)) return 0;
+    const region = WT.region(ex);
+    if (region === 'core' || region === 'cardio' || !loadedTwin(ex, ctx)) return 0;
+    const gap = Math.max(0, (RANK[ctx.p.experience] ?? 1) - (RANK[ex.difficulty] ?? 0));
+    return -1.5 * gap - (ex.tags.includes('low-load') ? 2 : 0);
+  };
 
   /**
    * Score one candidate for a slot. Returns { s, why } where `why` holds short, human reasons ordered by
@@ -1113,9 +1140,13 @@
     if (slot.heavy && ex.intensities.includes('heavy')) s += 1.5;
     if (ex.tags.includes('spinal-load')) s -= 1.5;
     if (ex.tags.includes('back-friendly')) s += 0.5;
-    if (ex.tags.includes('power') && !slot.cardio) s -= 2;
+    if ((ex.tags.includes('power') || ex.pattern === 'plyo') && !slot.cardio) {
+      s -= 2;
+      // One explosive movement per strength session is plenty
+      if (chosen.some((c) => c.pattern === 'plyo' || c.tags.includes('power'))) s -= 6;
+    }
     // Self-resisted / very light floor work is the right call without equipment, not instead of real load.
-    if (ex.tags.includes('low-load') && ctx.equipment.some((q) => ['db', 'cable', 'machine', 'bb', 'kb', 'lat', 'row'].includes(q))) s -= 3;
+    s += WT.bodyweightFit(ex, ctx);
     const exp = p.experience;
     if (ex.difficulty === 'advanced' && exp !== 'advanced') s -= exp === 'beginner' ? 5 : 2;
     if (ex.difficulty === 'intermediate' && exp === 'beginner') s -= 1;
@@ -1177,6 +1208,8 @@
       if (c.primary === ex.primary) s -= focused ? 0.4 : 2;
       if (c.pattern === ex.pattern) s -= focused ? 2.5 : 1.5;
       if (!focused && c.primary === ex.primary && c.pattern === ex.pattern) s -= 3; // near-duplicate
+      // Same movement family (a second push-up variant in a full-body day) reads as repetition
+      if (!focused && (c.families || []).some((f) => (ex.families || []).includes(f))) s -= 2.5;
       if (focused && c.pattern === ex.pattern && c.equipment.join() === ex.equipment.join()) s -= 1;
       if (c.secondary.includes(ex.primary) || ex.secondary.includes(c.primary)) s -= 0.3;
       if (c.equipment.join() === ex.equipment.join() && focused) s -= 0.3;
@@ -1207,7 +1240,7 @@
    */
   function pickForSlot(slot, ctx, used, chosen, focused, jitter) {
     for (let level = 0; level <= 2; level++) {
-      const cands = WT.exercises.filter((ex) => eligible(ex, ctx, used) && slotMatch(ex, slot, level));
+      const cands = WT.exercises.filter((ex) => eligible(ex, ctx, used) && slotMatch(ex, slot, level, ctx.settings && ctx.settings.type));
       if (cands.length) {
         const scored = cands.map((ex) => Object.assign({ ex }, scoreExercise(ex, slot, ctx, chosen, focused, jitter))).sort((a, b) => b.s - a.s);
         const best = scored[0].s;
@@ -1662,7 +1695,10 @@
       if (pick.sub && WT.ex(pick.sub.from)) ctx.adjustments.push(`${WT.ex(pick.sub.from).name} → ${pick.ex.name}${pick.sub.why ? ' · ' + pick.sub.why : ''}`);
       used.add(pick.ex.id);
       chosen.push(pick.ex);
-      items.push({ uid: WT.uid(), exId: pick.ex.id, slot: stripSlot(slot), slotIndex: idx, why: pick.why.slice(0, 2), locked: false });
+      const pe = effOf(pick.ex, ctx);
+      const trialPick = !!(pe && pe.trial && !ctx.trialUsed);
+      if (trialPick) ctx.trialUsed = true;
+      items.push({ uid: WT.uid(), exId: pick.ex.id, slot: stripSlot(slot), slotIndex: idx, why: pick.why.slice(0, 2), locked: false, trialPick });
     });
     // Locked items whose slot no longer exists → append
     (keep || []).forEach((k) => {
@@ -1679,13 +1715,18 @@
     items.forEach((i) => {
       const ex = WT.ex(i.exId);
       if (!(i.locked && i.variation !== undefined) && WT.pickVariation) {
-        const v = WT.pickVariation(ex, ctx.prefs, ctx.equipment);
+        const v = WT.pickVariation(ex, ctx.prefs, ctx.equipment, { trial: i.trialPick });
         i.variation = v.id || null;
-        if (v.id && v.why) {
+        if (v.trial) {
+          i.trial = v.trial;
+          i.why = [v.why].concat(i.why || []).slice(0, 2);
+          ctx.adjustments.push(`${ex.name} · ${WT.modOf(ex, v.id).name.toLowerCase()}: a trial for your ${WT.JOINT_NAMES[v.trial.joint]} — after your sets you’ll be asked how it felt`);
+        } else if (v.id && v.why) {
           i.why = [v.why].concat(i.why || []).slice(0, 2);
           if (/notes/.test(v.why)) ctx.adjustments.push(`${ex.name}: ${WT.modOf(ex, v.id).name.toLowerCase()} (${v.why.replace(/^.*?— /, '').replace(/ \(from your notes\)/, '')})`);
         }
       }
+      delete i.trialPick;
       const eff = effOf(ex, ctx);
       if (eff && eff.cap && !i.locked && i.sets > 2 && WT.trackType(ex) !== 'cardio') {
         i.sets--;
@@ -1696,7 +1737,12 @@
     let arranged = WT.arrange(items, settings.supersets, type);
     fitDuration(arranged, settings.duration);
 
-    if (items.length < n) notes.push(`Only ${items.length} suitable exercises were found with your equipment and exclusions${ctx.adjustments.length ? ' — and what your notes rule out' : ''}.`);
+    if (items.length < n) {
+      const sore = ctx.prefs ? Object.keys(ctx.prefs.joints).filter((j) => ctx.prefs.joints[j].lasting) : [];
+      notes.push(`Only ${items.length} suitable exercises were found with your equipment and exclusions${ctx.adjustments.length || sore.length ? ' — and what your notes rule out' : ''}.`);
+      if (sore.length && (ctx.equipment || []).every((q) => q === 'bw'))
+        notes.push(`Without equipment most options load your ${sore.map((j) => WT.JOINT_NAMES[j]).join(' and ')}. Equipment → My equipment opens up dumbbell and cable work; or try a modification and tell Forge how it felt.`);
+    }
     const supersetCount = new Set(arranged.filter((i) => i.superset).map((i) => i.superset)).size;
     if (supersetCount) notes.push(`${supersetCount} superset${supersetCount > 1 ? 's' : ''} pair non-competing muscles to save time.`);
     if (ctx.adjustments.length) notes.push(`Personalized from your notes: ${ctx.adjustments.length} adjustment${ctx.adjustments.length > 1 ? 's' : ''}.`);
@@ -1817,6 +1863,7 @@
     if (keepSets && WT.trackType(ex) !== 'cardio') item.sets = keepSets;
     item.variation = WT.pickVariation ? WT.pickVariation(ex, WT.learnedPrefs ? WT.learnedPrefs() : null).id || null : null;
     delete item.capped;
+    delete item.trial;
     item.why = ['Swapped in'];
     return item;
   };
@@ -1944,6 +1991,7 @@
       rest: pr.rest,
       superset: base ? base.superset || null : null,
       variation: base && base.variation ? base.variation : null,
+      ...(base && base.trial ? { trial: base.trial } : {}),
       ...(base && base.ownRest != null ? { ownRest: base.ownRest } : {}),
       note: pr.note || '',
       notes: '',

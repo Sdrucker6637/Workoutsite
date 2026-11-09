@@ -447,10 +447,10 @@
     const mod = WT.modOf(ex, it.variation);
     return `<div class="ex-row ${it.locked ? 'locked' : ''}" data-uid="${it.uid}">
       <button type="button" class="n drag" data-drag="${bi}" title="Drag to reorder" aria-label="Reorder ${esc(ex.name)}, exercise ${n} of ${total}. Drag, or use the arrow keys">${I('grip', 16)}</button>
-      ${H.demo(ex.id, 'sm')}
+      ${H.demo(ex.id, 'sm', { variation: it.variation })}
       <div style="min-width:0">
         <button class="nm" data-act="exDetail" data-id="${ex.id}">${it.locked ? `<span class="lock-ic" title="Locked">${I('lock', 12)}</span>` : ''}${esc(ex.name)}</button>
-        <div class="meta"><span>${WT.muscleName(ex.primary)}</span><span class="rx">${H.target(it, ex)}</span>${mod ? `<button class="var-tag" data-act="pickVariation" data-ctx="draft" data-uid="${it.uid}" aria-label="Variation: ${esc(mod.name)}. Change">${esc(mod.name)}</button>` : ''}${load ? `<span>${load}</span>` : ''}${it.intensity !== 'standard' ? H.intensity(it.intensity, 'pickIntensity', it.uid, 'draft') : ''}${ss ? `<button class="ss-tag" data-act="ssMenu" data-uid="${it.uid}" aria-label="Superset ${ss} options">Superset ${ss}</button>` : ''}</div>
+        <div class="meta"><span>${WT.muscleName(ex.primary)}</span><span class="rx">${H.target(it, ex)}</span>${mod ? `<button class="var-tag" data-act="pickVariation" data-ctx="draft" data-uid="${it.uid}" aria-label="Variation: ${esc(mod.name)}. Change">${esc(mod.name)}</button>` : ''}${it.trial ? `<span class="trial-tag" title="A trial for your ${esc(WT.JOINT_NAMES[it.trial.joint])}: you’ll be asked how it felt">Trial · ${esc(WT.JOINT_NAMES[it.trial.joint])}</span>` : ''}${load ? `<span>${load}</span>` : ''}${it.intensity !== 'standard' ? H.intensity(it.intensity, 'pickIntensity', it.uid, 'draft') : ''}${ss ? `<button class="ss-tag" data-act="ssMenu" data-uid="${it.uid}" aria-label="Superset ${ss} options">Superset ${ss}</button>` : ''}</div>
         ${it.why && it.why[0] && !['Swapped in', 'Added by you'].includes(it.why[0]) ? `<div class="why">${esc(it.why[0])}</div>` : ''}
       </div>
       <div class="acts">
@@ -482,10 +482,11 @@
     WT.save();
     WT.closeSheet(true);
     WT.rerender();
-    if (d.focus) requestAnimationFrame(() => {
+    // The re-render is synchronous, so focus can move with the block right away (keyboard reordering).
+    if (d.focus) {
       const h = document.querySelector(`[data-drag="${to}"]`);
       if (h) h.focus();
-    });
+    }
   };
   (function dragToReorder() {
     if (typeof document === 'undefined') return;
@@ -916,6 +917,20 @@
     WT.rerender();
   }
 
+  /** For a sore joint: mark which joint-friendly modifications work for you (the same answer as after a trial). */
+  function jointCheck(ex, it) {
+    const prefs = WT.learnedPrefs();
+    const rows = [];
+    Object.keys(prefs.joints).forEach((j) => {
+      if (!(ex.joints || []).includes(j)) return;
+      [{ id: null, name: 'As written' }].concat(WT.easingMods(ex, j)).forEach((m) => {
+        const st = WT.trialStatus(j, ex, m.id, prefs);
+        rows.push(H.li({ title: `${esc(m.name)}${m.id === (it.variation || null) ? ' <span class="lvl">Current</span>' : ''}`, sub: st === 'ok' ? 'Works for you' : st === 'bad' ? 'Doesn’t work for you' : 'Not tried yet', trail: H.seg([['1', 'Works'], ['0', 'Doesn’t']], st === 'ok' ? '1' : st === 'bad' ? '0' : '', 'varTrial', `${j}|${m.id || ''}`) }));
+      });
+    });
+    return rows.length ? `<div class="list-head mt24" style="padding-left:0">Your ${esc(WT.JOINT_NAMES[Object.keys(prefs.joints).find((j) => (ex.joints || []).includes(j))])}</div><div class="list inset">${rows.join('')}</div>` : '';
+  }
+
   /* ───────── Variations: modifications of the same exercise, and progressions to other exercises ───────── */
   A.pickVariation = (d) => {
     const ctx = d.ctx, uid = d.uid;
@@ -941,6 +956,7 @@
         title: 'Variation',
         body: `${rec && rec.nextVariation !== undefined && rec.action === 'progress' ? `<div class="callout mt4">${I('trendUp', 15)}<span>${esc(rec.reasons[rec.reasons.length - 1])}</span></div>` : ''}
           <div class="list inset ${rec && rec.action === 'progress' ? 'mt12' : ''}">${opts.map((m) => H.li({ act: 'setVariation', cls: cur === (m.id || '') ? 'on' : '', attrs: `data-k="${m.id}"`, title: `${esc(m.name)} ${tag(m)}`, sub: esc(m.cue || ''), trail: cur === (m.id || '') ? `<span class="accent">${I('check', 18)}</span>` : '' })).join('')}</div>
+          ${jointCheck(ex, it)}
           ${ex.easier || ex.harder ? `<div class="list-head mt24" style="padding-left:0">Progressions · a different exercise</div><div class="list inset">${prog(ex.easier, 'One step easier')}${prog(ex.harder, 'One step harder')}</div>` : ''}
           <p class="footnote t3 mt12">A variation changes leverage, range or hand position of the same exercise; your history is tracked per variation. A progression swaps in the next exercise.</p>`,
       };
@@ -949,12 +965,21 @@
       const w = ctxWorkout(ctx);
       const it = w.exercises.find((e) => e.uid === uid);
       it.variation = dd.k || null;
+      if (it.trial && it.trial.mod !== it.variation) delete it.trial; // no longer the trial version
       if (ctx === 'active') it.recApplied = false;
       WT.save();
       WT.closeSheet();
       WT.rerender();
       const ex = WT.ex(it.exId);
       WT.toast(dd.k ? `${ex.name}: ${WT.modOf(ex, dd.k).name.toLowerCase()}` : `${ex.name}: as written`);
+    };
+    A.varTrial = (dd) => {
+      const w = ctxWorkout(ctx);
+      const it = w.exercises.find((e) => e.uid === uid);
+      const [j, mod] = dd.k.split('|');
+      WT.recordTrial(j, it.exId, mod || null, dd.v === '1');
+      WT.refreshSheet();
+      WT.rerender();
     };
     A.variationSwap = (dd) => {
       swapItem(ctx, uid, dd.id);
@@ -1225,7 +1250,7 @@
           <button class="btn btn-primary" data-act="woFinish">Finish</button></div></div>
       <div class="progress" role="progressbar" aria-label="Sets completed" aria-valuenow="${done}" aria-valuemin="0" aria-valuemax="${total}"><i style="width:${total ? (done / total) * 100 : 0}%"></i></div>
       <div class="footnote t3 tnum mt8">${done} of ${total} sets</div>
-      ${ask ? effortPrompt(ask) : ''}
+      ${ask ? (ask.trial && ask.trialOk == null ? trialPrompt(ask) : effortPrompt(ask)) : ''}
       <div class="mt16">${it ? current(it, a) : `<div class="empty"><h3>Empty workout</h3><p>Add an exercise to start logging.</p></div>`}</div>
       <section class="section">
         <div class="section-title"><h2>Exercises</h2><button class="btn-link footnote" data-act="openAdd" data-ctx="active">Add</button></div>
@@ -1239,6 +1264,25 @@
     </div>`;
   };
 
+  /** After a trial of a joint-friendly modification: did it work? The answer shapes future plans. */
+  function trialPrompt(it) {
+    return `<div class="effort trial fade-in"><span>How did your <span class="strong" style="color:var(--text)">${esc(WT.JOINT_NAMES[it.trial.joint])}</span> feel on ${esc(WT.itemName(it))}?</span>${H.seg([['1', 'Fine'], ['0', 'Not good']], '', 'woTrial', it.uid)}<button class="icon-btn sm" data-act="dismissEffort" aria-label="Answer later">${I('x', 15)}</button></div>`;
+  }
+  function trialRow(it) {
+    if (!it.trial) return '';
+    const j = esc(WT.JOINT_NAMES[it.trial.joint]);
+    if (it.trialOk != null) return `<p class="footnote t2 mt12">${I('check', 13)} Noted: ${esc((WT.modOf(WT.ex(it.exId), it.variation) || { name: 'this version' }).name.toLowerCase())} ${it.trialOk ? 'works' : 'doesn’t work'} for your ${j}.</p>`;
+    return `<div class="row between wrap mt12" style="gap:8px"><span class="footnote t2">Trial — how did your ${j} feel?</span>${H.seg([['1', 'Fine'], ['0', 'Not good']], '', 'woTrial', it.uid)}</div>`;
+  }
+  A.woTrial = (d) => {
+    const it = actItem(d.k);
+    if (!it || !it.trial) return;
+    it.trialOk = d.v === '1';
+    WT.recordTrial(it.trial.joint, it.exId, it.variation, it.trialOk);
+    WT.save();
+    WT.rerender();
+    WT.toast(it.trialOk ? 'Good to know — it can come back in future plans' : 'Noted — Forge will try something else next time');
+  };
   function effortPrompt(it) {
     const ex = WT.ex(it.exId);
     return `<div class="effort fade-in"><span>How did <span class="strong" style="color:var(--text)">${esc(ex.name)}</span> feel?</span>${H.seg([['easy', 'Easy'], ['good', 'Solid'], ['hard', 'Hard']], it.effort || '', 'woEffort', it.uid)}<button class="icon-btn sm" data-act="dismissEffort" aria-label="Dismiss">${I('x', 15)}</button></div>`;
@@ -1320,7 +1364,7 @@
     } else if (allDone) {
       const nxt = a.exercises.find((e) => !e.skipped && e.sets.some((s) => !s.done));
       editor = `<div class="editor"><div class="row between wrap" style="gap:12px"><span class="strong accent">${I('check', 16).replace('<svg', '<svg style="display:inline;vertical-align:-3px;margin-right:6px"')}Exercise complete</span>
-        ${nxt ? `<button class="btn btn-primary" data-act="woFocus" data-uid="${nxt.uid}">Next: ${esc(WT.ex(nxt.exId).name)}</button>` : `<button class="btn btn-primary" data-act="woFinish">Finish workout</button>`}</div></div>`;
+        ${nxt ? `<button class="btn btn-primary" data-act="woFocus" data-uid="${nxt.uid}">Next: ${esc(WT.ex(nxt.exId).name)}</button>` : `<button class="btn btn-primary" data-act="woFinish">Finish workout</button>`}</div>${trialRow(it)}</div>`;
     }
 
     const recIcon = { increase: 'trendUp', progress: 'trendUp', decrease: 'trendDown', hold: 'equal', reps: 'plus', return: 'refresh' }[rec.action] || 'info';
@@ -1345,7 +1389,7 @@
           <button class="icon-btn" data-act="openSwap" data-ctx="active" data-uid="${it.uid}" title="Swap" aria-label="Swap exercise">${I('swap', 18)}</button>
           <button class="icon-btn" data-act="woMenu" data-uid="${it.uid}" aria-label="More options">${I('more', 19)}</button>
         </div></div>
-      ${WT.db.profile.trainDemos !== false ? `<div class="cur-demo">${H.demo(ex.id, 'md')}${H.demoCredit(ex.id)}</div>` : ''}
+      ${WT.db.profile.trainDemos !== false ? `<div class="cur-demo">${H.demo(ex.id, 'md', { variation: it.variation })}${H.demoCredit(ex.id, it.variation)}</div>` : ''}
       ${advice}
       <div class="sets">${setLines}</div>
       ${editor}

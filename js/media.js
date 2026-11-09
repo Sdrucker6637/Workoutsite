@@ -178,6 +178,24 @@
     'wall-sit': ['wg', 'wall-sit', 3], // Wall Sit
     'wide-grip-pulldown': ['wg', 'wide-grip-lat-pulldown', 3], // Wide-Grip Lat Pulldown
     'wide-pushup': ['wg', 'wide-push-up', 3], // Wide Push-up
+    // Zero-equipment exercises (added with the bodyweight library; each compared frame by frame)
+    'air-squat': ['wg', 'bodyweight-squat', 3], // Bodyweight Squat
+    'forward-lunge': ['wg', 'forward-lunge', 3], // Forward Lunge (no weights)
+    'curtsy-lunge': ['wg', 'curtsy-lunge', 3], // Curtsy Lunge (hands clasped)
+    'pistol-squat': ['wg', 'pistol-squat', 3], // Pistol Squat (free-standing)
+    'frog-pump': ['wg', 'frog-pump', 3], // Frog Pump
+    'donkey-kick': ['wg', 'donkey-kick', 3], // Donkey Kick
+    'side-lying-abduction': ['wg', 'side-lying-hip-abduction', 3], // Side-Lying Hip Abduction
+    'hollow-rock': ['wg', 'hollow-rock', 3], // Hollow Rock
+    'side-plank-hip-dip': ['wg', 'side-plank-hip-dip', 3], // Side Plank Hip Dip
+    'shoulder-tap': ['wg', 'plank-shoulder-tap', 3], // Plank Shoulder Tap
+    'superman-raise': ['wg', 'superman', 3], // Superman (lift and lower)
+    'mb-russian-twist': ['wg', 'russian-twist', 3], // Russian Twist holding a medicine ball
+    'hindu-pushup': ['wg', 'hindu-push-up', 3], // Hindu Push-up
+    'typewriter-pushup': ['wg', 'typewriter-push-up', 3], // Typewriter Push-up
+    'plank-jack': ['wg', 'plank-jack', 3], // Plank Jack
+    'crab-walk': ['wg', 'crab-walk', 3], // Crab Walk
+    'clap-pushup': ['wg', 'explosive-push-up', 3], // "Explosive Push-up": frame 3 is a clap
     // ── Open Exercise Illustrations
     'ab-wheel': ['oei', 'ab-wheel-rollout', 2], // Ab Wheel Rollout
     'arnold-press': ['oei', 'arnold-press', 2], // Arnold Press
@@ -213,13 +231,19 @@
     'wide-cable-row': ['rdb', 'wide-grip-seated-cable-row', 2], // Wide-Grip Seated Cable Row
   };
 
+  // Demonstrations of a specific variation (exercise id ~ modification id), shown when that variation is chosen.
+  const VAR_MAP = {
+    'pushup~knees': ['wg', 'knee-push-up', 3], // Knee Push-up
+  };
+
   WT.MEDIA = {
     map: MAP,
+    variations: VAR_MAP,
     sources: SOURCES,
     /** Every frame file, for integrity checks and offline pre-caching. */
     files() {
       const out = new Set();
-      Object.values(MAP).forEach(([s, id, n]) => SOURCES[s].frames(id, n).forEach((f) => out.add(SOURCES[s].base + f)));
+      Object.values(MAP).concat(Object.values(VAR_MAP)).forEach(([s, id, n]) => SOURCES[s].frames(id, n).forEach((f) => out.add(SOURCES[s].base + f)));
       return [...out];
     },
     /** Exercises covered, per source. */
@@ -229,9 +253,9 @@
       return c;
     },
   };
-  /** { src, frames: [urls], source, alsoEk } for an exercise, or null when there is no verified demonstration. */
-  WT.demoFor = function (exId) {
-    const e = MAP[exId];
+  /** { src, frames: [urls], source, alsoEk } for an exercise (or its chosen variation, when drawn), or null when there is no verified demonstration. */
+  WT.demoFor = function (exId, variation) {
+    const e = (variation && VAR_MAP[exId + '~' + variation]) || MAP[exId];
     if (!e) return null;
     const [s, id, n] = e;
     const src = SOURCES[s];

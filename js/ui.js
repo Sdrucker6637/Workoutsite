@@ -364,7 +364,7 @@
     demo(exId, size, opts) {
       opts = opts || {};
       const ex = WT.ex(exId);
-      const d = WT.demoFor(exId);
+      const d = WT.demoFor(exId, opts.variation);
       const name = ex ? esc(ex.name) : '';
       if (!d) {
         if (size === 'sm') return `<span class="demo demo-sm none" aria-hidden="true">${I('dumbbell', 16)}</span>`;
@@ -378,11 +378,11 @@
       const imgs = d.frames.map((u, i) => `<img class="${cls(i)}" data-src="${u}" alt="" decoding="async" draggable="false">`).join('') + tag;
       const c = `demo demo-${size} src-${d.src} n${d.frames.length}`;
       if (opts.static) return `<span class="${c}" role="img" aria-label="${name} ${still ? 'reference image' : 'demonstration'}">${imgs}</span>`;
-      return `<button type="button" class="${c}" data-act="openDemo" data-id="${exId}" aria-label="Show ${name} ${still ? 'reference image' : 'demonstration'}">${imgs}</button>`;
+      return `<button type="button" class="${c}" data-act="openDemo" data-id="${exId}" ${opts.variation ? `data-v="${opts.variation}"` : ''} aria-label="Show ${name} ${still ? 'reference image' : 'demonstration'}">${imgs}</button>`;
     },
     /** Attribution line for the illustration shown for an exercise (required by CC BY-SA). */
-    demoCredit(exId) {
-      const d = WT.demoFor(exId);
+    demoCredit(exId, variation) {
+      const d = WT.demoFor(exId, variation);
       if (!d) return '';
       const a = (href, t) => `<a href="${href}" target="_blank" rel="noopener">${t}</a>`;
       const s = d.source;
@@ -452,7 +452,7 @@
     WT.openSheet(() => ({
       eyebrow: WT.muscleName(ex.primary),
       title: esc(ex.name),
-      body: `${WT.h.demo(ex.id, 'lg', { static: true })}${WT.h.demoCredit(ex.id)}${ex.cue ? `<p class="mt16" style="line-height:1.6">${esc(ex.cue)}</p>` : ''}`,
+      body: `${WT.h.demo(ex.id, 'lg', { static: true, variation: d.v })}${WT.h.demoCredit(ex.id, d.v)}${ex.cue ? `<p class="mt16" style="line-height:1.6">${esc(ex.cue)}</p>` : ''}`,
       foot: `<a class="btn btn-plain btn-sm" href="${esc(WT.videoUrl(ex))}" target="_blank" rel="noopener">${I('play', 14)}Video tutorial</a><span class="grow"></span><button class="btn btn-secondary btn-sm" data-act="exDetail" data-id="${ex.id}">Details</button>`,
     }), { wide: true });
   };
