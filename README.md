@@ -41,7 +41,10 @@ A quiet, precise interface in the spirit of Apple, Linear and Things: generous w
 | **Selection logic** | Slot templates per workout type (for example, full body = squat + chest press + back pull + hips + arms + core). Exercises are scored on goal emphasis (lower chest, arm size, obliques), priority muscles, favorites, weekly volume shortfall per muscle, fatigue from the last 48 hours, overlap within the workout, recency and difficulty. Heavy work goes to compound lifts, burnouts go to finishers, and supersets pair non-competing muscles. |
 | **Active workout** | A set table with *previous*, weight, reps and ✓ columns. Blank fields fall back to last time's numbers. Supports per-set weights, adding/removing sets, skipping, replacing, reordering, notes and an effort rating. A rest timer starts on its own (with sound and vibration) and is superset-aware. |
 | **Progressive overload** | Uses your recorded sets (double progression). For example, 30 lb × 10, 10, 9 gives "Maintain 30 lb — aim for 10, 10, 10". All sets at the top of the range → add weight (+5 lb upper-body dumbbell or +2.5 if you have micro-plates, +5–10 lb lower body, snapped to dumbbells you own). Within range → add reps. Missed reps once → hold; missed twice → drop about 10%. Long layoffs restart conservatively. Bodyweight lifts get more reps, added load or a harder variation. **Weights only change when you tap Apply.** Every recommendation explains why. |
-| **Library** | 185 exercises, each with muscles, equipment, category, movement pattern, difficulty, sets, reps, rest, intensity class and a video link. Search, filters, favorites, exclusions, custom exercises and editing are supported. |
+| **Library** | 243 exercises (89 need no equipment at all), each with muscles, equipment, category, movement pattern, difficulty, sets, reps, rest, intensity class and a video link. Search, filters, favorites, exclusions, custom exercises and editing are supported. |
+| **Plan customisation** | Before you start: drag any exercise (or a whole superset) by its handle to reorder — or focus the handle and use the arrow keys, or *Move up / down* in the row menu. Tap a *Superset* label to separate it (each exercise keeps its sets, reps and intensity and gets its own rest back) or swap who goes first; *Superset with…* pairs any two exercises by hand. Your order and supersets carry into the workout, history and *Repeat*; re-rolling intensities keeps them. |
+| **Bodyweight & variations** | *Equipment → None* on Generate builds a workout that needs only your body and the floor (no bar, bench, wall, towel or band). Exercises have **modifications** (same exercise: knee, reduced-range, slow-negative, knuckle, tempo…) and **progressions** (the next exercise down or up, e.g. Push-Up → Archer → One-Arm). Pick either from the variation tag or the row menu, before or during a workout. The variation is shown on the plan, the workout and history, kept on Repeat, and tracked separately for progression — with “top of range on knee push-ups → try the next variation”. Beginners start on an easier modification of harder exercises; nobody is moved to an advanced one unprompted. |
+| **Learns from your notes** | Notes on exercises (during a workout or from an exercise's detail sheet) and workout notes are read locally — no AI service — and shape future plans. “Push-ups are tough on my wrists” → push-ups switch to knuckles, at most two per workout with a set less, and other wrist-heavy moves without a wrist-friendly version are left out; substitutes come from the same slot so muscle coverage stays. “Too hard” / “too easy” → one step easier / harder variation (or the neighbouring progression). “Love these” → chosen more; “hate lunges” → not suggested. Temporary notes (“knee a bit sore today”) fade in about a week; ongoing ones (“always”, “old injury”) last; a later note (“wrists feel fine now”) overrides an earlier one. The plan lists every adjustment; *Settings → Learned from notes* shows what Forge has learned and lets you forget any of it. |
 | **History** | Permanent log with every set. Open any workout, repeat it, use it as a template, edit notes or delete it. |
 | **Progress** | Workouts, per-week average, sets and volume; a workouts-per-week chart; a consistency heatmap; per-exercise charts (est. 1RM, top weight, volume, reps); PRs; weekly volume per muscle group against targets. Everything is calculated from logged data only. |
 | **Food & protein** | Type what you ate in plain words ("2 chicken breasts, a protein shake and 2 hot dogs"); each item is recognized and its protein estimated, with a live breakdown before you log. Edit name, amount and protein; delete entries; browse and edit any past day. Favorites and recent foods log with one tap, and your own saved foods are recognized when typed. A flexible daily target (default 150 g, ±10% counts as on target), friendly guidance, and 7/30-day trends that leave unlogged days out of averages. Calories, carbs and fat are optional secondary estimates. |
@@ -58,7 +61,7 @@ A quiet, precise interface in the spirit of Apple, Linear and Things: generous w
 - **Favorites:** Sissy Squat and Pull-Up. The generator prefers them.
 
 ### Exercise demonstrations
-168 of the 185 built-in exercises (91%) show a demonstration in the plan, the active workout, the library, exercise details and when swapping. Each one was matched to its exercise by hand and checked visually. Exercises without an exact match show a placeholder. The demonstrations come from four licensed sources, each bundled under `media/` with its license text and attribution:
+168 of the 243 built-in exercises show a demonstration (the 58 bodyweight exercises added later have no licensed illustration yet) in the plan, the active workout, the library, exercise details and when swapping. Each one was matched to its exercise by hand and checked visually. Exercises without an exact match show a placeholder. The demonstrations come from four licensed sources, each bundled under `media/` with its license text and attribution:
 
 | Source | License | Exercises |
 |---|---|---|
@@ -130,7 +133,7 @@ Specific products are matched **before** generic foods, from two places: your li
 
 **Personal library.** Branded products are saved to *My foods* automatically when logged, with their source and status. When you resolve an ambiguous entry, the words you typed become shorthand, so "Oscar Mayer hot dogs" or "Snickerdoodle shake" resolve directly next time. You can star favorites (one-tap buttons), edit values, add shorthand names and delete products. *Recent* shows the last distinct foods you logged.
 
-**Storage.** The food log lives in the same local store as workouts (`wt.data.v1`, now data version 6 — v6 only adds `meals`, `achievements` and `learn`) under `nutrition: { entries, foods }`, keyed by local date. Version 4 → 5 only adds fields (product brand / flavor / aliases / status / source, and each entry's confidence); workout data is untouched. Export includes the log and the library with aliases. *Replace* restores them exactly. *Merge* adds missing entries and products by id without duplicates.
+**Storage.** The food log lives in the same local store as workouts (`wt.data.v1`, now data version 7 — v6 added `meals`, `achievements` and `learn`; v7 adds note learning to `learn`) under `nutrition: { entries, foods }`, keyed by local date. Version 4 → 5 only adds fields (product brand / flavor / aliases / status / source, and each entry's confidence); workout data is untouched. Export includes the log and the library with aliases. *Replace* restores them exactly. *Merge* adds missing entries and products by id without duplicates.
 
 ## Meal ideas
 
@@ -157,6 +160,26 @@ All calculations run on the device; nothing is sent anywhere.
 - **Exercise choice**: adds movement-pattern recency, how often an exercise was done in the last 14 days, progress trend (rising estimated strength is kept in rotation), near-duplicate penalties, and learned skips/removals (needs 2+ misses before anything changes). Instead of always taking the top score it samples among near-best candidates.
 - **Intensity**: heavy / regular / burnout / standard plus **drop** and **build-up** sets are drawn from configurable odds (Settings → Intensity; defaults 7 each). Build-up sets favour compound lifts early in the session; drop sets favour isolation (especially cable / machine) work near the end and never go on spinal-loading, explosive, free-weight squat / hinge / lunge or advanced compound lifts; burnouts are also kept off those loaded lifts. Caps per workout: drop and build-up at most one each and two together (7+ exercises), and all techniques together at most ~60% of the exercises. Because suitability and these caps apply after the odds, the share you see is lower than the slider's percentage (default 7 → about 3–4% of exercises; one appears in roughly a fifth to a third of workouts depending on length); 0 always means never. A pattern identical to your last two workouts of that type is redrawn. Fixed mode has drop / build-up counts too. Stage counts and sets can be edited in the plan before starting, and every stage is editable during the workout.
 - **Weight progression**: weight goes up only when the top of the range is confirmed — the previous session at that weight was also at (or one rep from) the top, it was rated easy, or every set overshot by 3+ reps. Repeated Hard ratings hold the weight, a 3-week-old comparison becomes a check-in, a declining trend backs off, and a big relative dumbbell jump (>20%) asks for two extra reps first. The *Why* lists the recent sessions. Weights still change only when you tap Apply.
+
+## Bodyweight library
+
+Everything tagged *No equipment* needs only your body and the floor. Exercises that need a wall (wall sit, wall handstand push-up), a towel or sliders (slider curls) or a foot anchor (Nordic curls) list that as equipment, so they never appear in a no-equipment plan. Existing profiles keep those three items ticked on upgrade.
+
+The 58 added exercises were checked against r/bodyweightfitness progressions, GMB / Breaking Muscle squat ladders, ACE Fitness (prone Y-T-W series) and coaching write-ups of the Hindu, dive bomber, sphinx and tiger-bend push-ups. The primary muscle is the one that limits the set: pseudo-planche push-ups and planche leans are front-delt primary, sphinx and tiger-bend push-ups triceps primary, with chest secondary.
+
+| Group | Added (all equipment-free) |
+| --- | --- |
+| Chest (11) | Close-grip, staggered-hand, typewriter, one-arm, Hindu, dive bomber, explosive and clap push-ups; Spiderman and T push-ups; palm-press chest squeeze (isometric adduction — the no-equipment “fly”) |
+| Shoulders (7) | Pseudo-planche push-up, planche lean, dolphin push-up, pike shoulder tap, prone Y-T-W raise, freestanding handstand hold and push-up (skills, de-prioritised unless you're advanced) |
+| Back (6) | Superman raise, prone swimmers, reverse snow angel, prone floor pulldown, back widow, reverse plank |
+| Arms (5) | Sphinx and tiger-bend push-ups, floor (crab) dip, self-resisted curl, leg-resisted curl |
+| Legs (16) | Bodyweight squat, split squat, forward / reverse / walking / curtsy / jump lunges, shrimp and pistol squats, calf raise, frog pump, donkey kick, side-lying abduction and adduction, bridge walkout, broad jump |
+| Core (10) | V-up, flutter kicks, windshield wipers, hollow rock, bodyweight Russian twist, side-plank hip dip, bear plank, plank shoulder tap, floor L-sit, sit-up |
+| Conditioning (3) | Tuck jump, plank jack, crab walk |
+
+Instructions, modifications and progressions were also added to the existing bodyweight exercises (push-up, wide and diamond push-ups, pike push-up, planks, bridges, leg raises…). **Limits:** without anything to pull on, back training is extension, scapular and isometric work — no floor exercise replaces rows or pull-ups. Bodyweight biceps work is self-resisted and light. There is no honest floor-only side-delt exercise. Uneven push-ups need an object under one hand, so the staggered-hand push-up is the floor version.
+
+**Data:** version 7 adds `notes` and `forgotten` to the `learn` store (standing exercise notes and dismissed note signals), and makes wall / towel / foot anchor explicit equipment (kept ticked for existing profiles), and adds `variation` / `ownRest` / `ownRest` on plan and workout items. Nothing existing is rewritten.
 
 ## Run locally
 
@@ -195,6 +218,8 @@ node tests/meals.test.js                            # ingredients, estimates, re
 node tests/v6.test.js                               # v6 in the browser: navigation, Record a run, Meal ideas, Achievements, settings, upgrade from v5
 node tests/migration.test.js                        # builds realistic data with the previous version (worktree of 5d64e76 on :8766) and upgrades / restores it
 node tests/offline.test.js                          # service worker: fresh install offline, and updating an installed v5 copy (serves its own files)
+node tests/learning.test.js                         # bodyweight library integrity, variations, plan editing, note parsing, notes → generation
+node tests/customize.test.js                        # browser: reorder (drag + keys), supersets, variations, no-equipment plans, notes → next plan, history
 ```
 The end-to-end test generates every workout type, swaps exercises, logs a full session, refreshes mid-workout, saves, and checks that the next session shows previous weights and an increase recommendation that is only applied on approval. It also checks the v1 → v2 data upgrade, intensity variety across repeated generations through the UI, the intensity picker, PR detection, the charts, export → wipe → import, persistence after refresh, the theme toggle and offline loading.
 
@@ -203,7 +228,8 @@ The end-to-end test generates every workout type, swaps exercises, logs a full s
 ```
 index.html            app shell
 css/app.css           design system (dark/light), responsive layout
-js/exercises.js       exercise database (185)
+js/exercises.js       exercise database (243): muscles, equipment, cues, modifications, progressions, joint demands
+js/feedback.js        learning from notes: parsing, decay, preferences, variation choice
 js/core.js            taxonomy, default profile, storage, import/export
 js/engine.js          history queries, progression, generator, stats
 js/charts.js          SVG line/bar charts + rings

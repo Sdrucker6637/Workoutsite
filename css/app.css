@@ -3151,3 +3151,113 @@ a.callout {
 .sheet-body ol.steps {
   padding-bottom: 8px;
 }
+/* ───────── Plan customisation: reorder, supersets, variations ───────── */
+.plan-block {
+  position: relative;
+  background: var(--surface);
+  border-radius: inherit;
+  transition: transform 0.18s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.plan-list.dragging .plan-block {
+  will-change: transform;
+}
+.plan-block.lifted {
+  transition: none;
+  z-index: 3;
+  box-shadow: var(--shadow-pop);
+  border-radius: var(--r-md);
+}
+.plan-list.dragging .plan-block.lifted::before,
+.plan-list.dragging .plan-block.lifted + .plan-block::before {
+  opacity: 0;
+}
+.ex-row .n.drag {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 40px;
+  margin: -8px -4px;
+  border-radius: var(--r-sm);
+  color: var(--text-3);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.ex-row .n.drag:hover,
+.ex-row .n.drag:focus-visible {
+  color: var(--text);
+  background: var(--accent-soft);
+}
+.plan-list.dragging,
+.plan-list.dragging * {
+  cursor: grabbing;
+}
+.ex-row .lock-ic {
+  color: var(--accent);
+  margin-right: 6px;
+  display: inline-block;
+  vertical-align: -1px;
+}
+.var-tag,
+button.ss-tag {
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 999px;
+  padding: 1px 8px;
+  line-height: 18px;
+}
+.var-tag {
+  color: var(--text-2);
+  box-shadow: 0 0 0 1px var(--line-2);
+}
+.var-tag:hover {
+  color: var(--text);
+}
+button.ss-tag {
+  padding: 1px 0;
+}
+button.ss-tag:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.lvl {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-3);
+  margin-left: 6px;
+  vertical-align: 1px;
+}
+.lvl.easier {
+  color: var(--accent);
+}
+.lvl.harder {
+  color: var(--heavy);
+}
+.learned summary {
+  font-size: 13.5px;
+  color: var(--text-2);
+}
+.learned-list {
+  margin: 8px 0 0 22px;
+  padding: 0;
+  font-size: 13.5px;
+  color: var(--text-2);
+  line-height: 1.55;
+}
+@media (max-width: 860px) {
+  .ex-row {
+    grid-template-columns: 26px 48px minmax(0, 1fr) auto;
+    padding-left: 8px;
+  }
+  .ex-row .n.drag {
+    display: grid;
+    width: 30px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .plan-block {
+    transition: none;
+  }
+}

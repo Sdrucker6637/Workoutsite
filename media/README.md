@@ -9,7 +9,7 @@ Forge shows a short looping demonstration for an exercise only when an openly li
 | `open-exercise-illustrations/` | [Open Exercise Illustrations](https://github.com/hitmanrepo/open-exercise-illustrations) | Hitman Repo, **AI-generated** | CC0 1.0 | 22 | WebP, 1–3 frames |
 | `repdb/` | [RepDB free dataset](https://github.com/RepDB/exercise-dataset) | RepDB (Sergei Argutin), **AI-generated** | RepDB Free Tier License (in-app use with attribution; **not an open license**) | 9 | WebP, start/peak pair or single pose |
 
-**Coverage: 168 of 185 built-in exercises (91%).** User-created exercises always show the placeholder. Single-pose references, such as running and the hollow hold, are labelled "Still image" in the app rather than presented as motion.
+**Coverage: 168 of 243 built-in exercises.** The 58 bodyweight exercises added later have no verified illustration yet. User-created exercises always show the placeholder. Single-pose references, such as running and the hollow hold, are labelled "Still image" in the app rather than presented as motion.
 
 **Exercise data by [RepDB](https://repdb.co)**: this credit is required by RepDB's free tier and also appears under every RepDB image and in Settings → About. The RepDB files are licensed for in-app use only. Unlike the other folders, they are not available for reuse; see `repdb/README.md`.
 

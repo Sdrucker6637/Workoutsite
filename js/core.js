@@ -54,6 +54,9 @@
     treadmill: 'Treadmill',
     rower: 'Rowing machine',
     bike: 'Stationary bike',
+    wall: 'Wall',
+    towel: 'Towel / sliders',
+    anchor: 'Foot anchor (couch, partner)',
   };
   WT.PATTERNS = {
     'h-push': 'Horizontal press',
@@ -88,6 +91,9 @@
     'knee-flexion': 'Leg curl',
     calf: 'Calf raise',
     adduction: 'Adduction',
+    abduction: 'Hip abduction',
+    'back-ext': 'Back extension (floor)',
+    swoop: 'Swooping push-up',
     'anti-ext': 'Anti-extension',
     'anti-rot': 'Anti-rotation',
     'leg-raise': 'Leg raise',
@@ -159,7 +165,7 @@
     intensityOdds: { heavy: 22, regular: 30, burnout: 16, standard: 32, drop: 7, buildup: 7 },
     intensityFixed: { heavy: 2, burnout: 1, drop: 0, buildup: 0 },
     experience: 'intermediate',
-    equipment: ['db', 'bench', 'cable', 'lat', 'row', 'mb', 'bw', 'bar'],
+    equipment: ['db', 'bench', 'cable', 'lat', 'row', 'mb', 'bw', 'bar', 'wall', 'towel', 'anchor'],
     dumbbells: { min: 5, max: 60, step: 5, microLoad: false },
     cableStep: 5,
     prioritize: ['chest', 'biceps', 'triceps', 'abs', 'obliques'],
@@ -184,7 +190,7 @@
 
   /* ───────── Store ───────── */
   const KEY = 'wt.data.v1';
-  const DATA_VERSION = 6;
+  const DATA_VERSION = 7;
   const fresh = () => ({
     version: DATA_VERSION,
     profile: WT.defaultProfile(),
@@ -211,7 +217,8 @@
   }
   function freshLearn() {
     // Draft-level signals the history can't show: exercises removed or swapped out of a plan before starting.
-    return { dropped: {} };
+    // v7: notes: standing exercise notes ({ id, exId, text, at }); forgotten: keys of note signals you dismissed.
+    return { dropped: {}, notes: [], forgotten: [] };
   }
   WT.freshMeals = freshMeals;
   const arr = (a) => (Array.isArray(a) ? a : []);
@@ -241,6 +248,8 @@
     l = l && typeof l === 'object' ? l : {};
     const out = Object.assign(freshLearn(), l);
     out.dropped = out.dropped && typeof out.dropped === 'object' ? out.dropped : {};
+    out.notes = arr(out.notes).filter((n) => n && typeof n.text === 'string');
+    out.forgotten = arr(out.forgotten);
     return out;
   }
   WT.normalizeMeals = normalizeMeals;
@@ -280,6 +289,12 @@
     out.learn = normalizeLearn(out.learn);
     // v2 → v3: multi-stage sets (drop / build-up). Existing sets need no change — a set without
     // `stages` is a plain set. Only sanitise staged sets so later code can rely on their shape.
+    // v6 → v7: walls, towels and foot anchors became explicit equipment (so "no equipment" really means
+    // none). Everyone who trained with them before keeps them. Standing exercise notes and dismissed note
+    // signals join the `learn` store (normalizeLearn). Purely additive.
+    if (d && (d.version || 1) < 7) {
+      ['wall', 'towel', 'anchor'].forEach((q) => !out.profile.equipment.includes(q) && out.profile.equipment.push(q));
+    }
     if ((out.version || 1) < DATA_VERSION) out.version = DATA_VERSION;
     const fixSets = (e) => (e && Array.isArray(e.sets) ? e.sets.forEach(normalizeStagedSet(e)) : null);
     out.history.forEach((sess) => (sess.exercises || []).forEach(fixSets));
@@ -404,6 +419,12 @@
         if (!cur || (v && v.at && new Date(v.at) < new Date(cur.at))) ach.unlocked[k] = v;
       });
       if (aIn.since && (!ach.since || new Date(aIn.since) < new Date(ach.since))) ach.since = aIn.since;
+      // Exercise notes and forgotten note signals
+      const lIn = normalizeLearn(JSON.parse(JSON.stringify(data.learn || {})));
+      const lrn = (WT.db.learn = normalizeLearn(WT.db.learn));
+      const nids = new Set(lrn.notes.map((n) => n.id));
+      lIn.notes.forEach((n) => !nids.has(n.id) && lrn.notes.push(n));
+      lIn.forgotten.forEach((k) => !lrn.forgotten.includes(k) && lrn.forgotten.push(k));
     } else {
       WT.db = migrate(data);
     }
@@ -441,6 +462,17 @@
     const eq = new Set(equipment || WT.db.profile.equipment);
     eq.add('bw');
     return ex.equipment.every((e) => eq.has(e));
+  };
+  /** Truly equipment-free: body and floor only (no bar, bench, wall, towel, anchor…). */
+  WT.isEquipmentFree = (ex) => !!ex && ex.equipment.every((q) => q === 'bw');
+  /** A modification of an exercise (item.variation → ex.mods entry), or null for the exercise as written. */
+  WT.modOf = (ex, id) => (ex && id && (ex.mods || []).find((m) => m.id === id)) || null;
+  /** Display name including the chosen modification, e.g. "Push-Up · From the knees". */
+  WT.itemName = (item) => {
+    const ex = WT.ex(item.exId);
+    const base = ex ? ex.name : item.name || item.exId;
+    const m = WT.modOf(ex, item.variation);
+    return m ? `${base} · ${m.name}` : base;
   };
   WT.isRestricted = function (ex, profile) {
     profile = profile || WT.db.profile;

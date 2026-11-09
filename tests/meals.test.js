@@ -6,7 +6,7 @@ globalThis.localStorage = { getItem: (k) => mem[k] ?? null, setItem: (k, v) => (
 // Offline: any network use would throw
 globalThis.fetch = () => { throw new Error('network used'); };
 globalThis.XMLHttpRequest = function () { throw new Error('network used'); };
-for (const f of ['exercises.js', 'core.js', 'foods.js', 'products.js', 'nutrition.js', 'engine.js', 'ingredients.js', 'meals.js', 'achievements.js'])
+for (const f of ['exercises.js', 'core.js', 'foods.js', 'products.js', 'nutrition.js', 'feedback.js', 'engine.js', 'ingredients.js', 'meals.js', 'achievements.js'])
   vm.runInThisContext(fs.readFileSync(path.join(__dirname, '..', 'js', f), 'utf8'), { filename: f });
 const WT = globalThis.WT, M = WT.meals, A = WT.ach, N = WT.nut, ING = WT.ING;
 let pass = 0, fail = 0;

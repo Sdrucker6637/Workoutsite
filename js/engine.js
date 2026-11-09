@@ -51,6 +51,7 @@
           groups,
           kind: !groups.length ? 'straight' : sets.some((x) => x.g == null) ? 'mixed' : gtype,
           intensity: e.intensity,
+          variation: e.variation || null,
           repMin: e.repMin,
           repMax: e.repMax,
           targetSets: e.targetSets || nSets,
@@ -164,7 +165,22 @@
     plan = plan || { repMin: ex.repMin, repMax: ex.repMax, sets: ex.sets, intensity: ex.intensity };
     if (WT.STAGED[plan.intensity] && WT.canStage(ex)) return recommendStaged(ex, plan, excludeSessionId);
     // Plain sets are compared only with plain sets: stages of a drop/build-up set are not separate sets.
-    const hist = WT.exerciseHistory(exId, excludeSessionId, 'straight');
+    let hist = WT.exerciseHistory(exId, excludeSessionId, 'straight');
+    // A modification (knee push-ups, partial squats…) is compared only with the same modification.
+    const vWant = plan.variation === undefined ? undefined : plan.variation || null;
+    if (vWant !== undefined && hist.length && (ex.mods || []).length) {
+      const same = hist.filter((h) => (h.variation || null) === vWant);
+      if (!same.length) {
+        const prev = hist[hist.length - 1];
+        const label = (id) => (WT.modOf(ex, id) || { name: 'as written' }).name.toLowerCase();
+        return {
+          action: 'new',
+          headline: tt === 'time' ? `Hold ${plan.repMin}–${plan.repMax}s` : `Aim for ${plan.repMin}–${plan.repMax} reps`,
+          reasons: [`First time ${vWant ? `with the “${label(vWant)}” variation` : 'doing it as written'}. Last time you did it ${label(prev.variation)} (${prev.sets.map((x) => x.r).join(', ')}${tt === 'time' ? ' s' : ' reps'}).`, 'Stop each set 1–2 reps short of failure; this becomes the baseline for this variation.'],
+        };
+      }
+      hist = same;
+    }
 
     if (!hist.length && tt === 'weight') {
       const staged = WT.exerciseHistory(exId, excludeSessionId).filter((h) => h.groups.length);
@@ -280,6 +296,11 @@
     // Bodyweight (no external load)
     if (!loaded) {
       const harder = ex.harder && WT.ex(ex.harder);
+      const nextMod = vWant !== undefined && WT.stepVariation ? WT.stepVariation(ex, vWant, +1) : null;
+      if (allTop && nextMod && WT.modOf(ex, vWant) && WT.modOf(ex, vWant).level < 0) {
+        const reasons = [`You hit ${lastMax}+ reps on all ${workSets.length} sets ${when} (${repsStr}).`, `Move one step up to “${nextMod.id ? nextMod.name : 'as written'}” — progress the variation before adding reps.`];
+        return { action: 'progress', reps: lastMin, nextVariation: nextMod.id, headline: `Try ${nextMod.id ? nextMod.name.toLowerCase() : 'the full version'}`, reasons, basis };
+      }
       if (allTop) {
         const reasons = [`You hit ${lastMax}+ reps on all ${workSets.length} sets ${when} (${repsStr}).`];
         if (prevTop) reasons.push('That is two sessions in a row at the top of the range.');
@@ -1009,6 +1030,8 @@
       excluded: new Set(p.excluded),
       favorites: new Set(p.favorites),
       emphasis: new Set(p.emphasisTags || []),
+      prefs: WT.learnedPrefs ? WT.learnedPrefs() : null,
+      adjustments: [],
     };
   }
   WT.buildContext = buildContext;
@@ -1031,6 +1054,7 @@
     if (last < first * 0.97 && falls >= rises + 1) return 'down';
     return 'flat';
   };
+  const effOf = (ex, ctx) => (ctx.prefs ? WT.prefEffect(ex, ctx.prefs) : null);
 
   function eligible(ex, ctx, used) {
     if (used && used.has(ex.id)) return false;
@@ -1038,6 +1062,10 @@
     if (WT.isRestricted(ex, ctx.p)) return false;
     if (!WT.hasEquipment(ex, ctx.equipment)) return false;
     if (ctx.avoid.has(ex.primary)) return false;
+    // Exercises your notes say to avoid (strong dislike, recurring pain) — unless nothing else fits.
+    if (!ctx.allowAvoided && ctx.prefs && effOf(ex, ctx).avoid) return false;
+    // A movement your notes flag as uncomfortable (e.g. push-ups on sore wrists) appears at most twice.
+    if (ctx.prefs && ctx.chosen && effOf(ex, ctx).cap && ctx.chosen.filter((c) => (c.families || []).some((f) => (ex.families || []).includes(f))).length >= 2) return false;
     return true;
   }
 
@@ -1086,9 +1114,12 @@
     if (ex.tags.includes('spinal-load')) s -= 1.5;
     if (ex.tags.includes('back-friendly')) s += 0.5;
     if (ex.tags.includes('power') && !slot.cardio) s -= 2;
+    // Self-resisted / very light floor work is the right call without equipment, not instead of real load.
+    if (ex.tags.includes('low-load') && ctx.equipment.some((q) => ['db', 'cable', 'machine', 'bb', 'kb', 'lat', 'row'].includes(q))) s -= 3;
     const exp = p.experience;
     if (ex.difficulty === 'advanced' && exp !== 'advanced') s -= exp === 'beginner' ? 5 : 2;
     if (ex.difficulty === 'intermediate' && exp === 'beginner') s -= 1;
+    if (ex.tags.includes('skill') && exp !== 'advanced') s -= 4; // balance skills (freestanding handstands) need practice first
     ex.secondary.forEach((m) => {
       if (ctx.avoid.has(m)) s -= 2;
     });
@@ -1151,8 +1182,22 @@
       if (c.equipment.join() === ex.equipment.join() && focused) s -= 0.3;
       if (['row', 'lat'].some((st) => c.equipment.includes(st) && ex.equipment.includes(st))) s -= 2.5;
     });
+    // What your notes say about it (pain, likes, too hard / easy…) — see feedback.js
+    let pref = 0;
+    const eff = effOf(ex, ctx);
+    if (eff) {
+      pref += eff.delta;
+      if (eff.cap && chosen.some((c) => c.families && c.families.some((f) => (ex.families || []).includes(f)))) pref -= 8;
+      const boost = WT.progressionBoost(ex, ctx.prefs);
+      if (boost) {
+        pref += boost.delta;
+        reasons.push([20, boost.why]);
+      }
+      if (eff.reasons.length && Math.abs(eff.delta) >= 0.5) reasons.push([30, eff.reasons[0]]);
+    }
+    s += pref;
     s += Math.random() * (jitter == null ? 1.2 : jitter);
-    return { s, why: reasons.sort((a, b) => b[0] - a[0]).map((r) => r[1]) };
+    return { s, why: reasons.sort((a, b) => b[0] - a[0]).map((r) => r[1]), pref };
   }
 
   /**
@@ -1169,13 +1214,26 @@
         const pool = scored.filter((x) => x.s >= best - 1.5).slice(0, 4);
         const weights = pool.map((x) => Math.exp((x.s - best) / 0.8));
         let r = Math.random() * weights.reduce((a, x) => a + x, 0);
+        let pick = pool[0];
         for (let k = 0; k < pool.length; k++) {
           r -= weights[k];
-          if (r <= 0) return pool[k];
+          if (r <= 0) {
+            pick = pool[k];
+            break;
+          }
         }
-        return pool[0];
+        // Same slot, same muscles — but your notes moved the choice: say what was replaced and why.
+        if (ctx.prefs && level === 0) {
+          const raw = scored.reduce((m, x) => (!m || x.s - x.pref > m.s - m.pref ? x : m), null);
+          const avoided = WT.exercises.filter((ex) => !used.has(ex.id) && slotMatch(ex, slot, 0) && effOf(ex, ctx).avoid && WT.hasEquipment(ex, ctx.equipment) && !ctx.excluded.has(ex.id) && !WT.isRestricted(ex, ctx.p));
+          const top = raw && raw.ex !== pick.ex && raw.pref < -1 ? raw.ex : avoided.find((ex) => ex.tags.includes('staple') || ctx.lastDone[ex.id]);
+          if (top && top !== pick.ex) pick.sub = { from: top.id, to: pick.ex.id, why: effOf(top, ctx).reasons[0] || '' };
+        }
+        return pick;
       }
     }
+    // Nothing else fits? Leave the slot empty rather than bring back what your notes rule out —
+    // the plan says why (see the "Only N suitable exercises" note).
     return null;
   }
 
@@ -1306,7 +1364,11 @@
       if (WT.region(ex) === 'core' && type !== 'core') return 3;
       return ex.category === 'compound' ? 1 : 2;
     };
-    items.forEach((i) => (i.superset = null));
+    items.forEach((i) => {
+      if (i.ownRest != null) i.rest = i.ownRest;
+      delete i.ownRest;
+      i.superset = null;
+    });
     const sorted = items.map((it, idx) => ({ it, idx })).sort((a, b) => rank(a.it) - rank(b.it) || a.idx - b.idx).map((x) => x.it);
     let blocks = sorted.map((i) => [i]);
     if (supersets && type !== 'cardio') {
@@ -1354,7 +1416,10 @@
         const L = String.fromCharCode(65 + letter++);
         b.forEach((i, j) => {
           i.superset = L;
-          if (j === b.length - 1) i.rest = Math.max(i.rest, ssRest);
+          if (j === b.length - 1) {
+            i.ownRest = i.rest;
+            i.rest = Math.max(i.rest, ssRest);
+          }
         });
       }
       out.push(...b);
@@ -1381,7 +1446,7 @@
     while (est < duration - 10 && guard++ < 20) {
       const cand = items.find((i) => {
         const ex = WT.ex(i.exId);
-        return ex && ex.category === 'compound' && i.sets < 4 && WT.trackType(ex) !== 'cardio';
+        return ex && ex.category === 'compound' && i.sets < 4 && !i.capped && WT.trackType(ex) !== 'cardio';
       });
       if (!cand) break;
       cand.sets++;
@@ -1578,6 +1643,7 @@
     // Fill slots
     const used = new Set();
     const chosen = [];
+    ctx.chosen = chosen;
     const items = [];
     const keepBySlot = {};
     (keep || []).forEach((k) => {
@@ -1593,6 +1659,7 @@
       }
       const pick = pickForSlot(slot, ctx, used, chosen, focused);
       if (!pick) return;
+      if (pick.sub && WT.ex(pick.sub.from)) ctx.adjustments.push(`${WT.ex(pick.sub.from).name} → ${pick.ex.name}${pick.sub.why ? ' · ' + pick.sub.why : ''}`);
       used.add(pick.ex.id);
       chosen.push(pick.ex);
       items.push({ uid: WT.uid(), exId: pick.ex.id, slot: stripSlot(slot), slotIndex: idx, why: pick.why.slice(0, 2), locked: false });
@@ -1608,12 +1675,31 @@
       if (i.locked && i.sets) return;
       Object.assign(i, WT.prescribe(WT.ex(i.exId), i.intensity));
     });
+    // Variations and volume, shaped by history and notes
+    items.forEach((i) => {
+      const ex = WT.ex(i.exId);
+      if (!(i.locked && i.variation !== undefined) && WT.pickVariation) {
+        const v = WT.pickVariation(ex, ctx.prefs, ctx.equipment);
+        i.variation = v.id || null;
+        if (v.id && v.why) {
+          i.why = [v.why].concat(i.why || []).slice(0, 2);
+          if (/notes/.test(v.why)) ctx.adjustments.push(`${ex.name}: ${WT.modOf(ex, v.id).name.toLowerCase()} (${v.why.replace(/^.*?— /, '').replace(/ \(from your notes\)/, '')})`);
+        }
+      }
+      const eff = effOf(ex, ctx);
+      if (eff && eff.cap && !i.locked && i.sets > 2 && WT.trackType(ex) !== 'cardio') {
+        i.sets--;
+        i.capped = true;
+        ctx.adjustments.push(`${ex.name}: one set fewer · ${eff.reasons[0] || 'from your notes'}`);
+      }
+    });
     let arranged = WT.arrange(items, settings.supersets, type);
     fitDuration(arranged, settings.duration);
 
-    if (items.length < n) notes.push(`Only ${items.length} suitable exercises were found with your equipment and exclusions.`);
+    if (items.length < n) notes.push(`Only ${items.length} suitable exercises were found with your equipment and exclusions${ctx.adjustments.length ? ' — and what your notes rule out' : ''}.`);
     const supersetCount = new Set(arranged.filter((i) => i.superset).map((i) => i.superset)).size;
     if (supersetCount) notes.push(`${supersetCount} superset${supersetCount > 1 ? 's' : ''} pair non-competing muscles to save time.`);
+    if (ctx.adjustments.length) notes.push(`Personalized from your notes: ${ctx.adjustments.length} adjustment${ctx.adjustments.length > 1 ? 's' : ''}.`);
 
     return {
       id: WT.uid(),
@@ -1626,6 +1712,7 @@
       generated: true,
       suggested: settings.suggested || null,
       notes,
+      adjustments: ctx.adjustments,
       exercises: arranged,
       estimatedMin: WT.estimateMinutes(arranged),
     };
@@ -1728,8 +1815,94 @@
     const keepSets = item.sets && typeof item.sets === 'number' ? item.sets : null;
     Object.assign(item, pr);
     if (keepSets && WT.trackType(ex) !== 'cardio') item.sets = keepSets;
+    item.variation = WT.pickVariation ? WT.pickVariation(ex, WT.learnedPrefs ? WT.learnedPrefs() : null).id || null : null;
+    delete item.capped;
     item.why = ['Swapped in'];
     return item;
+  };
+
+  /* ═════════════════════ PLAN EDITING: order & supersets ═════════════════════
+   * A plan is a flat list; adjacent items sharing a `superset` letter form one block. These helpers
+   * keep that invariant, re-letter supersets A, B, C… in order, and keep each item's own rest
+   * (`ownRest`) so separating a superset restores it.
+   */
+  WT.relabelSupersets = function (list) {
+    list.forEach((e, k) => {
+      if (!e.superset) return;
+      const adj = (list[k - 1] && list[k - 1].superset === e.superset) || (list[k + 1] && list[k + 1].superset === e.superset);
+      if (!adj) {
+        if (e.ownRest != null) e.rest = e.ownRest;
+        delete e.ownRest;
+        e.superset = null;
+      }
+    });
+    const map = {};
+    let n = 0;
+    WT.groupBlocks(list).forEach((b) => {
+      if (b.length < 2) return;
+      const L = String.fromCharCode(65 + n++);
+      b.forEach((e) => (map[e.uid] = L));
+    });
+    list.forEach((e) => e.superset && (e.superset = map[e.uid] || null));
+    return list;
+  };
+  /** Superset rest goes on the last member of each block; everyone else keeps their own rest. */
+  WT.applySupersetRest = function (list) {
+    const ssRest = WT.db.profile.rest.superset;
+    WT.groupBlocks(list).forEach((b) => {
+      b.forEach((e) => {
+        if (e.ownRest != null) e.rest = e.ownRest;
+        delete e.ownRest;
+      });
+      if (b.length < 2) return;
+      const last = b[b.length - 1];
+      last.ownRest = last.rest;
+      last.rest = Math.max(last.rest || 0, ssRest);
+    });
+    return list;
+  };
+  /** Move block `from` to position `to` (block indices). Returns the new list. */
+  WT.moveBlock = function (list, from, to) {
+    const blocks = WT.groupBlocks(list);
+    if (from < 0 || from >= blocks.length) return list;
+    to = WT.clamp(to, 0, blocks.length - 1);
+    const [b] = blocks.splice(from, 1);
+    blocks.splice(to, 0, b);
+    return WT.applySupersetRest(WT.relabelSupersets([].concat(...blocks)));
+  };
+  /** Separate a superset into independent exercises (sets, reps and intensity are untouched). */
+  WT.unpairItem = function (list, uid) {
+    const it = list.find((e) => e.uid === uid);
+    if (!it || !it.superset) return list;
+    const L = it.superset;
+    list.forEach((e) => {
+      if (e.superset !== L) return;
+      if (e.ownRest != null) e.rest = e.ownRest;
+      delete e.ownRest;
+      e.superset = null;
+    });
+    return WT.applySupersetRest(WT.relabelSupersets(list));
+  };
+  /** Pair two exercises into a superset; b moves directly after a. Either may already be in a superset (b joins a's). */
+  WT.pairItems = function (list, uidA, uidB) {
+    const a = list.find((e) => e.uid === uidA), b = list.find((e) => e.uid === uidB);
+    if (!a || !b || a === b) return list;
+    if (b.superset) WT.unpairItem(list, b.uid);
+    const out = list.filter((e) => e !== b);
+    const blocks = WT.groupBlocks(out);
+    const bi = blocks.findIndex((blk) => blk.includes(a));
+    const L = a.superset || '_new';
+    blocks[bi].forEach((e) => (e.superset = L));
+    b.superset = L;
+    blocks[bi].push(b);
+    return WT.applySupersetRest(WT.relabelSupersets([].concat(...blocks)));
+  };
+  /** Reverse the order inside a superset (who goes first). */
+  WT.flipSuperset = function (list, uid) {
+    const it = list.find((e) => e.uid === uid);
+    if (!it || !it.superset) return list;
+    const blocks = WT.groupBlocks(list).map((b) => (b.includes(it) ? b.slice().reverse() : b));
+    return WT.applySupersetRest([].concat(...blocks));
   };
 
   /* ═════════════════════ SESSIONS ═════════════════════ */
@@ -1770,6 +1943,8 @@
       repMax: pr.repMax,
       rest: pr.rest,
       superset: base ? base.superset || null : null,
+      variation: base && base.variation ? base.variation : null,
+      ...(base && base.ownRest != null ? { ownRest: base.ownRest } : {}),
       note: pr.note || '',
       notes: '',
       effort: null,
@@ -1799,6 +1974,8 @@
           repMax: e.repMax,
           rest: e.rest,
           superset: e.superset || null,
+          variation: e.variation || null,
+          ...(e.ownRest != null ? { ownRest: e.ownRest } : {}),
           slot: { label: WT.muscleName(WT.ex(e.exId).primary), m: [WT.ex(e.exId).primary], p: null },
           slotIndex: idx,
           why: [],

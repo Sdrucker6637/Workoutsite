@@ -4,7 +4,7 @@
 const fs = require('fs'), path = require('path'), vm = require('vm');
 const mem = {};
 globalThis.localStorage = { getItem: (k) => mem[k] ?? null, setItem: (k, v) => (mem[k] = String(v)), removeItem: (k) => delete mem[k] };
-for (const f of ['exercises.js', 'core.js', 'foods.js', 'products.js', 'nutrition.js', 'engine.js', 'ingredients.js', 'meals.js', 'achievements.js'])
+for (const f of ['exercises.js', 'core.js', 'foods.js', 'products.js', 'nutrition.js', 'feedback.js', 'engine.js', 'ingredients.js', 'meals.js', 'achievements.js'])
   vm.runInThisContext(fs.readFileSync(path.join(__dirname, '..', 'js', f), 'utf8'), { filename: f });
 const WT = globalThis.WT;
 let pass = 0, fail = 0;
@@ -386,7 +386,7 @@ section('Migration v5 → v6 and backups');
   mem['wt.data.v1'] = JSON.stringify(v5);
   WT.load();
   const d = WT.db;
-  ok(d.version === 6, 'version bumped to 6');
+  ok(d.version === 7, 'version bumped to 7');
   ok(d.history.length === 1 && d.history[0].exercises[0].sets[0].w === '40', 'workout history untouched');
   ok(d.profile.name === 'Keep' && d.profile.proteinTarget === 140 && d.profile.favorites[0] === 'pullup', 'settings and favorites kept');
   ok(d.profile.intensityOdds.heavy === 10 && d.profile.intensityOdds.regular === 50 && d.profile.intensityOdds.drop > 0 && d.profile.intensityOdds.buildup > 0, 'custom intensity odds kept; drop / build-up odds added');
@@ -414,7 +414,7 @@ section('Migration v5 → v6 and backups');
   ok(WT.db.meals.favorites.length === 1, 'persists across reload');
   // An old (v5) backup still imports
   WT.importData(JSON.stringify({ app: 'workout-tracker', data: v5 }), 'replace');
-  ok(WT.db.version === 6 && WT.db.history.length === 1 && WT.db.meals.favorites.length === 0, 'a v5 backup imports and upgrades');
+  ok(WT.db.version === 7 && WT.db.history.length === 1 && WT.db.meals.favorites.length === 0, 'a v5 backup imports and upgrades');
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

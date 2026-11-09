@@ -14,7 +14,7 @@
       .filter((ex) => {
         if (q && !(ex.name.toLowerCase().includes(q) || WT.muscleName(ex.primary).toLowerCase().includes(q))) return false;
         if (f.group && WT.MUSCLES[ex.primary].group !== f.group) return false;
-        if (f.equip && !ex.equipment.includes(f.equip)) return false;
+        if (f.equip === 'none' ? !WT.isEquipmentFree(ex) : f.equip && !ex.equipment.includes(f.equip)) return false;
         if (f.cat && ex.category !== f.cat) return false;
         if (f.avail === 'mine' && (!WT.hasEquipment(ex) || WT.isRestricted(ex))) return false;
         if (f.avail === 'excluded' && !(p.excluded.includes(ex.id) || WT.isRestricted(ex))) return false;
@@ -34,7 +34,7 @@
         const excl = p.excluded.includes(ex.id) || WT.isRestricted(ex);
         return `<div class="li lib-row">${H.demo(ex.id, 'sm')}<button class="grow" style="text-align:left;min-width:0" data-act="exDetail" data-id="${ex.id}">
             <div class="ti ellipsis">${esc(ex.name)}</div>
-            <div class="su ellipsis">${WT.muscleName(ex.primary)} · ${ex.equipment.map((q) => WT.EQUIPMENT[q]).join(', ')}${excl ? ' · <span style="color:var(--danger)">Excluded</span>' : ''}</div></button>
+            <div class="su ellipsis">${WT.muscleName(ex.primary)} · ${WT.isEquipmentFree(ex) ? 'No equipment' : ex.equipment.map((q) => WT.EQUIPMENT[q]).join(', ')}${excl ? ' · <span style="color:var(--danger)">Excluded</span>' : ''}</div></button>
           <button class="icon-btn sm star ${fav ? 'on' : ''}" data-act="favToggle" data-id="${ex.id}" aria-pressed="${fav}" aria-label="Favorite">${starSvg(fav)}</button></div>`;
       })
       .join('');
@@ -49,7 +49,7 @@
       <div class="search"><span>${I('search', 16)}</span><input class="input" placeholder="Search exercises" value="${esc(f.q)}" data-in="libSearch" autocomplete="off" id="libSearch" aria-label="Search exercises"></div>
       <div class="filters">
         ${sel('group', 'Muscle', Object.entries(WT.GROUPS))}
-        ${sel('equip', 'Equipment', Object.entries(WT.EQUIPMENT))}
+        ${sel('equip', 'Equipment', [['none', 'No equipment']].concat(Object.entries(WT.EQUIPMENT)))}
         ${sel('cat', 'Type', [['compound', 'Compound'], ['isolation', 'Isolation'], ['cardio', 'Cardio']])}
         ${sel('avail', 'Show', [['mine', 'Available to me'], ['all', 'All exercises'], ['excluded', 'Excluded'], ['custom', 'My exercises']]).replace('<option value="">Show</option>', '')}
         <button class="chip sm ${f.fav ? 'on' : ''}" data-act="libFav" style="height:32px">${I('star', 13)}Favorites</button>
@@ -120,11 +120,13 @@
               <div><div class="k">Recommended</div><div class="v">${ex.sets} × ${ex.repMin}–${ex.repMax}${unitTxt}</div></div>
               <div><div class="k">Rest</div><div class="v">${ex.rest ? WT.fmtClock(ex.rest) : '—'}</div></div>
               <div><div class="k">Level</div><div class="v">${WT.cap(ex.difficulty)}</div></div>
-              <div><div class="k">Equipment</div><div class="v">${ex.equipment.map((q) => WT.EQUIPMENT[q]).join(', ')}</div></div>
+              <div><div class="k">Equipment</div><div class="v">${WT.isEquipmentFree(ex) ? 'None' : ex.equipment.filter((q) => q !== 'bw').map((q) => WT.EQUIPMENT[q]).join(', ')}</div></div>
               <div><div class="k">Type</div><div class="v">${WT.cap(ex.category)}</div></div>
               <div><div class="k">Intensity</div><div class="v row wrap" style="gap:4px 10px">${ex.intensities.filter((k) => k !== 'standard').map((k) => H.intensity(k)).join('') || '<span class="t3">Standard only</span>'}</div></div>
             </div>
             ${WT.isRestricted(ex) ? `<div class="callout warn mt16">${I('ban', 15)}<span>Blocked by your restrictions in Settings.</span></div>` : ''}
+            ${variationsHtml(ex)}
+            ${notesHtml(ex)}
             ${historyHtml}`,
           foot: `<button class="btn btn-plain btn-sm" data-act="exEdit" data-id="${id}">Edit</button>
             <button class="btn btn-plain btn-sm" data-act="exExclude" data-id="${id}" ${excl ? '' : 'style="color:var(--danger)"'}>${excl ? 'Include' : 'Exclude'}</button>
@@ -138,6 +140,54 @@
       },
       { wide: true }
     );
+  };
+  /** Modifications (same exercise) and progressions (next exercise down / up) in the detail sheet. */
+  function variationsHtml(ex) {
+    const mods = (ex.mods || []).slice().sort((a, b) => a.level - b.level);
+    const link = (id, label) => (id && WT.ex(id) ? `<button class="btn-link" data-act="exDetail" data-id="${id}">${esc(WT.ex(id).name)}</button> <span class="t3">${label}</span>` : '');
+    const prog = [link(ex.easier, 'easier'), link(ex.harder, 'harder')].filter(Boolean).join('<span class="t3"> · </span>');
+    if (!mods.length && !prog) return '';
+    return `<div class="section-title mt32"><h2>Variations</h2>${WT.isEquipmentFree(ex) ? '<span class="footnote t3">No equipment</span>' : ''}</div>
+      ${mods.length ? `<div class="list inset">${mods.map((m) => H.li({ title: `${esc(m.name)} ${m.level < 0 ? '<span class="lvl easier">Easier</span>' : m.level > 0 ? '<span class="lvl harder">Harder</span>' : ''}${m.wrist ? '<span class="lvl">Wrist-friendly</span>' : ''}${m.needs ? `<span class="lvl">Uses a ${esc(WT.EQUIPMENT[m.needs].toLowerCase())}</span>` : ''}`, sub: esc(m.cue) })).join('')}</div>` : ''}
+      ${prog ? `<p class="footnote mt12">Progressions: ${prog}</p>` : ''}`;
+  }
+  /** What Forge has learned about this exercise from your notes, and a place to add a standing note. */
+  function notesHtml(ex) {
+    const prefs = WT.learnedPrefs();
+    const eff = WT.prefEffect(ex, prefs);
+    const mine = WT.db.learn.notes.filter((n) => n.exId === ex.id);
+    return `<div class="section-title mt32"><h2>Your notes</h2></div>
+      ${eff.reasons.length ? `<div class="list inset">${eff.reasons.map((r) => H.li({ lead: `<span class="t3">${I('note', 15)}</span>`, title: esc(r) })).join('')}</div><p class="footnote t3 mt8">${eff.avoid ? 'Not suggested in generated workouts for now.' : 'Generated workouts take this into account.'} Manage in Settings → Learned from notes.</p>` : `<p class="footnote t3">Notes you write about this exercise — here or during a workout — shape future workouts: comfort, difficulty, what you enjoy.</p>`}
+      ${mine.length ? `<div class="list inset mt12">${mine.map((n) => H.li({ title: esc(n.text), sub: WT.fmtRelDay(n.at), trail: `<button class="icon-btn sm" data-act="exNoteDelete" data-id="${n.id}" aria-label="Delete note">${I('x', 15)}</button>` })).join('')}</div>` : ''}
+      <div class="row mt12" style="gap:8px"><input class="input" id="exNoteIn" placeholder="e.g. Hard on my wrists · Too easy · Love these" data-ex="${ex.id}"><button class="btn btn-secondary" data-act="exNoteAdd" data-id="${ex.id}">Add</button></div>`;
+  }
+  A.exNoteAdd = (d) => {
+    const el = document.getElementById('exNoteIn');
+    const text = el && el.value.trim();
+    if (!text) return WT.toast('Write a note first', 'error');
+    WT.db.learn.notes.push({ id: WT.uid(), exId: d.id, text, at: new Date().toISOString() });
+    WT.save();
+    const n = WT.parseNote(text, { exId: d.id }).length;
+    WT.toast(n ? 'Noted — future workouts will adapt' : 'Note saved');
+    WT.refreshSheet();
+  };
+  A.exNoteDelete = (d) => {
+    WT.db.learn.notes = WT.db.learn.notes.filter((n) => n.id !== d.id);
+    WT.save();
+    WT.refreshSheet();
+    if (WT.ui.route === 'settings') WT.rerender();
+  };
+  A.forgetSignal = (d) => {
+    const l = WT.db.learn;
+    if (!l.forgotten.includes(d.k)) l.forgotten.push(d.k);
+    WT.save();
+    WT.rerender();
+    WT.toast('Forgotten — it won’t affect workouts');
+  };
+  A.forgetReset = () => {
+    WT.db.learn.forgotten = [];
+    WT.save();
+    WT.rerender();
   };
   A.saveVideo = (d) => {
     const url = document.getElementById('vidUrl').value.trim();
@@ -333,7 +383,7 @@
           })
           .join('');
         return `<div class="section" style="margin-top:28px;${e.skipped ? 'opacity:.5' : ''}">
-          <div class="row between base"><button class="headline" data-act="exDetail" data-id="${e.exId}" style="text-align:left">${esc(e.name || (def || {}).name || e.exId)}</button>${prIds.has(e.exId) ? `<span class="badge-pr">PR</span>` : e.skipped ? '<span class="footnote t3">Skipped</span>' : ''}</div>
+          <div class="row between base"><button class="headline" data-act="exDetail" data-id="${e.exId}" style="text-align:left">${esc(def ? WT.itemName(e) : e.name || e.exId)}</button>${prIds.has(e.exId) ? `<span class="badge-pr">PR</span>` : e.skipped ? '<span class="footnote t3">Skipped</span>' : ''}</div>
           <div class="row wrap footnote t2 mt4" style="gap:4px 12px">${e.intensity && e.intensity !== 'standard' && WT.INTENSITY_INFO[e.intensity] ? H.intensity(e.intensity) : ''}<span class="tnum">Target ${WT.STAGED[e.intensity] ? `${e.targetSets || '?'} × ${e.stageCount || '?'} stages` : `${e.targetSets || '?'} × ${e.repMin}–${e.repMax}`}</span>${e.effort ? `<span>${{ easy: 'Felt easy', good: 'Felt solid', hard: 'Felt hard' }[e.effort]}</span>` : ''}</div>
           ${rows ? `<table class="table mt8"><tbody>${rows}</tbody></table>` : ''}
           ${e.notes ? `<p class="footnote t2 mt8">${esc(e.notes)}</p>` : ''}</div>`;
@@ -529,6 +579,7 @@
         ${H.li({ title: '2.5 lb in-between weights', trail: H.toggle(p.dumbbells.microLoad, 'pfMicro') })}
         ${H.li({ title: 'Cable stack increment', trail: num('cableStep', p.cableStep, 1) })}`, 'Weight suggestions only use dumbbells you own.')}
       ${grp('Muscles', block(`<div class="label" style="margin-bottom:10px">Prioritize</div>${H.chipGroup(muscles, p.prioritize, 'pfPrio', 'sm')}`) + block(`<div class="label" style="margin-bottom:10px">Avoid</div>${H.chipGroup(muscles, p.avoidMuscles, 'pfAvoid', 'avoid sm')}`))}
+      ${grp('Learned from notes', learnedHtml(), 'Forge reads the notes you leave on exercises and workouts — locally, nothing is sent anywhere. Temporary things (sore today) fade within days; ongoing limits stay until you note they’re better. A later note overrides an earlier one.', 'learned')}
       ${grp('Restrictions', Object.entries(WT.RESTRICTION_TAGS).map(([k, v]) => H.li({ title: esc(v), trail: H.toggle(p.restrictions.includes(k), 'toggleRestriction', `data-k="${k}"`) })).join('') + H.li({ act: 'openExcluded', title: 'Excluded exercises', trail: `<span class="footnote t2">${p.excluded.length}</span>`, chev: true }))}
       ${grp('Rest timer', `
         ${H.li({ title: '<span class="int heavy">Heavy</span>', trail: num('heavy', p.rest.heavy, 5, 'rest') })}
@@ -563,6 +614,15 @@
       ${grp('Install on iPhone', block(`<p class="t2" style="line-height:1.6">Open the site in Safari, tap Share, then <span class="strong" style="color:var(--text)">Add to Home Screen</span>. It runs full-screen and works offline. The home-screen app keeps its own storage, so export a backup before switching.</p>`))}
     </div>`;
   };
+  function learnedHtml() {
+    const sig = WT.learnedSignals().slice().reverse();
+    const forgotten = WT.db.learn.forgotten.length;
+    if (!sig.length) return H.li({ title: '<span class="t2">Nothing yet</span>', sub: 'Try a note like “push-ups are tough on my wrists” or “too easy” on an exercise.' }) + (forgotten ? H.li({ act: 'forgetReset', title: `Restore ${plural(forgotten, 'forgotten item')}` }) : '');
+    return sig.slice(0, 30).map((s) => {
+      const d = WT.describeSignal(s);
+      return H.li({ title: esc(d.title), sub: `“${esc(d.quote)}” · ${d.dur} · ${WT.fmtRelDay(s.date)}`, trail: `<button class="btn btn-plain btn-sm" data-act="forgetSignal" data-k="${esc(s.key)}">Forget</button>` });
+    }).join('') + (forgotten ? H.li({ act: 'forgetReset', title: `Restore ${plural(forgotten, 'forgotten item')}` }) : '');
+  }
   V.settingsAfter = async function () {
     const el = document.getElementById('storageInfo');
     if (el && navigator.storage && navigator.storage.persisted) {

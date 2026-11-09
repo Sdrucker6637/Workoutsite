@@ -46,7 +46,7 @@ const V5 = {
   await page.reload();
   await page.waitForTimeout(1000);
   let m = await stored();
-  ok(m.version === 6, 'stored data upgraded to v6');
+  ok(m.version === 7, 'stored data upgraded to v7');
   ok(JSON.stringify(m.history) === JSON.stringify(V5.history), 'workout and run history byte-identical');
   ok(JSON.stringify(m.nutrition.entries.map((e) => [e.id, e.date, e.per.p])) === JSON.stringify(V5.nutrition.entries.map((e) => [e.id, e.date, e.per.p])), 'food log kept');
   ok(m.profile.name === 'Sam' && m.profile.proteinTarget === 160 && m.profile.favorites.join() === 'pullup,sissy-squat' && m.profile.excluded[0] === 'crunch', 'settings, favorites and exclusions kept');

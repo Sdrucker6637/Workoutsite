@@ -143,14 +143,15 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   await page.reload();
   await page.waitForTimeout(1500);
   const now = await page.evaluate(() => JSON.parse(localStorage.getItem('wt.data.v1')));
-  ok(now.version === 6, 'stored as v6');
+  ok(now.version === 7, 'stored as v7');
   ok(JSON.stringify(now.history) === JSON.stringify(old.history), 'every workout and run byte-identical (sets, stages, efforts, notes, skips, PRs, dates)');
   ok(JSON.stringify(now.nutrition) === JSON.stringify(old.nutrition), 'food log and saved foods byte-identical');
   ok(JSON.stringify(now.customExercises) === JSON.stringify(old.customExercises) && JSON.stringify(now.overrides) === JSON.stringify(old.overrides), 'custom exercises and exercise overrides identical');
   ok(JSON.stringify(now.active) === JSON.stringify(old.active), 'in-progress workout identical');
   ok(JSON.stringify(now.draft) === JSON.stringify(old.draft), 'draft plan identical');
   const changedKeys = Object.keys(old.profile).filter((k) => JSON.stringify(old.profile[k]) !== JSON.stringify(now.profile[k]));
-  ok(changedKeys.join() === 'intensityOdds,intensityFixed', 'every setting kept (only the intensity odds / fixed counts gained the new drop and build-up keys): ' + changedKeys.join(','));
+  ok(changedKeys.join() === 'intensityOdds,intensityFixed,equipment', 'every setting kept (only the intensity odds / fixed counts gained the new drop and build-up keys, and equipment the now-explicit wall / towel / anchor): ' + changedKeys.join(','));
+  ok(JSON.stringify(now.profile.equipment) === JSON.stringify(old.profile.equipment.concat(['wall', 'towel', 'anchor'].filter((q) => !old.profile.equipment.includes(q)))), 'equipment: everything kept, wall / towel / anchor appended');
   ok(Object.entries(old.profile.intensityOdds).every(([k, v]) => now.profile.intensityOdds[k] === v) && now.profile.intensityOdds.drop === 7 && now.profile.intensityOdds.buildup === 7, 'custom odds kept; drop / build-up added');
   ok(now.profile.intensityFixed.heavy === 1 && now.profile.intensityFixed.burnout === 2 && now.profile.intensityFixed.drop === 0, 'fixed counts kept');
   ok(now.profile.theme === 'dark' && (await page.evaluate(() => document.documentElement.dataset.theme)) === 'dark', 'dark theme still applied');
@@ -248,7 +249,7 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   // Old v5 backup → v6 (replace)
   await page.evaluate((b) => { WT.resetAll(); WT.importData(b, 'replace'); }, v5.backup);
   let d = await page.evaluate(() => JSON.parse(JSON.stringify(WT.db)));
-  ok(d.version === 6 && JSON.stringify(d.history) === JSON.stringify(old.history) && JSON.stringify(d.nutrition) === JSON.stringify(old.nutrition), 'v5 backup restores fully into v6');
+  ok(d.version === 7 && JSON.stringify(d.history) === JSON.stringify(old.history) && JSON.stringify(d.nutrition) === JSON.stringify(old.nutrition), 'v5 backup restores fully into v6');
   // Add v6-only data, export, wipe, restore
   await page.evaluate(() => {
     WT.meals.saveIngredient({ name: 'Cod', cat: 'protein', p: 26 });
@@ -286,7 +287,7 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   await page.click('.sheet [data-act="doImport"][data-mode="replace"]');
   await page.waitForTimeout(1200);
   d = await page.evaluate(() => JSON.parse(JSON.stringify(WT.db)));
-  ok(d.version === 6 && d.history.length === old.history.length && d.nutrition.entries.length === old.nutrition.entries.length, 'v5 backup restored through Settings → Import');
+  ok(d.version === 7 && d.history.length === old.history.length && d.nutrition.entries.length === old.nutrition.entries.length, 'v5 backup restored through Settings → Import');
   ok((await page.locator('.ach-toast').count()) === 0, 'restoring a backup does not celebrate old milestones');
 
   ok(errors.length === 0, 'no console errors' + (errors.length ? ': ' + errors.join(' | ') : ''));

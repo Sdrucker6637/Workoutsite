@@ -2,7 +2,7 @@
 const fs = require('fs'), path = require('path'), vm = require('vm');
 const mem = {};
 globalThis.localStorage = { getItem: (k) => mem[k] ?? null, setItem: (k, v) => (mem[k] = String(v)), removeItem: (k) => delete mem[k] };
-for (const f of ['exercises.js', 'core.js', 'engine.js', 'foods.js', 'products.js', 'nutrition.js']) vm.runInThisContext(fs.readFileSync(path.join(__dirname, '..', 'js', f), 'utf8'), { filename: f });
+for (const f of ['exercises.js', 'core.js', 'feedback.js', 'engine.js', 'foods.js', 'products.js', 'nutrition.js']) vm.runInThisContext(fs.readFileSync(path.join(__dirname, '..', 'js', f), 'utf8'), { filename: f });
 const WT = globalThis.WT, N = WT.nut;
 let fails = 0, passes = 0;
 const ok = (c, msg) => { if (c) passes++; else { fails++; console.log('  FAIL:', msg); } };
@@ -333,7 +333,7 @@ section('Migration, export and restore');
 const v3 = { version: 3, profile: { name: 'Me', unit: 'kg' }, history: [{ id: 'w1', type: 'push', title: 'Push', startedAt: '2026-10-01T17:00:00Z', exercises: [{ exId: 'db-bench-press', sets: [{ w: '40', r: '10', done: true }] }] }], customExercises: [{ id: 'c1', name: 'Mine', primary: 'chest', secondary: [], equipment: ['bw'], intensities: ['standard'], intensity: 'standard', tags: [] }], overrides: {} };
 mem['wt.data.v1'] = JSON.stringify(v3);
 WT.load();
-ok(WT.db.version === 6, 'migrated to v6');
+ok(WT.db.version === 7, 'migrated to v7');
 ok(JSON.stringify(WT.db.history) === JSON.stringify(v3.history), 'workout history byte-identical after migration');
 ok(WT.db.customExercises.length === 1 && WT.db.profile.unit === 'kg' && WT.db.profile.name === 'Me', 'custom exercises and settings kept');
 ok(Array.isArray(WT.db.nutrition.entries) && WT.db.nutrition.entries.length === 0 && WT.db.profile.proteinTarget === 150, 'empty food log + default 150 g target');
