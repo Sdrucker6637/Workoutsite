@@ -3636,3 +3636,11 @@ button.demo:active {
   gap: 6px;
   align-items: baseline;
 }
+
+.chip.cand.nodata {
+  box-shadow: inset 0 0 0 1px var(--line-2);
+  background: transparent;
+}
+.chip.cand.nodata .cs {
+  color: var(--text-3);
+}

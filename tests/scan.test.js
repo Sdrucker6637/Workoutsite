@@ -145,6 +145,46 @@ const SAL = { hits: [{ code: '0036632037008', product_name: 'Triple Zero Blended
   await ctx.setOffline(false);
   await page.evaluate(() => WT.closeSheet(true));
 
+  console.log('Brand recognized, exact product unknown → choose, then enter the label');
+  await page.goto(URL + '#/food'); await page.waitForTimeout(150);
+  await page.fill('#foodInput', '2 slices of Dave’s Killer Bread white bread'); await page.waitForTimeout(250);
+  ok((await page.locator('#foodPreview .li.amb').count()) === 1 && /doesn’t have its nutrition label yet/.test(await page.textContent('#foodPreview')), 'asks: recognizes White Bread Done Right but has no label');
+  ok(!(await page.locator('#foodPreview [data-id="p:daves-21-whole-grains"]').count()), 'does not offer 21 Whole Grains in its place');
+  await page.click('#foodPreview .chip.cand.nodata');
+  await page.waitForSelector('.sheet [data-act="cpLabel"]');
+  ok(/won’t use another product’s numbers/.test(await page.textContent('.sheet')), 'explains: no borrowed numbers');
+  await page.click('.sheet [data-act="cpLabel"]');
+  await page.waitForSelector('.sheet [data-in="mf"][data-k="line"]');
+  ok((await page.inputValue('.sheet [data-in="mf"][data-k="brand"]')) === "Dave's Killer Bread" && /White Bread Done Right/.test(await page.inputValue('.sheet [data-in="mf"][data-k="line"]')) && (await page.inputValue('.sheet [data-in="mf"][data-k="unit"]')) === 'slice', 'label form prefilled: brand, product line, serving unit');
+  for (const [k, v] of [['p', '3'], ['cal', '100'], ['c', '19'], ['f', '1'], ['g', '38'], ['pkgUnit', 'loaf'], ['pkgServings', '18']]) {
+    await page.fill(`.sheet [data-in="mf"][data-k="${k}"]`, v); await page.dispatchEvent(`.sheet [data-in="mf"][data-k="${k}"]`, 'input');
+  }
+  await page.click('.sheet [data-act="mfSave"]'); await page.waitForTimeout(250);
+  let pv = await page.textContent('#foodPreview');
+  ok(/White Bread Done Right/.test(pv) && /200 cal|≈200 cal/.test(pv) && !(await page.locator('#foodPreview .li.amb').count()), 'the item now uses your label: 2 slices = 200 cal');
+  await page.click('#foodAddBtn'); await page.waitForTimeout(250);
+  let nb = await nut();
+  const wb = nb.foods.find((f) => /White Bread Done Right/.test(f.name));
+  ok(wb && wb.catLine === 'daves-killer-bread:white-bread-done-right' && wb.units.loaf === 18 && wb.status === 'user', 'saved as your product, linked to its line, with its package size');
+  ok(nb.entries.some((e) => /White Bread Done Right/.test(e.name) && Math.round(e.per.cal * e.qty) === 200), 'logged');
+  await page.fill('#foodInput', 'half a loaf of daves killer bread white bread'); await page.waitForTimeout(250);
+  ok(/900 cal|≈900 cal/.test(await page.textContent('#foodPreview')) && !(await page.locator('#foodPreview .li.amb').count()), 'next time: found directly, package size works (½ loaf = 9 slices)');
+  await page.fill('#foodInput', 'daves killer bread good seed'); await page.waitForTimeout(250);
+  ok((await page.locator('#foodPreview .li.amb').count()) === 1, 'a different Dave’s bread still asks (your white bread is not substituted)');
+
+  console.log('…or search online for it');
+  await page.fill('#foodInput', 'Oikos triple zero mixed berry'); await page.waitForTimeout(250);
+  ok(/Mixed Berry/.test(await page.textContent('#foodPreview')) && (await page.locator('#foodPreview .li.amb').count()) === 1, 'unlisted flavor: asks (Vanilla offered only as a labelled estimate)');
+  await page.click('#foodPreview .chip.cand.nodata');
+  await page.click('.sheet [data-act="cpSearch"]');
+  await page.waitForSelector('#srQ'); await page.waitForTimeout(600);
+  ok((await page.inputValue('#srQ')) === 'Oikos Triple Zero Mixed Berry' && /Triple Zero Blended Mixed Berry/.test(await page.textContent('#srList')), 'search prefilled and run online automatically');
+  const jj = await page.evaluate(() => [...document.querySelectorAll('#srList [data-act="srPick"]')].findIndex((b) => /Blended Mixed Berry/.test(b.textContent)));
+  await page.click(`#srList [data-act="srPick"][data-j="${jj}"]`); await page.waitForTimeout(250);
+  pv = await page.textContent('#foodPreview');
+  ok(/Blended Mixed Berry/.test(pv) && /Estimate/.test(pv) && !(await page.locator('#foodPreview .li.amb').count()), 'the found product replaces the question, marked as community data (Estimate)');
+  await page.fill('#foodInput', ''); await page.waitForTimeout(100);
+
   console.log('Camera permission denied');
   const page2 = await ctx.newPage();
   await page2.addInitScript(() => { navigator.mediaDevices.getUserMedia = () => Promise.reject(Object.assign(new Error('denied'), { name: 'NotAllowedError' })); });

@@ -78,8 +78,8 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   ok(['2 scoops', '1 handful', '1 cup', '1 serving', '1 bowl', '1 sandwich'].every((s) => pv.includes(s)), 'serving words understood');
   await type('2 Ball Park hot dogs and 1 Snickerdoodle protein shake');
   const pv2 = await page.textContent('#foodPreview');
-  ok(/Ball Park hot dog/.test(pv2) && /not label data/.test(pv2), 'brand without product data → typical estimate, says so');
-  ok(/Snickerdoodle protein shake/.test(pv2) && (await page.locator('#foodPreview .tag.conf.e').count()) === 2 && (await page.locator('#foodPreview .mt.low').count()) === 2, 'unknown flavor → clearly labelled Estimate and Rough estimate');
+  ok((await page.locator('#foodPreview .li.amb').count()) === 1 && /Ball Park/.test(pv2) && (await page.locator('#foodPreview .chip.cand.nodata').count()) >= 2, 'brand without product data → asks which Ball Park product (search / label), never a silent generic');
+  ok(/Snickerdoodle protein shake/.test(pv2) && (await page.locator('#foodPreview .tag.conf.e').count()) === 1 && (await page.locator('#foodPreview .mt.low').count()) === 1, 'unknown flavor, no brand → clearly labelled Estimate and Rough estimate');
   await type('');
 
   console.log('Unrecognized food must be resolved, never silently logged');
@@ -290,7 +290,7 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   // (the brand-less "Snickerdoodle protein shake" saved earlier in this run would compete with the branded one)
   await page.evaluate(() => WT.db.nutrition.foods.filter((f) => f.name === 'Snickerdoodle protein shake').forEach((f) => WT.nut.deleteFood(f.id)));
   await type('1 Pioneer Pastures Snickerdoodle protein shake');
-  ok(/Snickerdoodle isn’t in your library/.test(await page.textContent('#foodPreview')), 'unknown flavor of a known brand → asks, doesn’t guess');
+  ok(/Snickerdoodle isn’t in your foods yet/.test(await page.textContent('#foodPreview')), 'unknown flavor of a known brand → asks, doesn’t guess');
   await page.tap('#foodPreview [data-act="productAdd"][data-variant="Snickerdoodle"]');
   await page.waitForSelector('.sheet [data-act="paManual"]');
   ok(/Pioneer Pastures/.test(await page.textContent('.sheet #paLocal')), 'search shows the brand’s known product');

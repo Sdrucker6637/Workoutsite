@@ -1,4 +1,4 @@
-/* Food recognition accuracy audit: 161 realistic descriptions in 11 categories.
+/* Food recognition accuracy audit: realistic descriptions in 11 categories (count printed when run).
  *
  * For every case: the right food(s) and brand, the portion, the calories (independent hand calculation from the
  * source values), the confidence label that SHOULD be shown, and that nothing unsupported is made up.
@@ -15,7 +15,7 @@
  */
 const fs = require('fs'), path = require('path'), vm = require('vm');
 globalThis.localStorage = { getItem: () => null, setItem() {}, removeItem() {} };
-for (const f of ['exercises.js', 'core.js', 'engine.js', 'foods.js', 'fooddb.js', 'products.js', 'restaurants.js', 'nutrition.js', 'lookup.js', 'analytics.js'])
+for (const f of ['exercises.js', 'core.js', 'engine.js', 'foods.js', 'fooddb.js', 'products.js', 'restaurants.js', 'brands.js', 'nutrition.js', 'lookup.js', 'analytics.js'])
   vm.runInThisContext(fs.readFileSync(path.join(__dirname, '..', 'js', f), 'utf8'), { filename: f });
 const WT = globalThis.WT, N = WT.nut;
 WT.load();
@@ -27,14 +27,18 @@ const H = 'H', M = 'M', Lw = 'L';
 const CASES = [
   /* ── Branded packaged foods ── */
   ['Branded', 'One Pioneer Pastures snickerdoodle protein shake.', { ask: true, why: 'flavor not in the product data' }],
-  ['Branded', 'Three tablespoons of Oikos Triple Zero.', { items: [['p:oikos-triple-zero', { q: 3, u: 'tbsp', lvl: H, cal: [23, 25] }]] }],
-  ['Branded', 'an Oikos Pro yogurt', { items: [['p:oikos-pro-yogurt', { q: 1, lvl: H, cal: [130, 130] }]] }],
+  ['Branded', 'Three tablespoons of Oikos Triple Zero.', { items: [['p:oikos-triple-zero', { q: 3, u: 'tbsp', lvl: M, cal: [23, 25] }]], why: 'flavor not given: Vanilla values, said so (Close, not Exact)' }],
+  ['Branded', 'Three tablespoons of vanilla Oikos Triple Zero', { items: [['p:oikos-triple-zero', { q: 3, u: 'tbsp', lvl: H, cal: [23, 25] }]] }],
+  ['Branded', 'an Oikos Pro yogurt', { items: [['p:oikos-pro-yogurt', { q: 1, lvl: M, cal: [130, 130] }]], why: 'flavor not given' }],
+  ['Branded', 'a strawberry Oikos Pro yogurt', { items: [['p:oikos-pro-yogurt', { q: 1, lvl: H, cal: [130, 130] }]] }],
+  ['Branded', 'a plain Oikos Pro yogurt', { ask: true, why: 'Plain is not one of the flavors with label data' }],
   ['Branded', '2 Premier Protein shakes', { items: [['p:premier-protein-shake', { q: 2, lvl: H, cal: [320, 320] }]] }],
   ['Branded', 'fairlife core power elite', { items: [['p:fairlife-core-power-elite', { q: 1, lvl: H, cal: [230, 230] }]] }],
   ['Branded', 'a Fairlife protein shake', { ask: true, why: 'three fairlife shakes' }],
   ['Branded', 'Quest chocolate chip cookie dough bar', { items: [['p:quest-bar-cccd', { q: 1, lvl: H, cal: [190, 190] }]] }],
   ['Branded', 'Quest cookies and cream bar', { ask: true, why: 'flavor not in the product data' }],
-  ['Branded', '2 tbsp Jif peanut butter', { items: [['p:jif-creamy', { q: 2, u: 'tbsp', lvl: H, cal: [190, 190] }]] }],
+  ['Branded', '2 tbsp Jif creamy peanut butter', { items: [['p:jif-creamy', { q: 2, u: 'tbsp', lvl: H, cal: [190, 190] }]] }],
+  ['Branded', '2 tbsp Jif peanut butter', { ask: true, why: 'creamy, crunchy, natural, reduced fat…' }],
   ['Branded', 'a serving of Barilla Protein+', { items: [['p:barilla-protein-plus', { q: 1, lvl: M, cal: [350, 350] }]] }],
   ['Branded', '2 Kraft singles', { items: [['p:kraft-singles-american', { q: 2, lvl: H, cal: [100, 100] }]] }],
   ['Branded', 'Kraft cheese', { ask: true, why: 'Kraft makes many cheeses' }],
@@ -43,14 +47,17 @@ const CASES = [
   ['Branded', '4 oz Oscar Mayer honey ham', { items: [['p:oscar-mayer-ham', { q: 4, u: 'oz', lvl: M, cal: [119, 123] }]] }],
   ['Branded', 'Dave’s Killer Bread', { ask: true, why: 'the brand makes many breads' }],
   ['Branded', '2 slices of Dave’s Killer Bread 21 whole grains', { items: [['p:daves-21-whole-grains', { q: 2, lvl: M, cal: [220, 220] }]] }],
-  ['Branded', 'half a jar of Rao’s marinara', { items: [['p:raos-marinara', { q: 0.5, u: 'jar', lvl: M, cal: [275, 275] }]] }],
-  ['Branded', 'Kodiak power cakes', { items: [['p:kodiak-power-cakes', { q: 1, lvl: H, cal: [220, 220] }]] }],
+  ['Branded', 'half a jar of Rao’s marinara', { items: [['p:raos-marinara', { q: 0.5, u: 'jar (24 oz)', lvl: M, cal: [271, 273] }]], why: 'the 24 oz jar is assumed and said so' }],
+  ['Branded', 'half a 32 oz jar of Rao’s marinara', { items: [['p:raos-marinara', { q: 0.5, u: 'jar (32 oz)', lvl: M, cal: [361, 365] }]] }],
+  ['Branded', 'Kodiak power cakes', { items: [['p:kodiak-power-cakes', { q: 1, lvl: M, cal: [220, 220] }]], why: 'flavor not given: Buttermilk values' }],
+  ['Branded', 'Kodiak buttermilk power cakes', { items: [['p:kodiak-power-cakes', { q: 1, lvl: H, cal: [220, 220] }]] }],
   ['Branded', 'a Chobani complete drink', { items: [['p:chobani-complete-drink', { q: 1, lvl: M, cal: [170, 170] }]] }],
   ['Branded', 'a cup of fairlife 2% milk', { items: [['p:fairlife-2-milk', { q: 1, lvl: M, cal: [120, 120] }]] }],
-  ['Branded', 'Large Oikos Triple Zero yogurt', { items: [['p:oikos-triple-zero', { q: 1, lvl: H, cal: [80, 80] }]] }],
+  ['Branded', 'Large Oikos Triple Zero yogurt', { items: [['p:oikos-triple-zero', { q: 1, lvl: M, cal: [80, 80] }]] }],
   ['Branded', 'Premier protein cafe latte shake', { ask: true, why: 'flavor not listed' }],
   ['Branded', 'a Core Power shake', { items: [['p:fairlife-core-power', { q: 1, lvl: H, cal: [170, 170] }]] }],
-  ['Branded', 'Two slices of Oscar Mayer turkey with two slices of Dave’s Killer Bread.', { items: [['p:oscar-mayer-turkey', { q: 2, u: 'slice', lvl: M }]], askAlso: 1, why: 'turkey matched; the bread asks which product' }],
+  ['Branded', 'Two slices of Oscar Mayer turkey with two slices of Dave’s Killer Bread.', { items: [], askAlso: 2, why: 'Oscar Mayer makes several turkeys and Dave’s several breads: both ask' }],
+  ['Branded', 'Two slices of Oscar Mayer oven roasted turkey with two slices of Dave’s Killer Bread 21 whole grains.', { items: [['p:oscar-mayer-turkey', { q: 2, u: 'slice', lvl: M }], ['p:daves-21-whole-grains', { q: 2, lvl: M, cal: [220, 220] }]] }],
 
   /* ── Fast food ── */
   ['Fast food', 'Big Mac and medium fries', { items: [['r:mcdonalds:big-mac', { q: 1, lvl: H, cal: [590, 590] }], ['r:mcdonalds:fries', { u: 'medium', lvl: H, cal: [320, 320] }]] }],
@@ -151,7 +158,7 @@ const CASES = [
   ['Sauces & toppings', 'fries with ketchup', { items: [['fries', { lvl: M }], ['ketchup', { q: 1, u: 'tbsp', lvl: M, cal: [16, 18] }]] }],
   ['Sauces & toppings', 'a burger with cheese and bacon', { items: [['hamburger', { lvl: M }], ['cheese', { lvl: M }], ['bacon', { lvl: M }]] }],
   ['Sauces & toppings', 'toast with jam and butter', { items: [['bread', { lvl: M }], ['jam', { lvl: M }], ['butter', { lvl: M }]] }],
-  ['Sauces & toppings', 'One serving of Barilla Protein+ with parmesan and Rao’s tomato sauce.', { items: [['p:barilla-protein-plus', { lvl: M }], ['parmesan', { lvl: M }], ['p:raos-marinara', { lvl: M }]] }],
+  ['Sauces & toppings', 'One serving of Barilla Protein+ with parmesan and Rao’s tomato sauce.', { items: [['p:barilla-protein-plus', { lvl: M }], ['parmesan', { lvl: M }]], askAlso: 1, why: 'Rao’s makes several tomato sauces (marinara, tomato basil…): asks' }],
   ['Sauces & toppings', 'a bagel with cream cheese', { items: [['bagel', { lvl: M, cal: [280, 280] }], ['cream-cheese', { q: 2, u: 'tbsp', lvl: M, cal: [100, 100] }]] }],
   ['Sauces & toppings', 'oatmeal with honey and blueberries', { items: [['oatmeal', { lvl: M }], ['honey', { lvl: M }], ['blueberries', { lvl: M }]] }],
   ['Sauces & toppings', 'tacos with hot sauce', { items: [['taco', { q: 2, lvl: M }], ['hot-sauce', { lvl: M }]] }],
@@ -170,7 +177,7 @@ const CASES = [
 
   /* ── Ambiguous descriptions ── */
   ['Ambiguous', 'Oikos', { ask: true, why: 'which Oikos product' }],
-  ['Ambiguous', 'Quest bar', { ask: true, why: 'Quest flavors differ' }],
+  ['Ambiguous', 'Quest bar', { ask: true, why: 'Quest flavors have different labels: asks which flavor' }],
   ['Ambiguous', 'chicken', { items: [['chicken', { lvl: M }]], why: 'generic cooked chicken, amount assumed' }],
   ['Ambiguous', 'a sandwich', { items: [['sandwich', { lvl: M }]] }],
   ['Ambiguous', 'a shake', { items: [['protein-shake', { lvl: M }]] }],
@@ -193,8 +200,8 @@ const CASES = [
   /* ── Unsupported information is not fabricated ── */
   ['No fabrication', 'a plate of zorbleberries', { unknown: true }],
   ['No fabrication', 'Chipotle quinoa bowl', { items: [['quinoa', { lvl: Lw }]], note: /Not on our Chipotle menu/ }],
-  ['No fabrication', "Trader Joe's mandarin orange chicken", { items: [['stir-fry', { lvl: Lw }]], note: /not specifically recognized|not label data/ }],
-  ['No fabrication', 'a Ball Park hot dog', { items: [['hot-dog', { lvl: Lw }]], note: /not label data/ }],
+  ['No fabrication', "Trader Joe's mandarin orange chicken", { ask: true, why: 'brand recognized, product not on the device: asks (search, label, or a labelled generic estimate)' }],
+  ['No fabrication', 'a Ball Park hot dog', { ask: true, why: 'Ball Park beef, classic or turkey franks: no labels on the device, asks' }],
   ['No fabrication', 'a Barilla Protein+ serving', { items: [['p:barilla-protein-plus', { lvl: M }]], estMacros: true, why: 'calories not on the checked label: estimated AND flagged' }],
   ['No fabrication', 'a Pioneer Pastures vanilla shake', { items: [['p:pioneer-a2-shake', { lvl: H }]], nullMacros: ['c', 'f'], why: 'carbs and fat not on the label: left blank' }],
 

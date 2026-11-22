@@ -103,6 +103,17 @@ Amounts Forge had to assume are marked "(assumed)". Macros missing from a produc
 
 **It learns from you.** A match you replace is remembered for the same words ("lunch bowl" → Chipotle chicken). An amount you change becomes your usual amount when you don't type one. Products you log are saved to *My foods*, and frequent foods and meals you repeat show up in Quick add. Similar dishes stay distinct: a chicken Caesar wrap, a grilled chicken Caesar salad and a crispy chicken Caesar sandwich each break down differently.
 
+### Branded products: brands, lines, variants, flavors, sizes
+
+`js/brands.js` is a catalog of 55 brands and 204 product lines. It holds no nutrition. It records each line's identifying phrases, variants, flavors and package sizes, and which lines have bundled label data. The matcher uses it so a product is picked only when what you typed identifies it:
+- “Barilla chickpea pasta” is never Protein+.
+- “Oscar Mayer turkey bacon” is never deli turkey.
+- “Fage triple zero” is never Oikos.
+- “a 32 oz jar of Rao’s” is read by net weight.
+- A flavor keeps only the values its source confirms.
+
+When a brand is recognized but the exact product isn’t, Forge asks. It lists your products, products with labels, and the brand’s other lines (*No label saved yet*), with search online, enter from the label, or a labelled generic estimate. Your saved products keep their brand, line, flavor, barcode and package size, and are found by name afterwards. See [`docs/BRANDED_MATCHING_AUDIT.md`](docs/BRANDED_MATCHING_AUDIT.md) for the audit, the rules and the before/after results; `tests/brands.test.js` checks it with 1,251 assertions generated from the catalog.
+
 ### Search, online lookup and barcode scanning
 
 **Search foods** (under the log box) searches, instantly and offline:
@@ -138,7 +149,7 @@ Naming a brand or a restaurant lists its products first: “Oikos” shows Oikos
 
 ### Accuracy audit
 
-`node tests/accuracy.test.js --report` checks 161 realistic descriptions and writes [`docs/FOOD_ACCURACY_REPORT.md`](docs/FOOD_ACCURACY_REPORT.md). The descriptions cover branded products, fast food, restaurant meals, homemade dishes, generic ingredients, portions, sauces, ambiguous inputs, look-alike dishes, typos, and inputs that must not be fabricated. Each case checks the food, brand, portion, calories (calculated by hand) and the confidence label that should be shown. Every item’s calories are also recomputed from the source data. Current result: 0 failures and 0 calculation errors. Of the 161 descriptions, 32 are exact, 99 close, 19 rough, 9 correctly ask which product, and 2 are correctly not recognized. The report also lists the issues the audit found and how they were fixed.
+`node tests/accuracy.test.js --report` checks 168 realistic descriptions and writes [`docs/FOOD_ACCURACY_REPORT.md`](docs/FOOD_ACCURACY_REPORT.md). The descriptions cover branded products, fast food, restaurant meals, homemade dishes, generic ingredients, portions, sauces, ambiguous inputs, look-alike dishes, typos, and inputs that must not be fabricated. Each case checks the food, brand, portion, calories (calculated by hand) and the confidence label that should be shown. Every item’s calories are also recomputed from the source data. Current result: 0 failures and 0 calculation errors (see the report for the breakdown). The report also lists the issues the audit found and how they were fixed.
 
 ### Food database
 
@@ -256,7 +267,8 @@ node tests/overhaul.test.js                         # food DB integrity, brief e
 node tests/diary.test.js                            # diary in the browser: review/edit/replace/add, saved meals, copy, targets, trends, run & weight, progress filters, layout
 node tests/lookup.test.js                           # USDA / Open Food Facts normalizing, caching, failures, barcodes, offline USDA build (mocked network)
 node tests/scan.test.js                             # browser: ZXing decoding, fake camera, permission denied, manual entry, not-found → label, online search (mocked)
-node tests/accuracy.test.js [--report]              # 161-description recognition accuracy audit → docs/FOOD_ACCURACY_REPORT.md
+node tests/accuracy.test.js [--report]              # recognition accuracy audit → docs/FOOD_ACCURACY_REPORT.md
+node tests/brands.test.js                           # brand → line → variant → flavor → size matching, generated from the catalog
 ```
 The browser tests use Playwright. `tests/serve.js` serves the repository to the browser in-process, so no separate server is needed; set `REAL_SERVER=1` to use one on :8765 instead.
 The end-to-end test generates every workout type, swaps exercises, logs a full session, refreshes mid-workout, saves, and checks that the next session shows previous weights and an increase recommendation that is only applied on approval. It also checks the v1 → v2 data upgrade, intensity variety across repeated generations through the UI, the intensity picker, PR detection, the charts, export → wipe → import, persistence after refresh, the theme toggle and offline loading.
@@ -283,11 +295,13 @@ js/data/usda.json     optional offline USDA database (built by tools/build-usda.
 tools/build-usda.js   converts FoodData Central bulk downloads for offline use
 js/analytics.js       period filters, strength/cardio/consistency/nutrition/body summaries, insights
 js/products.js        branded products with sources, serving sizes and status
+js/brands.js          brand catalog: product lines, variants, flavors, package sizes (no nutrition)
 js/nutrition.js       food parser, food-log store, trends, guidance
 js/views-food.js      Food diary, review/edit/replace sheets, targets, trends, My foods
 js/views-progress.js  Progress dashboard, record run / weight / measurement / photo sheets
 docs/IMPLEMENTATION_PLAN.md   audit and plan for the nutrition and progress overhaul
 docs/FOOD_ACCURACY_REPORT.md  generated recognition accuracy report
+docs/BRANDED_MATCHING_AUDIT.md  branded recognition audit, rules and results
 fonts/                Inter (OFL) + license
 sw.js, manifest.webmanifest, icons/   PWA
 ```

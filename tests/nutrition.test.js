@@ -2,7 +2,7 @@
 const fs = require('fs'), path = require('path'), vm = require('vm');
 const mem = {};
 globalThis.localStorage = { getItem: (k) => mem[k] ?? null, setItem: (k, v) => (mem[k] = String(v)), removeItem: (k) => delete mem[k] };
-for (const f of ['exercises.js', 'core.js', 'engine.js', 'foods.js', 'fooddb.js', 'products.js', 'restaurants.js', 'nutrition.js']) vm.runInThisContext(fs.readFileSync(path.join(__dirname, '..', 'js', f), 'utf8'), { filename: f });
+for (const f of ['exercises.js', 'core.js', 'engine.js', 'foods.js', 'fooddb.js', 'products.js', 'restaurants.js', 'brands.js', 'nutrition.js']) vm.runInThisContext(fs.readFileSync(path.join(__dirname, '..', 'js', f), 'utf8'), { filename: f });
 const WT = globalThis.WT, N = WT.nut;
 let fails = 0, passes = 0;
 const ok = (c, msg) => { if (c) passes++; else { fails++; console.log('  FAIL:', msg); } };
@@ -46,7 +46,7 @@ for (const [t, id, qty, unit, [lo, hi]] of cases) {
   console.log(`  ${t.padEnd(32)} → ${it.name} · ${N.fmtAmount(it.qty, it.unit)} · ≈${P(it)} g${it.note ? '  [' + it.note + ']' : ''}`);
 }
 const ballpark = one('2 Ball Park hot dogs');
-ok(/^Ball Park hot dog/.test(ballpark.name) && ballpark.generic && ballpark.conf === 'estimated' && /not label data/.test(ballpark.note), 'brand without product data → generic, labelled as an estimate');
+ok(ballpark.ambiguous && !ballpark.per && ballpark.brand === 'Ball Park' && ballpark.candidates.every((c) => c.nodata) && ballpark.fallback && ballpark.fallback.foodId === 'hot-dog', 'brand without product data → asks (its lines, or a labelled generic estimate) instead of substituting');
 const snick = one('1 Snickerdoodle protein shake');
 ok(/^Snickerdoodle protein shake$/.test(snick.name) && snick.generic && /generic/i.test(snick.note), 'unknown flavor → clearly labelled generic estimate');
 
@@ -144,14 +144,16 @@ prod('3 tablespoons Oikos Triple Zero Greek yogurt', 'oikos-triple-zero', 3, 'tb
 ok(/converted/.test(one('3 tablespoons Oikos Triple Zero Greek yogurt').note), 'tablespoon conversion is flagged as ≈');
 prod('1 Chobani Complete yogurt', 'chobani-complete-cup', 1, 'cup', 15, 'estimated');
 prod('1 serving Barilla Protein+ pasta', 'barilla-protein-plus', 1, 'serving', 17, 'verified');
-prod('1 serving Jif peanut butter', 'jif-creamy', 1, 'serving', 7, 'verified');
-prod('2 tbsp jif', 'jif-creamy', 2, 'tbsp', 7);
+prod('1 serving Jif creamy peanut butter', 'jif-creamy', 1, 'serving', 7, 'verified');
+prod('2 tbsp jif creamy', 'jif-creamy', 2, 'tbsp', 7);
+amb('1 serving Jif peanut butter', ['jif-creamy']); // Jif also makes crunchy, natural, reduced fat… — asks
 prod('premier protein shake', 'premier-protein-shake', 1, 'bottle', 30, 'verified');
 ok(one('premier vanilla shake').name === 'Premier Protein Protein Shake · Vanilla', 'typed flavor shown when the source lists it');
 prod('core power', 'fairlife-core-power', 1, 'bottle', 26);
 prod('2 core power elite shakes', 'fairlife-core-power-elite', 2, 'bottle', 84);
 prod('fairlife nutrition plan', 'fairlife-nutrition-plan', 1, 'bottle', 30);
-prod('a cup of fairlife milk', 'fairlife-2-milk', 1, 'cup', 13, 'estimated');
+prod('a cup of fairlife 2% milk', 'fairlife-2-milk', 1, 'cup', 13, 'estimated');
+amb('a cup of fairlife milk', ['fairlife-2-milk']); // 2%, whole, fat free or chocolate? — asks
 prod('oikos pro', 'oikos-pro-yogurt', 1, 'cup', 20);
 prod('kraft singles', 'kraft-singles-american', 1, 'slice', 4);
 prod('2 quest cookie dough bars', 'quest-bar-cccd', 2, 'bar', 42);
@@ -176,7 +178,7 @@ ok(om.qty === 2 && om.fallback && om.fallback.foodId === 'hot-dog' && P(om.fallb
 const cand = om.candidates[0];
 ok(cand.name && cand.serving && typeof cand.p === 'number' && cand.status, 'candidates show name, serving, protein and status');
 const flav = amb('quest cookies and cream bar', ['quest-bar-cccd']);
-ok(flav.variant === 'Cookies Cream' || flav.variant === 'Cookies And Cream', 'unlisted flavor is named, not assumed: ' + flav.variant);
+ok(flav.variant === 'Cookies & Cream', 'unlisted flavor is named the way the brand names it, not assumed: ' + flav.variant);
 const pp = amb('1 Pioneer Pastures Snickerdoodle protein shake', ['pioneer-a2-shake']);
 ok(pp.variant === 'Snickerdoodle' && pp.brand === 'Pioneer Pastures', 'Snickerdoodle is not in the data — asks (variant noted)');
 ok(one('1 Snickerdoodle protein shake').conf === 'estimated', 'no brand, no saved product → generic estimate');
@@ -228,7 +230,7 @@ N.relog(libW, N.dayKey());
 ok(libW.uses === 3 && libW.lastUsed, 'repeated logging counts uses');
 ok(N.recent().some((e) => e.name === libW.name), 'shows in recent');
 // a confident verified match is auto-saved too, without being a favorite
-const jif = one('2 tbsp jif');
+const jif = one('2 tbsp jif creamy');
 N.addItems([jif]);
 const libJ = N.remember(jif);
 ok(libJ && libJ.productId === 'jif-creamy' && !libJ.fav && libJ.status === 'verified' && libJ.source.url.includes('jif.com'), 'verified product saved with its source, not starred');

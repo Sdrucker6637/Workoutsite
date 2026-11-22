@@ -138,14 +138,21 @@
   }
   /** Which product? — candidates show brand, flavor, serving, protein and how sure we are. */
   function ambiguousHelp(it) {
+    if (it.askWhy) return esc(it.askWhy);
     if (it.variant) return `${esc(it.brand)} ${esc(it.variant)} isn’t in your library yet. Use a listed product’s values as an estimate, or add it from the label.`;
     return it.candidates.length > 1 ? 'More than one product matches — which one?' : 'Is this the product? (No other matching product is saved yet.)';
   }
   function candidateChips(it, act, attrs) {
-    const chips = it.candidates.map((c) => `<button class="chip cand" data-act="${act}" ${attrs} data-id="${esc(c.id)}" ${it.variant ? `data-variant="${esc(it.variant)}"` : ''}>
-        <span class="cn">${esc(c.name)}${it.variant ? ` <span class="t3">→ ${esc(it.variant)}</span>` : ''}</span><span class="cs tnum">${esc(c.serving)} · ${N.rp(c.p)} g protein · ${N.statusLabel(it.variant ? 'estimated' : c.status)}</span></button>`);
+    const chips = it.candidates.map((c) => {
+      // catalog items: only the candidates that lack your flavor get the "use these values as an estimate" arrow
+      const v = it.catalog ? c.flavorMiss || '' : it.variant || '';
+      if (c.nodata)
+        return `<button class="chip cand nodata" data-act="${act}" ${attrs} data-id="${esc(c.id)}"><span class="cn">${esc(c.name)}</span><span class="cs">No label saved yet · search online or enter it from the label</span></button>`;
+      return `<button class="chip cand" data-act="${act}" ${attrs} data-id="${esc(c.id)}" ${v ? `data-variant="${esc(v)}"` : ''}>
+        <span class="cn">${esc(c.name)}${v ? ` <span class="t3">→ ${esc(v)} (estimate from this flavor)</span>` : ''}</span><span class="cs tnum">${esc(c.serving)} · ${c.p == null ? '—' : N.rp(c.p)} g protein · ${N.statusLabel(v ? 'estimated' : c.status)}${c.mine ? ' · yours' : ''}</span></button>`;
+    });
     if (it.fallback) chips.push(`<button class="chip cand" data-act="${act}" ${attrs} data-id="__generic"><span class="cn">Generic estimate · ${esc(it.fallback.name)}</span><span class="cs tnum">${esc(N.fmtAmount(it.fallback.qty, it.fallback.unit))} · ≈${N.rp(N.itemTotals(it.fallback).p)} g protein · Estimate</span></button>`);
-    chips.push(`<button class="chip sm" data-act="productAdd" ${attrs} data-brand="${esc(it.brand || '')}" data-variant="${esc(it.variant || '')}">${I('plus', 13)}${it.variant ? `Add ${esc(it.variant)} from the label` : 'A different product'}</button>`);
+    chips.push(`<button class="chip sm" data-act="productAdd" ${attrs} data-brand="${esc(it.brand || '')}" data-variant="${esc(it.variant || '')}">${I('plus', 13)}${it.variant ? `Add ${esc(it.variant)} from the label` : it.catalog ? `Another ${esc(it.brand)} product` : 'A different product'}</button>`);
     return `<div class="chips mt8 cands">${chips.join('')}</div>`;
   }
   function paintPreview() {
@@ -384,6 +391,7 @@
     if (t2 && window.matchMedia('(hover: hover)').matches) t2.focus();
   };
   A.foodPick = (d) => {
+    if (String(d.id).startsWith('c:')) return A.catPick(d);
     ui().fix[d.t] = d.id === '__generic' ? { generic: true } : { id: d.id, variant: d.variant || '' };
     paintPreview();
   };
@@ -421,6 +429,59 @@
       WT.rerender();
       WT.toast('Entry deleted');
     }, true);
+  };
+
+  /* ───────── A product the catalog knows but whose label isn't on this device ───────── */
+  A.catPick = (d) => {
+    const rv = d.i != null && d.i !== '' && WT.ui.review ? WT.ui.review.items[+d.i] : null;
+    const item = rv || currentItems().find((x) => (x.key || x.text) === d.t);
+    const cand = item && item.candidates ? item.candidates.find((c) => c.id === d.id) : null;
+    if (!cand) return;
+    const key = item.key || item.text;
+    const q = [cand.brand, cand.line, cand.variant, cand.flavor].filter(Boolean).join(' ');
+    const setFix = (fix) => {
+      ui().fix[key] = fix;
+      if (rv) {
+        WT.closeSheet(true);
+        openReview(currentItems());
+      } else {
+        WT.closeSheet(true);
+        paintPreview();
+      }
+    };
+    WT.openSheet(() => ({
+      eyebrow: esc(cand.brand),
+      title: esc(cand.name),
+      body: `<p class="t2">Forge recognizes this product but doesn’t have its nutrition label on this device. It won’t use another product’s numbers in its place.</p>
+        <div class="fstack mt16" style="gap:8px">
+          <button class="btn btn-primary" data-act="cpLabel">${I('edit', 15)}Enter it from the label</button>
+          <button class="btn btn-secondary" data-act="cpSearch">${I('search', 15)}Search online for “${esc(q)}”</button>
+          ${item.fallback ? `<button class="btn btn-plain" data-act="cpGeneric">Use a generic estimate (${esc(item.fallback.name)})</button>` : ''}
+        </div>
+        <p class="footnote t3 mt12">Whatever you choose is remembered: typing “${esc(item.phrase || item.text)}” again finds it directly.</p>`,
+    }));
+    A.cpLabel = () => {
+      WT.closeSheet();
+      productForm({
+        prefill: { brand: cand.brand, line: [cand.line, cand.variant].filter(Boolean).join(' · ').replace(' · ', ' ') || '', flavor: cand.flavor || '', unit: cand.unit || 'serving', cat: cand.cat || '', catLine: cand.id.replace(/\|.*$/, '').replace(/^c:/, ''), status: 'user', aliases: item.phrase ? [item.phrase] : [] },
+        fav: false,
+        onSaved: (saved) => {
+          WT.toast(`Saved “${saved.name}” to My foods`, 'good');
+          if (item.text) N.learn(item.text, 'my:' + saved.id);
+          setFix({ id: 'my:' + saved.id });
+        },
+      });
+    };
+    A.cpSearch = () => {
+      WT.closeSheet();
+      openSearch({
+        eyebrow: `For “${esc(item.text)}”`,
+        q,
+        autoOnline: true,
+        onPick: (r) => setFix({ id: r.id }),
+      });
+    };
+    A.cpGeneric = () => setFix({ generic: true });
   };
 
   /* ───────── Meal options: save, copy, clear ───────── */
@@ -589,6 +650,7 @@
     WT.refreshSheet();
   };
   A.rvPick = (d) => {
+    if (String(d.id).startsWith('c:')) return A.catPick(d);
     const rv = rvState().items;
     const cur = rv[+d.i];
     if (!cur) return;
@@ -1045,7 +1107,13 @@
     const form = {
       brand: src.brand || '', line: lineOf(src), flavor: src.flavor || '', unit: src.unit || 'serving', serving: src.serving || '', g: src.g || '',
       p: v(per.p), cal: v(per.cal), c: v(per.c), f: v(per.f), aliases: (src.aliases || []).join(', '), qty: src.qty || 1, fav: f ? !!f.fav : !!opts.fav, code: src.code || '',
+      // package: "a jar is 5.5 servings" — so "half a jar" works for your own products too
+      pkgUnit: src.pkgUnit || '', pkgServings: src.pkgServings || '',
     };
+    if (!form.pkgUnit && src.units) {
+      const pk = Object.keys(src.units).find((k) => /^(jar|tub|box|bag|package|bottle|container|can|carton|pouch|loaf)$/.test(k));
+      if (pk) Object.assign(form, { pkgUnit: pk, pkgServings: WT.round(src.units[pk], 2) });
+    }
     const snap = () => JSON.stringify([form.p, form.cal, form.c, form.f, form.unit, form.serving].map((x) => String(x).trim()));
     const orig = snap();
     const status = f ? f.status : opts.prefill && opts.prefill.status ? opts.prefill.status : 'user';
@@ -1063,6 +1131,7 @@
         ${P().showMacros !== false ? `<div class="fields" style="grid-template-columns:repeat(3,minmax(0,1fr))">${fld('cal', 'Calories', 'number')}${fld('c', 'Carbs (g)', 'number')}${fld('f', 'Fat (g)', 'number')}</div><p class="footnote t3">Calories, carbs and fat are optional — leave them blank if you like.</p>` : ''}
         ${fld('aliases', 'Shorthand names (optional, comma-separated)', 'text', 'placeholder="e.g. snickerdoodle shake, my shake"')}
         ${fld('code', 'Barcode (optional)', 'text', 'inputmode="numeric" placeholder="Digits under the barcode"')}
+        <div class="fields">${fld('pkgUnit', 'Package (optional)', 'text', 'placeholder="jar, tub, box, bag…"')}${fld('pkgServings', 'Servings per package', 'number', 'step="0.5"')}</div>
         <div class="fields">${fld('qty', 'Usual amount (servings)', 'number', 'step="0.5"')}<div></div></div>
         ${H.li({ title: 'Favorite', sub: 'Show as a one-tap button', trail: H.toggle(form.fav, 'mfFav') })}
       </div>`,
@@ -1094,7 +1163,12 @@
         units: (f && f.units) || pre.units, approx: (f && f.approx) || pre.approx, key: (f && f.key) || pre.key,
         checked: newStatus === 'verified' ? (f && f.checked) || pre.checked : today(),
         code: String(form.code || '').replace(/\D/g, '') || undefined,
+        catLine: (f && f.catLine) || pre.catLine || undefined,
       };
+      // package size → a serving multiplier ("1 jar" = 5.5 servings)
+      const pkgU = String(form.pkgUnit || '').trim().toLowerCase(), pkgN = num(form.pkgServings);
+      if (pkgU && !(pkgN > 0)) return WT.toast('Enter how many servings the package holds', 'error');
+      if (pkgU) data.units = Object.assign({}, data.units || {}, { [pkgU]: pkgN });
       if (data.code && WT.lookup && !WT.lookup.validCode(data.code)) return WT.toast('That barcode’s check digit doesn’t add up — check the digits', 'error');
       if (f) f.aliases = []; // aliases come from the form as edited
       if (data.productId && !f && WT.db.nutrition.foods.some((x) => x.productId === data.productId)) delete data.productId;
