@@ -174,11 +174,17 @@
     proteinTarget: 150,
     showMacros: true,
     homeProtein: true,
+    // v6: full nutrition targets (null = not set; carbs and fat then follow from calories) and body tracking
+    calorieTarget: null,
+    carbTarget: null,
+    fatTarget: null,
+    bodyUnit: 'lb',
+    lengthUnit: 'in',
   });
 
   /* ───────── Store ───────── */
   const KEY = 'wt.data.v1';
-  const DATA_VERSION = 5;
+  const DATA_VERSION = 6;
   const fresh = () => ({
     version: DATA_VERSION,
     profile: WT.defaultProfile(),
@@ -187,7 +193,8 @@
     history: [],
     active: null,
     draft: null,
-    nutrition: { entries: [], foods: [] },
+    nutrition: { entries: [], foods: [], meals: [], learned: {}, portions: {} },
+    body: { weights: [], measures: [], photos: [] },
     createdAt: new Date().toISOString(),
   });
 
@@ -219,6 +226,8 @@
     // status / source, log entries gain a confidence level. Purely additive; workout data is untouched.
     out.nutrition = normalizeNutrition(out.nutrition);
     if (!(+out.profile.proteinTarget > 0)) out.profile.proteinTarget = 150;
+    // v5 → v6: meals, saved meals, learned matches and portions (nutrition) and body tracking. Additive only.
+    out.body = normalizeBody(out.body);
     // v2 → v3: multi-stage sets (drop / build-up). Existing sets need no change — a set without
     // `stages` is a plain set. Only sanitise staged sets so later code can rely on their shape.
     if ((out.version || 1) < DATA_VERSION) out.version = DATA_VERSION;
@@ -232,8 +241,20 @@
     n = n && typeof n === 'object' ? n : {};
     n.entries = Array.isArray(n.entries) ? n.entries : [];
     n.foods = Array.isArray(n.foods) ? n.foods : [];
+    n.meals = Array.isArray(n.meals) ? n.meals : [];
+    n.learned = n.learned || {};
+    n.portions = n.portions || {};
     return n;
   }
+  function normalizeBody(b) {
+    b = b && typeof b === 'object' ? b : {};
+    const valid = (x) => x && typeof x === 'object' && /^\d{4}-\d{2}-\d{2}$/.test(x.date || '');
+    b.weights = (Array.isArray(b.weights) ? b.weights : []).filter((x) => valid(x) && +x.v > 0).map((x) => Object.assign(x, { id: x.id || WT.uid(), v: +x.v }));
+    b.measures = (Array.isArray(b.measures) ? b.measures : []).filter((x) => valid(x) && x.type && +x.v > 0).map((x) => Object.assign(x, { id: x.id || WT.uid(), v: +x.v }));
+    b.photos = (Array.isArray(b.photos) ? b.photos : []).filter((x) => valid(x) && x.id);
+    return b;
+  }
+  WT.normalizeBody = normalizeBody;
   const normalizeStagedSet = (e) => (set) => {
     if (!set || set.stages == null) return;
     if (!Array.isArray(set.stages)) return delete set.stages;
@@ -324,6 +345,18 @@
       const fids = new Set(nut.foods.map((f) => f.id));
       const fnames = new Set(nut.foods.map((f) => String(f.name).toLowerCase()));
       nIn.foods.forEach((f) => !fids.has(f.id) && !fnames.has(String(f.name).toLowerCase()) && nut.foods.push(f));
+      const mids = new Set(nut.meals.map((m) => m.id));
+      const mnames = new Set(nut.meals.map((m) => m.name.toLowerCase()));
+      nIn.meals.forEach((m) => !mids.has(m.id) && !mnames.has(m.name.toLowerCase()) && nut.meals.push(m));
+      nut.learned = Object.assign({}, nIn.learned, nut.learned);
+      nut.portions = Object.assign({}, nIn.portions, nut.portions);
+      // Body: weigh-ins, measurements and photo records not here yet (by id)
+      const bIn = normalizeBody(JSON.parse(JSON.stringify(data.body || {})));
+      const body = (WT.db.body = normalizeBody(WT.db.body));
+      ['weights', 'measures', 'photos'].forEach((k) => {
+        const have = new Set(body[k].map((x) => x.id));
+        bIn[k].forEach((x) => !have.has(x.id) && body[k].push(x));
+      });
     } else {
       WT.db = migrate(data);
     }

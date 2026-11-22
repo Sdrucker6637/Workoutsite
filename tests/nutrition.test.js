@@ -2,7 +2,7 @@
 const fs = require('fs'), path = require('path'), vm = require('vm');
 const mem = {};
 globalThis.localStorage = { getItem: (k) => mem[k] ?? null, setItem: (k, v) => (mem[k] = String(v)), removeItem: (k) => delete mem[k] };
-for (const f of ['exercises.js', 'core.js', 'engine.js', 'foods.js', 'products.js', 'nutrition.js']) vm.runInThisContext(fs.readFileSync(path.join(__dirname, '..', 'js', f), 'utf8'), { filename: f });
+for (const f of ['exercises.js', 'core.js', 'engine.js', 'foods.js', 'fooddb.js', 'products.js', 'restaurants.js', 'nutrition.js']) vm.runInThisContext(fs.readFileSync(path.join(__dirname, '..', 'js', f), 'utf8'), { filename: f });
 const WT = globalThis.WT, N = WT.nut;
 let fails = 0, passes = 0;
 const ok = (c, msg) => { if (c) passes++; else { fails++; console.log('  FAIL:', msg); } };
@@ -117,7 +117,8 @@ WT.PRODUCTS.forEach((x) => {
   ['cal', 'c', 'f'].forEach((k) => ok(x[k] === null || (typeof x[k] === 'number' && x[k] >= 0), `${x.id}.${k} number or null (unknown)`));
   ok(['verified', 'estimated'].includes(x.status), `${x.id}: status`);
   ok(x.src && x.src.name && /^https:\/\//.test(x.src.url), `${x.id}: source with URL`);
-  ok(/^\d{4}-\d{2}-\d{2}$/.test(x.checked), `${x.id}: last-checked date`);
+  // a product checked against its source carries the date; one added without a check says so (null), never a fake date
+  ok(x.checked === null ? x.status === 'estimated' : /^\d{4}-\d{2}-\d{2}$/.test(x.checked), `${x.id}: last-checked date (or null for unchecked estimates)`);
   if (x.status === 'verified') ok(x.src.kind === 'manufacturer', `${x.id}: verified only from a manufacturer source`);
 });
 console.log('  products:', WT.PRODUCTS.length, '· verified:', WT.PRODUCTS.filter((x) => x.status === 'verified').length);
@@ -270,9 +271,9 @@ const today = N.dayKey();
 const yesterday = N.addDays(today, -1);
 let added = N.addItems(N.parse('2 chicken breasts, a protein shake'), today);
 ok(added.length === 2 && WT.db.nutrition.entries.length === 2, 'logged 2 entries');
-ok(N.rp(N.dayTotals(today).p) === 131, 'daily total = 106 + 25 (' + N.rp(N.dayTotals(today).p) + ')');
+ok(N.rp(N.dayTotals(today).p) === 130, 'daily total = 105 (USDA cooked breast) + 25 (' + N.rp(N.dayTotals(today).p) + ')');
 N.addItems(N.parse('3 eggs'), yesterday);
-ok(N.entriesFor(yesterday).length === 1 && N.rp(N.dayTotals(yesterday).p) === 18, 'past day logged separately');
+ok(N.entriesFor(yesterday).length === 1 && N.rp(N.dayTotals(yesterday).p) === 19, 'past day logged separately (3 large eggs ≈ 19 g)');
 ok(N.dayTotals(N.addDays(today, -2)).n === 0, 'empty day has n = 0');
 // edit protein (sets per-unit) and quantity (scales)
 const e = added[0];
@@ -333,7 +334,7 @@ section('Migration, export and restore');
 const v3 = { version: 3, profile: { name: 'Me', unit: 'kg' }, history: [{ id: 'w1', type: 'push', title: 'Push', startedAt: '2026-10-01T17:00:00Z', exercises: [{ exId: 'db-bench-press', sets: [{ w: '40', r: '10', done: true }] }] }], customExercises: [{ id: 'c1', name: 'Mine', primary: 'chest', secondary: [], equipment: ['bw'], intensities: ['standard'], intensity: 'standard', tags: [] }], overrides: {} };
 mem['wt.data.v1'] = JSON.stringify(v3);
 WT.load();
-ok(WT.db.version === 5, 'migrated to v5');
+ok(WT.db.version === 6, 'migrated to v6');
 ok(JSON.stringify(WT.db.history) === JSON.stringify(v3.history), 'workout history byte-identical after migration');
 ok(WT.db.customExercises.length === 1 && WT.db.profile.unit === 'kg' && WT.db.profile.name === 'Me', 'custom exercises and settings kept');
 ok(Array.isArray(WT.db.nutrition.entries) && WT.db.nutrition.entries.length === 0 && WT.db.profile.proteinTarget === 150, 'empty food log + default 150 g target');

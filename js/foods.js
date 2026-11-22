@@ -152,6 +152,6 @@
     starkist: 'StarKist', 'bumble bee': 'Bumble Bee', 'chicken of the sea': 'Chicken of the Sea', tyson: 'Tyson', perdue: 'Perdue', 'boars head': "Boar's Head", "boar's head": "Boar's Head",
     kirkland: 'Kirkland', 'trader joes': "Trader Joe's", "trader joe's": "Trader Joe's", subway: 'Subway', chipotle: 'Chipotle', mcdonalds: "McDonald's", "mcdonald's": "McDonald's",
     'chick fil a': 'Chick-fil-A', 'starbucks': 'Starbucks', 'jack links': "Jack Link's", "jack link's": "Jack Link's", chomps: 'Chomps', 'premier': 'Premier', 'core power': 'Core Power',
-    'pioneer pastures': 'Pioneer Pastures', oikos: 'Oikos', jif: 'Jif', kraft: 'Kraft', kodiak: 'Kodiak', quest: 'Quest', 'oscar meyer': 'Oscar Mayer', skippy: 'Skippy', 'peter pan': 'Peter Pan', sargento: 'Sargento', 'tillamook': 'Tillamook',
+    'pioneer pastures': 'Pioneer Pastures', oikos: 'Oikos', jif: 'Jif', kraft: 'Kraft', kodiak: 'Kodiak', quest: 'Quest', 'oscar meyer': 'Oscar Mayer', skippy: 'Skippy', 'peter pan': 'Peter Pan', sargento: 'Sargento', 'tillamook': 'Tillamook', raos: "Rao's", "rao's": "Rao's", 'daves killer bread': "Dave's Killer Bread", 'natures own': "Nature's Own", prego: 'Prego', ragu: 'Ragu', 'ben and jerrys': "Ben & Jerry's", 'kerrygold': 'Kerrygold', 'oscar mayer deli': 'Oscar Mayer',
   };
 })();

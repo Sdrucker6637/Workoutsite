@@ -76,7 +76,7 @@
     const Y = (y) => pad.t + (1 - (y - yMin) / (yMax - yMin)) * (H - pad.t - pad.b);
     ticks.forEach((t) => {
       node(c.svg, 'line', { x1: pad.l, x2: c.w - pad.r, y1: Y(t), y2: Y(t), class: 'grid-line' });
-      node(c.svg, 'text', { x: pad.l - 8, y: Y(t) + 4, 'text-anchor': 'end', class: 'axis-text' }, fmtTick(t));
+      node(c.svg, 'text', { x: pad.l - 8, y: Y(t) + 4, 'text-anchor': 'end', class: 'axis-text' }, (opts.yFmt || fmtTick)(t));
     });
     // X labels: first, middle, last
     const xl = pts.length > 2 ? [pts[0], pts[Math.floor(pts.length / 2)], pts[pts.length - 1]] : pts;

@@ -70,7 +70,7 @@
       unit: 'cup', serv: '1 cup (8 fl oz)', g: 240, p: 13, cal: null, c: null, f: null, status: 'estimated', key: ['milk'],
       units: { glass: 1, serving: 1, splash: 0.1, tbsp: 0.0625 }, approx: ['splash'],
       src: mfr('fairlife.com', 'https://fairlife.com/news/how-much-protein-is-in-milk/'),
-      note: 'fairlife says “up to 13 g per serving” for its ultra-filtered milk; the exact 2% label wasn’t available.' }),
+      note: 'fairlife says “up to 13 g per serving” for its ultra-filtered milk; the exact 2% label wasn’t available.', est: { cal: 120, c: 6, f: 4.5 } }),
 
     /* ── Bars ── */
     P({ id: 'quest-bar-cccd', brand: 'Quest', line: 'Protein Bar', flavor: 'Chocolate Chip Cookie Dough', cat: 'bar',
@@ -87,7 +87,8 @@
     P({ id: 'barilla-protein-plus', brand: 'Barilla', line: 'Protein+ Pasta', flavor: null, cat: 'pasta',
       unit: 'serving', serv: '3.5 oz dry (≈100 g)', g: 100, p: 17, cal: null, c: null, f: null, status: 'verified',
       src: mfr('barilla.com', 'https://www.barilla.com/en-us/products/pasta/protein-plus/proteinplus-spaghetti'),
-      note: 'US label: 17 g protein per 3.5 oz. Calories and other macros not shown for the US product.' }),
+      note: 'US label: 17 g protein per 3.5 oz. Calories, carbs and fat weren’t shown, so they’re estimated from typical dry pasta.',
+      est: { cal: 350, c: 65, f: 2.5 }, units: { box: 4.1, package: 4.1, cup: 0.9 }, approx: ['cup'] }),
     P({ id: 'kraft-singles-american', brand: 'Kraft', line: 'Singles American Slices', flavor: null, cat: 'cheese',
       unit: 'slice', serv: '1 slice (21 g)', g: 21, p: 4, cal: 50, c: null, f: null, status: 'verified', key: ['single', 'american', 'slice'],
       units: { serving: 1, single: 1 },
@@ -105,13 +106,39 @@
       unit: 'serving', serv: '1 serving of dry mix (as packaged)', p: 15, cal: 220, c: 37, f: 2.5, status: 'verified', a: ['power cakes', 'kodiak cakes'],
       src: mfr('kodiakcakes.com', 'https://kodiakcakes.com/products/buttermilk-power-cakes-flapjack-waffle-mix'),
       note: 'Made with water. Kodiak says up to 18 g with milk, 21 g with milk and eggs.' }),
+
+    /* ── Added with the nutrition overhaul. Not re-checked online (no network when added), so marked estimated
+       until you confirm them against your package — confirming or correcting saves them as yours. ── */
+    P({ id: 'raos-marinara', brand: "Rao's", line: 'Homemade Marinara Sauce', flavor: null, cat: 'sauce', checked: null,
+      unit: 'serving', serv: '½ cup (125 g)', g: 125, p: 2, cal: 100, c: 7, f: 7, status: 'estimated', key: ['marinara', 'sauce'], a: ['raos marinara', 'raos sauce'],
+      units: { jar: 5.5, cup: 2, tbsp: 0.125, ladle: 1 }, approx: ['cup', 'tbsp', 'ladle'],
+      src: retail('Typical label for the 24 oz jar', 'https://www.raos.com/products/marinara-sauce'),
+      note: 'Typical label values for the 24 oz jar (about 5½ servings). Check your jar; the 32 oz jar has more servings.' }),
+    P({ id: 'raos-arrabbiata', brand: "Rao's", line: 'Arrabbiata Sauce', flavor: null, cat: 'sauce', checked: null,
+      unit: 'serving', serv: '½ cup (125 g)', g: 125, p: 2, cal: 90, c: 7, f: 6, status: 'estimated', key: ['arrabbiata'],
+      units: { jar: 5.5, cup: 2, tbsp: 0.125 }, approx: ['cup', 'tbsp'],
+      src: retail('Typical label for the 24 oz jar', 'https://www.raos.com/'), note: 'Typical label values. Check your jar.' }),
+    P({ id: 'oscar-mayer-turkey', brand: 'Oscar Mayer', line: 'Deli Fresh Oven Roasted Turkey Breast', flavor: null, cat: 'deli', checked: null,
+      unit: 'serving', serv: '2 oz (56 g)', g: 56, p: 9, cal: 50, c: 2, f: 1, status: 'estimated', key: ['turkey'], a: ['oscar mayer turkey', 'oscar mayer deli turkey'],
+      units: { slice: 0.17, package: 4, pack: 4, sandwich: 1 }, approx: ['slice', 'sandwich'],
+      src: retail('Typical label for the 9 oz package', 'https://www.oscarmayer.com/'), note: 'Slice weights vary by package; 6 thin slices are about one serving.' }),
+    P({ id: 'oscar-mayer-ham', brand: 'Oscar Mayer', line: 'Deli Fresh Honey Ham', flavor: null, cat: 'deli', checked: null,
+      unit: 'serving', serv: '2 oz (56 g)', g: 56, p: 9, cal: 60, c: 3, f: 1.5, status: 'estimated', key: ['ham'], a: ['oscar mayer ham', 'oscar mayer honey ham'],
+      units: { slice: 0.17, package: 4, pack: 4, sandwich: 1 }, approx: ['slice', 'sandwich'],
+      src: retail('Typical label for the 9 oz package', 'https://www.oscarmayer.com/'), note: 'Slice weights vary by package.' }),
+    P({ id: 'oscar-mayer-bologna', brand: 'Oscar Mayer', line: 'Bologna', flavor: null, cat: 'deli', checked: null,
+      unit: 'slice', serv: '1 slice (28 g)', g: 28, p: 3, cal: 90, c: 1, f: 8, status: 'estimated', key: ['bologna', 'baloney'],
+      units: { serving: 1, package: 16 }, src: retail('Typical label for the 16 oz package', 'https://www.oscarmayer.com/') }),
+    P({ id: 'daves-21-whole-grains', brand: "Dave's Killer Bread", line: '21 Whole Grains and Seeds', flavor: null, cat: 'bread', checked: null,
+      unit: 'slice', serv: '1 slice (45 g)', g: 45, p: 5, cal: 110, c: 22, f: 1.5, status: 'estimated', key: ['21', 'whole grain'], a: ['daves killer bread', 'dave killer bread'],
+      units: { serving: 1, piece: 1, toast: 1 }, src: retail('Typical label', 'https://www.daveskillerbread.com/'), note: 'Thin-sliced versions are about 70 calories a slice.' }),
   ];
 
   /** Words that name a product category; used to keep "Fairlife shake" from matching Fairlife milk. */
   WT.PRODUCT_CATS = {
     shake: 'shake', drink: 'shake', smoothie: 'shake', bar: 'bar', yogurt: 'yogurt', yoghurt: 'yogurt', skyr: 'yogurt',
     milk: 'milk', cheese: 'cheese', single: 'cheese', pasta: 'pasta', spaghetti: 'pasta', penne: 'pasta', noodle: 'pasta', rotini: 'pasta', farfalle: 'pasta',
-    frank: 'hotdog', wiener: 'hotdog', weiner: 'hotdog', hotdog: 'hotdog', dog: 'hotdog', butter: 'spread', pancake: 'pancake', waffle: 'pancake', flapjack: 'pancake',
+    frank: 'hotdog', wiener: 'hotdog', sauce: 'sauce', marinara: 'sauce', deli: 'deli', bread: 'bread', toast: 'bread', weiner: 'hotdog', hotdog: 'hotdog', dog: 'hotdog', butter: 'spread', pancake: 'pancake', waffle: 'pancake', flapjack: 'pancake',
   };
   /** Flavor words: naming one a product doesn't list marks the match as uncertain instead of assuming. */
   WT.FLAVOR_WORDS = ['vanilla', 'chocolate', 'strawberry', 'strawberries', 'banana', 'snickerdoodle', 'cinnamon', 'caramel', 'mocha', 'coffee', 'cookie', 'cookies', 'cream', 'peanut', 'blueberry', 'raspberry', 'cherry', 'peach', 'mango', 'lemon', 'lime', 'coconut', 'pumpkin', 'birthday', 'cake', 'batter', 'mint', 'berry', 'mixed', 'honey', 'maple', 'salted', 'toffee', 'brownie', 'fudge', 'dough', 'smores', 'pecan', 'almond', 'pistachio', 'chai', 'eggnog', 'gingerbread', 'churro'];

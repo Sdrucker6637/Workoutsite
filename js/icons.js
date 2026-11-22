@@ -63,6 +63,10 @@
     core: '<rect x="7" y="3" width="10" height="18" rx="3.5"/><path d="M7 9h10M7 15h10M12 3v18"/>',
     cardio: '<path d="M19.5 13.5c1.5-1.5 2.5-3 2.5-5A5 5 0 0 0 12 6a5 5 0 0 0-10 2.5c0 2 1 3.5 2.5 5L12 21z"/><path d="M3 12h4l2-3 3 6 2-3h7"/>',
     custom: '<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/>',
+    scale: '<rect x="3" y="3" width="18" height="18" rx="4"/><path d="M8.5 9.5a5 5 0 0 1 7 0L13 12"/>',
+    run: '<circle cx="14.5" cy="4.5" r="1.8"/><path d="M6 21l3.5-5.5L13 17v4M8 11.5l2.5-3.5h4l2.5 3.5 3 1M10.5 8 9 13l4 2.5"/>',
+    camera: '<path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.5"/>',
+    bulb: '<path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2V16h5v-.1c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z"/>',
     grip: '<circle cx="9" cy="6" r="1" fill="currentColor"/><circle cx="15" cy="6" r="1" fill="currentColor"/><circle cx="9" cy="12" r="1" fill="currentColor"/><circle cx="15" cy="12" r="1" fill="currentColor"/><circle cx="9" cy="18" r="1" fill="currentColor"/><circle cx="15" cy="18" r="1" fill="currentColor"/>',
   };
   WT.icon = (name, size, cls) =>

@@ -406,87 +406,10 @@
     }, true);
   };
 
-  /* ═════════════════════ PROGRESS ═════════════════════ */
-  V.progress = function () {
-    const st = WT.stats();
-    const u = WT.db.profile.unit;
-    if (!st.count) return `<div class="page"><div class="head"><h1 class="large-title">Progress</h1><p class="sub">Charts appear after your first workout. Everything here comes from sets you’ve logged.</p></div><a class="btn btn-primary btn-lg" href="#/generate">${I('sparkles', 18)}Generate workout</a></div>`;
-    const tab = WT.ui.prog.tab || 'strength';
-    const tracked = WT.trackedExercises().filter((t) => WT.trackType(t.ex) !== 'cardio');
-    if (!WT.ui.prog.ex || !tracked.find((t) => t.ex.id === WT.ui.prog.ex)) WT.ui.prog.ex = tracked[0] ? tracked[0].ex.id : null;
-    const ex = WT.ui.prog.ex && WT.ex(WT.ui.prog.ex);
-    const hist = ex ? WT.exerciseHistory(ex.id) : [];
-    const pr = ex ? WT.personalRecords(ex.id) : null;
-    const loaded = hist.some((h) => h.metrics.topWeight > 0);
-
-    let top;
-    if (tab === 'strength') {
-      let delta = '';
-      if (hist.length > 1 && loaded) {
-        const ch = Math.round(hist[hist.length - 1].metrics.e1rm - hist[0].metrics.e1rm);
-        delta = `<span class="${ch > 0 ? 'accent' : 't3'} strong">${ch > 0 ? '+' : ''}${ch} ${u}</span> <span class="t3">since ${WT.fmtDate(hist[0].date, { month: 'short', day: 'numeric' })}</span>`;
-      }
-      top = ex
-        ? `<div class="row between wrap" style="gap:10px"><select class="pill-select" data-in="progEx" aria-label="Exercise">${tracked.map((t) => `<option value="${t.ex.id}" ${t.ex.id === ex.id ? 'selected' : ''}>${esc(t.ex.name)}</option>`).join('')}</select><span class="footnote tnum">${delta}</span></div>
-           <div class="footnote t3 mt16">${loaded ? 'Estimated 1-rep max' : 'Best reps'}</div>
-           <div id="progChart" class="mt8"></div>
-           <div class="summary mt24">
-             ${pr.heaviest ? `<div class="metric"><div class="v">${WT.fmtNum(pr.heaviest.w)}<small>× ${pr.heaviest.r}</small></div><div class="k">Heaviest set</div></div>` : `<div class="metric"><div class="v">${pr.reps ? pr.reps.r : '—'}</div><div class="k">Most reps</div></div>`}
-             ${pr.e1rm ? `<div class="metric"><div class="v">${WT.fmtNum(Math.round(pr.e1rm.v))}<small>${u}</small></div><div class="k">Best est. 1RM</div></div>` : '<div></div>'}
-             <div class="metric"><div class="v">${hist.length}</div><div class="k">Sessions</div></div>
-           </div>`
-        : `<p class="t2">Log a strength exercise to see its progression.</p>`;
-    } else if (tab === 'frequency') {
-      top = `<div class="row between base"><span class="footnote t3">Workouts per week</span><span class="footnote t2 tnum">${WT.fmtNum(WT.round(st.avgPerWeek, 1))} per week on average</span></div><div id="weeksChart" class="mt12"></div>`;
-    } else {
-      const thisW = st.weeks[st.weeks.length - 1].volume, lastW = st.weeks[st.weeks.length - 2].volume;
-      top = `<div class="row between base"><span class="footnote t3">Volume per week (${u})</span><span class="footnote t2 tnum">This week ${WT.fmtNum(thisW)} · last ${WT.fmtNum(lastW)}</span></div><div id="volChart" class="mt12"></div>`;
-    }
-
-    const groupRows = Object.entries(st.groupSets)
-      .filter(([g]) => g !== 'cardio')
-      .map(([g, v]) => ({ g, perWeek: v / (30 / 7), target: Object.keys(WT.MUSCLES).filter((m) => WT.MUSCLES[m].group === g).reduce((a, m) => a + WT.weeklyTarget(m), 0) }));
-    const maxG = Math.max(...groupRows.map((r) => Math.max(r.perWeek, r.target)), 1);
-
-    return `<div class="page">
-      <div class="head"><h1 class="large-title">Progress</h1><p class="sub tnum">${plural(st.count, 'workout')} · ${WT.fmtNum(st.totalSets)} sets · ${st.totalVolume >= 10000 ? WT.fmtNum(Math.round(st.totalVolume / 1000)) + 'k' : WT.fmtNum(st.totalVolume)} ${u} lifted</p></div>
-      ${H.seg([['strength', 'Strength'], ['frequency', 'Frequency'], ['volume', 'Volume']], tab, 'progTab', '', 'full')}
-      <div class="mt24">${top}</div>
-      <section class="section">
-        <div class="section-title"><h2>Personal records</h2></div>
-        ${st.prs.length ? `<div class="list inset">${st.prs.slice(0, 6).map((r) => H.li({ href: `#/history/${r.sessionId}`, title: esc((WT.ex(r.exId) || {}).name || r.exId), sub: `${r.kind} · ${WT.fmtDate(r.date, { month: 'short', day: 'numeric' })}`, trail: `<span class="strong tnum">${esc(r.value)}</span>` })).join('')}</div>` : `<p class="t2">Beat a previous best and it will be recorded here.</p>`}
-      </section>
-      <section class="section">
-        <div class="section-title"><h2>Weekly sets by muscle group</h2><span class="footnote t3">Last 30 days</span></div>
-        ${groupRows.map((r) => `<div class="bar-row"><span>${WT.GROUPS[r.g]}</span><div class="track"><i style="width:${(r.perWeek / maxG) * 100}%"></i><span class="tgt" style="left:${(r.target / maxG) * 100}%" title="Target ${r.target}"></span></div><span class="tnum t2" style="text-align:right">${WT.fmtNum(WT.round(r.perWeek, 1))} <span class="t3">/ ${r.target}</span></span></div>`).join('')}
-        <p class="footnote t3 mt8">Marker shows your weekly target, higher for priority muscles.</p>
-      </section></div>`;
-  };
-  V.progressAfter = function () {
-    const st = WT.stats();
-    const u = WT.db.profile.unit;
-    const wEl = document.getElementById('weeksChart');
-    if (wEl)
-      WT.barChart(wEl, st.weeks.map((w, i) => ({ label: i % 2 === 1 ? WT.fmtDate(w.start, { month: 'short', day: 'numeric' }) : '', value: w.count, highlight: i === 11, tip: `<b>${plural(w.count, 'workout')}</b><br><span class="faint">Week of ${WT.fmtDate(w.start, { month: 'short', day: 'numeric' })}</span>` })), { ref: WT.db.profile.strengthPerWeek, refLabel: 'Goal', height: 220 });
-    const vEl = document.getElementById('volChart');
-    if (vEl) WT.barChart(vEl, st.weeks.map((w, i) => ({ label: i % 2 === 1 ? WT.fmtDate(w.start, { month: 'short', day: 'numeric' }) : '', value: w.volume, highlight: i === 11, tip: `<b>${WT.fmtNum(w.volume)} ${u}</b><br><span class="faint">${plural(w.sets, 'set')} · week of ${WT.fmtDate(w.start, { month: 'short', day: 'numeric' })}</span>` })), { height: 220 });
-    const pEl = document.getElementById('progChart');
-    if (pEl && WT.ui.prog.ex) {
-      const ex = WT.ex(WT.ui.prog.ex);
-      const tt = WT.trackType(ex);
-      const hist = WT.exerciseHistory(ex.id);
-      const loaded = hist.some((h) => h.metrics.topWeight > 0);
-      WT.lineChart(pEl, hist.map((h) => { const y = loaded ? Math.round(h.metrics.e1rm) : h.metrics.bestReps; return { x: h.date, y, tip: `<b>${WT.fmtNum(y)} ${loaded ? u : 'reps'}</b> · ${WT.fmtDate(h.date, { month: 'short', day: 'numeric' })}<br><span class="faint">${WT.fmtSets(h.sets, tt, ex)}</span>` }; }), { height: 220 });
-      if (hist.length === 1) pEl.insertAdjacentHTML('beforeend', '<p class="footnote t3" style="text-align:center">The line starts after your next session.</p>');
-    }
-  };
-  WT.I.progEx = (el, ev) => {
-    if (ev.type !== 'change') return;
-    WT.ui.prog.ex = el.value;
-    WT.rerender();
-  };
-  A.progTab = (d) => {
-    WT.ui.prog.tab = d.v;
+  /* Progress lives in views-progress.js */
+  A.pfBodyUnit = (d) => {
+    WT.db.profile[d.k] = d.v;
+    WT.save();
     WT.rerender();
   };
 
@@ -537,9 +460,13 @@
         ${H.li({ title: 'Sound and vibration', trail: H.toggle(p.timerSound, 'pfToggle', 'data-k="timerSound"') })}`, 'In seconds.')}
       ${grp('Nutrition', `
         ${H.li({ title: 'Daily protein target', sub: `Flexible: about ${WT.nut ? WT.nut.band(p.proteinTarget || 150).lo + '–' + WT.nut.band(p.proteinTarget || 150).hi : ''} g counts as on target`, trail: `<span class="row" style="gap:6px"><input class="input tnum" style="width:84px;text-align:right;height:34px" type="number" inputmode="numeric" min="20" max="400" step="5" data-in="pfProtein" value="${p.proteinTarget || 150}" aria-label="Daily protein target in grams"><span class="footnote t3">g</span></span>` })}
-        ${H.li({ title: 'Show calories, carbs and fat', sub: 'Secondary estimates — no targets', trail: H.toggle(p.showMacros !== false, 'pfToggleOn', 'data-k="showMacros"') })}
-        ${H.li({ title: 'Protein on Home', trail: H.toggle(p.homeProtein !== false, 'pfToggleOn', 'data-k="homeProtein"') })}
-        ${H.li({ act: 'foodMine', title: 'My foods', sub: 'Saved foods and favorites', trail: `<span class="footnote t2">${(WT.db.nutrition.foods || []).length}</span>`, chev: true })}`, 'Food logging is independent of workouts. Every value is an estimate.', 'nutrition')}
+        ${H.li({ act: 'foodTargets', title: 'Calories, carbs and fat', sub: (() => { const t = WT.nut.targets(); return t.cal ? `${WT.fmtNum(t.cal)} cal · ${t.c} g carbs · ${t.f} g fat` : 'No calorie target set'; })(), chev: true })}
+        ${H.li({ title: 'Nutrition on Home', sub: 'Calories and protein for today', trail: H.toggle(p.homeProtein !== false, 'pfToggleOn', 'data-k="homeProtein"') })}
+        ${H.li({ act: 'foodMine', title: 'My foods', sub: 'Saved foods, saved meals and learned matches', trail: `<span class="footnote t2">${(WT.db.nutrition.foods || []).length + (WT.db.nutrition.meals || []).length}</span>`, chev: true })}`, 'Values are tagged by source: manufacturer, USDA or restaurant reference data, your own, or estimates.', 'nutrition')}
+      ${grp('Body', `
+        ${H.li({ title: 'Body weight unit', trail: H.seg([['lb', 'lb'], ['kg', 'kg']], p.bodyUnit || 'lb', 'pfBodyUnit', 'bodyUnit', '') })}
+        ${H.li({ title: 'Measurement unit', trail: H.seg([['in', 'in'], ['cm', 'cm']], p.lengthUnit || 'in', 'pfBodyUnit', 'lengthUnit', '') })}
+        ${H.li({ act: 'logWeight', title: 'Log weight', sub: 'Optional — nothing in Forge requires it', chev: true })}`, 'Weigh-ins and measurements show in Progress → Body.', 'body')}
       ${grp('Data', `
         ${H.li({ act: 'exportJson', title: 'Export backup', sub: `Last backup: ${p.lastBackup ? WT.fmtRelDay(p.lastBackup) : 'never'}`, trail: `<span class="t3">${I('download', 16)}</span>` })}
         <label class="li" style="cursor:pointer"><div class="grow"><div class="ti">Import or restore</div><div class="su">From a Forge JSON backup</div></div><span class="t3">${I('upload', 16)}</span><input type="file" accept="application/json,.json" data-in="importFile" hidden></label>

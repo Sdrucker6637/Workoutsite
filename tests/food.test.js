@@ -2,13 +2,14 @@
  * Serve the repo on :8765 (python3 -m http.server 8765), then: node tests/food.test.js */
 const { chromium } = require('playwright');
 const fs = require('fs');
-const URL = process.env.URL || 'http://localhost:8765/';
+const { URL, serve } = require('./serve');
 let pass = 0, fail = 0;
 const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++; console.log('  ✗ FAIL:', m); } };
 
 (async () => {
   const browser = await chromium.launch();
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true, acceptDownloads: true });
+  await serve(ctx);
   const page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));

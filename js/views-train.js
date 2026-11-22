@@ -94,30 +94,66 @@
     const monthPRs = monthSess.reduce((a, s) => a + (s.prs || []).length, 0);
     const vol = monthVol >= 10000 ? WT.fmtNum(WT.round(monthVol / 1000, 1)) + '<small>k ' + p.unit + '</small>' : WT.fmtNum(monthVol) + `<small>${p.unit}</small>`;
 
+    // Shortcuts: the four things you do most
+    const sc = (attrs, icon, label) => `<${attrs.startsWith('href') ? 'a' : 'button'} class="shortcut" ${attrs}>${I(icon, 19)}<span>${label}</span></${attrs.startsWith('href') ? 'a' : 'button'}>`;
+    const shortcuts = `<div class="shortcuts" role="group" aria-label="Shortcuts">
+        ${sc('href="#/food" data-act="homeFood"', 'food', 'Log food')}
+        ${active ? sc('href="#/workout"', 'activity', 'Resume') : sc(`data-act="quickGen" data-k="${sugg.type}"`, 'dumbbell', 'Start workout')}
+        ${sc('data-act="recordRun"', 'run', 'Record run')}
+        ${sc('data-act="logWeight"', 'scale', 'Log weight')}
+      </div>`;
+
+    // Recent cardio
+    const lastRun = WT.cardioSummary ? WT.cardioSummary(WT.periodRange('30d')).last : null;
+    const cardioHtml = lastRun
+      ? `<a class="panel run-card" href="#/progress/cardio"><div class="run-i">${I('run', 18)}</div><div class="grow"><div class="strong">${esc(lastRun.name)} · ${WT.fmtRelDay(lastRun.date)}</div><div class="footnote t2 tnum">${lastRun.dist ? WT.fmtNum(WT.round(lastRun.dist, 2)) + ' mi' : ''}${lastRun.dist && lastRun.time ? ' · ' : ''}${lastRun.time ? WT.fmtRunTime(lastRun.time) : ''}${lastRun.pace ? ' · ' + WT.fmtPace(lastRun.pace) : ''}</div></div>
+          <div class="run-wk tnum"><b>${runs}</b><span>/ ${p.runsPerWeek || '—'} this week</span></div></a>`
+      : `<div class="panel run-card none"><div class="run-i">${I('run', 18)}</div><div class="grow"><div class="strong">No runs yet</div><div class="footnote t2">Record distance and time to track pace and weekly mileage.</div></div><button class="btn btn-secondary btn-sm" data-act="recordRun">Record</button></div>`;
+
+    // Progress summary: one insight from your own data, plus the last 30 days in three numbers
+    const ins = WT.insights ? WT.insights('30d') : { items: [] };
+    const top = ins.items.find((x) => x.kind === 'up') || ins.items[0];
+    const insight = top ? `<a class="panel ins-mini ${top.kind}" href="#/progress">${I(top.kind === 'up' ? 'trendUp' : top.kind === 'down' ? 'info' : 'equal', 16)}<span>${esc(top.text)}</span></a>` : '';
+
     return `<div class="page">
       <div class="head"><div class="over">${now.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</div><h1 class="large-title">${greet}</h1></div>
       ${hero}
+      ${shortcuts}
+      ${WT.foodHomeSummary ? WT.foodHomeSummary('Today’s nutrition') : ''}
       <section class="section">
         <div class="section-title"><h2>This week</h2><span class="footnote t2 tnum">${week.strength} of ${p.strengthPerWeek} workouts${p.runsPerWeek ? ` · ${runs} of ${p.runsPerWeek} runs` : ''}</span></div>
         <div class="week">${days.join('')}</div>
       </section>
-      ${WT.foodHomeSummary ? WT.foodHomeSummary() : ''}
       <section class="section">
-        <div class="section-title"><h2>Recent</h2>${ss.length ? `<a class="btn-link footnote" href="#/history">See all</a>` : ''}</div>
-        ${recentHtml}
+        <div class="section-title"><h2>Cardio</h2>${lastRun ? `<a class="btn-link footnote" href="#/progress/cardio">Trends</a>` : ''}</div>
+        ${cardioHtml}
       </section>
       ${
         ss.length
           ? `<section class="section">
         <div class="section-title"><h2>Last 30 days</h2><a class="btn-link footnote" href="#/progress">Progress</a></div>
-        <div class="summary">
+        ${insight}
+        <div class="summary ${insight ? 'mt16' : ''}">
           <div class="metric"><div class="v">${monthSess.length}</div><div class="k">Workouts</div></div>
           <div class="metric"><div class="v">${vol}</div><div class="k">Volume</div></div>
           <div class="metric"><div class="v">${monthPRs}</div><div class="k">Personal records</div></div>
         </div></section>`
           : ''
       }
+      <section class="section">
+        <div class="section-title"><h2>Recent workouts</h2>${ss.length ? `<a class="btn-link footnote" href="#/history">See all</a>` : ''}</div>
+        ${recentHtml}
+      </section>
     </div>`;
+  };
+  A.homeFood = (d, el, ev) => {
+    if (ev) ev.preventDefault();
+    WT.ui.food = Object.assign(WT.ui.food || {}, { tab: 'diary', meal: null });
+    WT.go('food');
+    requestAnimationFrame(() => {
+      const ta = document.getElementById('foodInput');
+      if (ta) ta.focus();
+    });
   };
   function runsThisWeek() {
     const start = WT.startOfWeek(new Date());

@@ -2,13 +2,14 @@
  * then: node tests/e2e.test.js   (requires playwright) */
 const { chromium } = require('playwright');
 const fs = require('fs');
-const URL = process.env.URL || 'http://localhost:8765/';
+const { URL, serve } = require('./serve');
 let pass = 0, fail = 0;
 const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++; console.log('  ✗ FAIL:', m); } };
 
 (async () => {
   const browser = await chromium.launch();
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, acceptDownloads: true });
+  await serve(ctx);
   const page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
