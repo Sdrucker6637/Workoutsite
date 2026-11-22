@@ -141,5 +141,5 @@
     frank: 'hotdog', wiener: 'hotdog', sauce: 'sauce', marinara: 'sauce', deli: 'deli', bread: 'bread', toast: 'bread', weiner: 'hotdog', hotdog: 'hotdog', dog: 'hotdog', butter: 'spread', pancake: 'pancake', waffle: 'pancake', flapjack: 'pancake',
   };
   /** Flavor words: naming one a product doesn't list marks the match as uncertain instead of assuming. */
-  WT.FLAVOR_WORDS = ['vanilla', 'chocolate', 'strawberry', 'strawberries', 'banana', 'snickerdoodle', 'cinnamon', 'caramel', 'mocha', 'coffee', 'cookie', 'cookies', 'cream', 'peanut', 'blueberry', 'raspberry', 'cherry', 'peach', 'mango', 'lemon', 'lime', 'coconut', 'pumpkin', 'birthday', 'cake', 'batter', 'mint', 'berry', 'mixed', 'honey', 'maple', 'salted', 'toffee', 'brownie', 'fudge', 'dough', 'smores', 'pecan', 'almond', 'pistachio', 'chai', 'eggnog', 'gingerbread', 'churro'];
+  WT.FLAVOR_WORDS = ['latte', 'cafe', 'espresso', 'vanilla', 'chocolate', 'strawberry', 'strawberries', 'banana', 'snickerdoodle', 'cinnamon', 'caramel', 'mocha', 'coffee', 'cookie', 'cookies', 'cream', 'peanut', 'blueberry', 'raspberry', 'cherry', 'peach', 'mango', 'lemon', 'lime', 'coconut', 'pumpkin', 'birthday', 'cake', 'batter', 'mint', 'berry', 'mixed', 'honey', 'maple', 'salted', 'toffee', 'brownie', 'fudge', 'dough', 'smores', 'pecan', 'almond', 'pistachio', 'chai', 'eggnog', 'gingerbread', 'churro'];
 })();

@@ -26,7 +26,7 @@
     block: 'block', cube: 'cube', square: 'square', wrap: 'wrap', half: 'half', pint: 'pint', quart: 'quart', shot: 'shot', splash: 'splash', sprinkle: 'sprinkle',
     spoon: 'spoon', spoonful: 'spoonful', tbsp: 'tbsp', tablespoon: 'tbsp', tbs: 'tbsp', tbl: 'tbsp', tsp: 'tsp', teaspoon: 'tsp',
     oz: 'oz', ounce: 'oz', g: 'g', gram: 'g', gr: 'g', lb: 'lb', pound: 'lb', kg: 'kg', kilo: 'kg', stack: 'stack', basket: 'basket', schmear: 'schmear', pie: 'pie', cone: 'cone',
-    jar: 'jar', dollop: 'dollop', drizzle: 'drizzle', knob: 'knob', ear: 'ear', cob: 'cob', bunch: 'bunch', pat: 'pat', order: 'serving', quarter: 'quarter',
+    jar: 'jar', dollop: 'dollop', drizzle: 'drizzle', knob: 'knob', ear: 'ear', cob: 'cob', bunch: 'bunch', pat: 'pat', order: 'serving',
   };
   const WEIGHT = { oz: 28.35, g: 1, lb: 453.6, kg: 1000 };
   // Rough fallback when a serving word isn't defined for a food (flagged as a rough guess)
@@ -37,16 +37,18 @@
     'breakfast lunch dinner snack meal today tonight morning post pre workout leftover leftovers homemade home made fresh plain cooked grilled baked ' +
     'roasted fried scrambled boiled hard soft poached steamed sauteed sautéed pan seared raw lean extra boneless skinless skin on bone in organic ' +
     'nonfat non fat lowfat low fat fatfree free reduced full whole skim 1% 2% unsweetened sweetened vanilla chocolate strawberry plain original classic natural regular ' +
-    'cold hot iced warm cup-sized sized size serving-sized style stuff thing more another few couple').split(' '));
+    'restaurant grocery store storebought bought deli-style cold hot iced warm cup-sized sized size serving-sized style stuff thing more another few couple').split(' '));
   // Flavors are fine as descriptors on generic items but are worth noting
   const INVARIANT = new Set(['shrimp', 'fish', 'hummus', 'couscous', 'asparagus', 'swiss', 'oz', 'lbs', 'pbs', 'gas', 'pancreas', 'nachos', 'chips', 'fries', 'oikos', 'ratio', 'molasses', 'brussels', 'peas', 'quinoa', 'grits', 'wheaties', 'cheerios', 'kodiak', 'dal', 'dhal', 'tbs', 'gelato', 'froyo', 'espresso', 'kirkland', 'chomps']);
   // Singular, plural-insensitive token form. Applied to aliases and input alike, so it only has to be consistent.
+  // plurals of words whose singular ends in "ie" (veggies → veggie, not veggy)
+  const IE_WORDS = new Set(['veggie', 'cookie', 'smoothie', 'brownie', 'pie', 'hoagie', 'calorie', 'birdie', 'pastie', 'cutie', 'rotie', 'sweetie', 'potpie', 'goodie', 'eggroll', 'frie']);
   function sing(w) {
     if (w.length <= 3 || INVARIANT.has(w) || /\d/.test(w)) return w;
     if (w === 'loaves') return 'loaf';
     if (w === 'halves') return 'half';
     if (w === 'knives') return 'knife';
-    if (w.endsWith('ies')) return w.slice(0, -3) + 'y';
+    if (w.endsWith('ies')) return IE_WORDS.has(w.slice(0, -1)) ? w.slice(0, -1) : w.slice(0, -3) + 'y';
     if (w.endsWith('oes')) return w.slice(0, -2);
     if (/(ches|shes|xes|sses|zes)$/.test(w)) return w.slice(0, -2);
     if (w.endsWith('s') && !/(ss|us|is)$/.test(w)) return w.slice(0, -1);
@@ -60,6 +62,7 @@
       .replace(/'s\b/g, 's')
       .replace(/'/g, '')
       .replace(/[^a-z0-9%.\s/-]/g, ' ')
+      .replace(/\.(?!\d)|(^|[^\d])\./g, '$1 ') // sentence periods, not decimals ("0.5")
       .replace(/(\D)-|-(\D)/g, '$1 $2')
       .split(/\s+/)
       .filter(Boolean);
@@ -104,6 +107,13 @@
     // Lean percentages before fractions: "85/15", "93% lean", "90 percent lean", "80-20" → one token ("85lean")
     t = t.replace(/\b([5-9]\d)\s*%?\s*[\/-]\s*(\d{1,2})\s*%?(?=\s|$|,)/g, (m, a, b) => (+a + +b === 100 ? ` ${a}lean ` : m));
     t = t.replace(/\b([5-9]\d)\s*(?:%|percent)\s*(?:lean)?\b/g, ' $1lean ').replace(/\b([7-9]\d)\s+lean\b/g, ' $1lean ');
+    // Common abbreviations, misspellings and shorthand
+    t = t.replace(/\b(chx|chkn|chik|chiken|chicke)\b/g, 'chicken').replace(/\bevoo\b/g, 'olive oil').replace(/\bavo\b/g, 'avocado').replace(/\bbroc\b/g, 'broccoli')
+      .replace(/\bprotien\b/g, 'protein').replace(/\bpotatoe\b/g, 'potato').replace(/\bchipolte\b/g, 'chipotle').replace(/\bsw(?:eet)?\.?\s+pot(?:ato)?\b/g, 'sweet potato')
+      .replace(/\bgr(?:ou)?nd\b/g, 'ground').replace(/\bmcd\b/g, 'mcdonalds').replace(/\bpb\s*2\b/g, 'powdered peanut butter').replace(/\bgreek yog\b/g, 'greek yogurt').replace(/\byog\b/g, 'yogurt');
+    // "from a grocery store rotisserie chicken", "from the deli", "from a restaurant": where it came from, not more food
+    t = t.replace(/\b(?:from|at|out of)\s+(?:a|an|the|my)?\s*(?:local\s+)?(?:grocery\s+store|supermarket|store|deli|costco|sams club|walmart|kroger|whole foods|trader joes|grocery)\b/g, ' ');
+    t = t.replace(/\b(?:from|at)\s+(?:a|an|the)?\s*(?:sit\s*down\s+)?restaurant\b/g, ' restaurant_style ');
     // Skin: "with skin" must not split the item; "without skin" / "no skin" mean skinless
     t = t.replace(/\bw\/(?=\s)/g, 'with').replace(/\bw\/o\b/g, 'without');
     t = t.replace(/\b(?:without|no|minus)\s+(?:the\s+)?skin\b|\bskin\s*(?:off|removed)\b|\bremoved\s+(?:the\s+)?skin\b/g, ' skinless ');
@@ -118,6 +128,7 @@
     t = t.replace(/\b(half\s+(?:a\s+)?dozen)\b/g, '6');
     t = t.replace(/\b(?:a\s+)?dozen\b/g, '12');
     t = t.replace(/\bhalf\s+(?:a|an)\b/g, '0.5').replace(/\ba\s+half\b/g, '0.5');
+    t = t.replace(/\bthree\s+quarters?\s+(?:of\s+)?(?:a|an)?\b/g, '0.75 ').replace(/\b(?:a|one)\s+quarter\s+(?:of\s+)?(?:a|an)?\b/g, '0.25 ').replace(/\bquarter\s+(?:of\s+)?(?:a|an)\b/g, '0.25');
     t = t.replace(/\b(?:a\s+)?couple\s+(?:of\s+)?/g, '2 ').replace(/\b(?:a\s+)?few\b/g, '3').replace(/\bseveral\b/g, '3');
     t = t.replace(/(\d)\s*(oz|g|lb|lbs|kg|ml)\b/g, '$1 $2');
     return t;
@@ -152,11 +163,22 @@
     }
     return best;
   }
+  /** All alias words present, in any order ("chicken thighs … rotisserie"); ranks below an in-order match. */
+  function matchAny(itemToks, aliasToks) {
+    if (aliasToks.length < 2) return null;
+    const idx = [];
+    for (const a of aliasToks) {
+      const i = itemToks.findIndex((t, k) => t === a && !idx.includes(k));
+      if (i < 0) return null;
+      idx.push(i);
+    }
+    return { idx: idx.sort((x, y) => x - y), gaps: 2 };
+  }
   function bestMatch(toks, withRecipes) {
     let best = null;
     for (const e of withRecipes ? index().concat(recipeIndex()) : index()) {
       if (e.toks.length > toks.length) continue;
-      const m = matchAt(toks, e.toks);
+      const m = matchAt(toks, e.toks) || matchAny(toks, e.toks);
       if (!m) continue;
       const score = e.toks.length * 10 - m.gaps * 3 + (e.custom ? 15 : 0) + (e.food.label ? 4 : 0) + (e.recipe ? 1 : 0);
       if (!best || score > best.score) best = { score, idx: m.idx, food: e.food, custom: e.custom, recipe: e.recipe };
@@ -181,7 +203,7 @@
       e.toks.forEach((at) =>
         toks.forEach((t) => {
           if (at === t) s += 3;
-          else if (t.length >= 4 && at.length >= 4 && lev(t, at) <= (t.length >= 7 ? 2 : 1)) s += 2;
+          else if (t.length >= 4 && at.length >= 4 && lev(t, at) <= (t.length >= 6 ? 2 : 1)) s += 2;
           else if (t.length >= 4 && (at.startsWith(t) || t.startsWith(at)) && at.length >= 3) s += 1;
         })
       );
@@ -298,6 +320,7 @@
     const otherFood = !brandHit && !aliasLen && !keyDistinct && [...C].some((t) => foodHeads().has(t) && !d.all.has(t) && !UNIT_WORDS[t] && !(WT.PRODUCT_CATS || {})[t]);
     // A key made of everyday words ("milk", "beef frank") only counts once the brand is named
     const candidate = !otherFood && (brandHit || aliasLen > 0 || keyDistinct || distinct > 0);
+    // (a brand with one product in this database may still make many others, so the brand alone never identifies it)
     const identified = aliasLen > 0 || (keyHit && (brandHit || keyDistinct)) || (!d.keys.length && (brandHit || distinct > 0));
     const confident = candidate && identified && !unexplained.length && !catConflict;
     const typedFlavor = d.flavors.find((f) => ptoks(f).every(has));
@@ -383,7 +406,7 @@
     if (base.sizeWord && base.sizeWord !== 'medium') notes.push(`“${base.sizeWord}” ignored — one ${x.unit || 'serving'} is a fixed size`);
     return Object.assign({
       id: WT.uid(), text: base.text, name, qty: base.qty, unit: pp.unit, per: pp.per,
-      foodId: (d.lib ? 'my:' : 'p:') + x.id, src: d.lib ? 'my' : 'product', conf: pp.rough ? 'estimated' : status, brand: x.brand || '',
+      foodId: (d.lib ? 'my:' : d.x.remote ? 'x:' : 'p:') + x.id, src: d.lib ? 'my' : d.x.remote ? 'online' : 'product', conf: pp.rough ? 'estimated' : status, brand: x.brand || '',
       note: notes.join(' · '), rough: pp.rough, phrase: base.phrase, match: pp.rough ? 'rough' : 'exact', assumed: base.assumed, estMacros: pp.estK,
     }, extra || {});
   }
@@ -392,12 +415,24 @@
     const pp = productPer(d, null);
     const serv = d.lib ? x.serving : x.serv;
     const status = d.lib ? x.status || 'user' : x.status;
-    return { id: (d.lib ? 'my:' : 'p:') + x.id, name: d.lib ? x.name : N.productName(x), serving: serv || `1 ${x.unit || 'serving'}`, p: pp.per.p, status };
+    return { id: (d.lib ? 'my:' : d.x.remote ? 'x:' : 'p:') + x.id, name: d.lib ? x.name : N.productName(x), serving: serv || `1 ${x.unit || 'serving'}`, p: pp.per.p, status };
   };
   /** Turn a chosen candidate (p:id / my:id) into an item, keeping the typed amount. */
+  /** A record found online (USDA / Open Food Facts, via the lookup cache) shaped like a bundled product. */
+  N.remoteProduct = function (id) {
+    const rec = WT.lookup && WT.lookup.cached(id);
+    if (!rec) return null;
+    const s = WT.lookup.servingOf(rec);
+    const units = {};
+    if (s.unit === 'serving' && s.g > 0) units['100 g'] = WT.round(100 / s.g, 4);
+    return {
+      id: rec.id, remote: true, brand: rec.brand || '', line: rec.name, flavor: null, flavors: [], key: [], a: [], cat: '', unit: s.unit, serv: s.unit === '100 g' ? '100 g' : s.text, g: s.g || null,
+      p: s.per.p, cal: s.per.cal, c: s.per.c, f: s.per.f, units, approx: [], status: rec.status, src: rec.source, checked: null, code: rec.code || '', dataType: rec.dataType || '',
+    };
+  };
   function itemFromRef(ref, base, variant) {
     const lib = ref.startsWith('my:');
-    const x = lib ? LIB().find((f) => f.id === ref.slice(3)) : N.productById(ref.slice(2));
+    const x = lib ? LIB().find((f) => f.id === ref.slice(3)) : ref.startsWith('x:') ? N.remoteProduct(ref.slice(2)) : N.productById(ref.slice(2));
     if (!x) return null;
     const d = describe(x, lib);
     const r = { d, typedFlavor: null };
@@ -581,6 +616,7 @@
     // In context only (chain named earlier), require that most words are explained by the menu
     const left = toks.filter((t, i) => !used.has(i) && !q.used.has(i) && !STOP.has(t) && !UNIT_WORDS[t] && !SIZE_WORDS[t] && !WT.PORTION_MODS[t] && t !== 'soft' && !/^\d/.test(t));
     if (viaContext && left.length) return null;
+    if (!im && left.length) return null; // "Chipotle quinoa bowl": a format plus something not on the menu
     let mult = 1;
     const mods = [];
     toks.forEach((t, i) => {
@@ -649,7 +685,7 @@
       it.partOf = r.n;
       it.match = 'rough';
       it.conf = 'estimated';
-      it.note = `Part of “${r.n}” · typical homemade portion${it.note ? ' · ' + it.note : ''}`;
+      it.note = `Part of “${r.n}” · ${/\brestaurant/.test(base.text) ? 'restaurant version: portions and dressing vary, so this is a homemade-style estimate' : 'typical homemade portion'}${it.note ? ' · ' + it.note : ''}`;
       it.text = base.text;
       it.recipe = r.id;
       parts.push(it);
@@ -690,6 +726,39 @@
     return r;
   }
 
+  /* Typo tolerance: a word we don't know that is 1–2 letters from a food word is read as that word (and said so). */
+  let VOCAB = null;
+  function vocab() {
+    if (VOCAB) return VOCAB;
+    VOCAB = new Set();
+    const add = (s) => ptoks(s).forEach((t) => t.length >= 3 && VOCAB.add(t));
+    WT.FOODS.forEach((f) => f.a.forEach(add));
+    (WT.RECIPES || []).forEach((r) => r.a.forEach(add));
+    (WT.PRODUCTS || []).forEach((x) => [x.brand, x.line, x.flavor].concat(x.flavors || [], x.a || [], x.key || []).forEach((v) => v && add(v)));
+    (WT.CHAINS || []).forEach((c) => c.a.concat(c.items.flatMap((i) => i.a)).forEach(add));
+    (WT.FLAVOR_WORDS || []).forEach(add);
+    Object.keys(WT.FOOD_BRANDS || {}).forEach(add);
+    return VOCAB;
+  }
+  function correctTypos(toks) {
+    const V = vocab();
+    const lib = new Set(LIB().flatMap((f) => [f.name, f.brand || ''].concat(f.aliases || []).flatMap(ptoks)));
+    const fixes = [];
+    const out = toks.map((t) => {
+      if (t.length < 5 || /\d/.test(t) || V.has(t) || lib.has(t) || STOP.has(t) || N.unitWord(t) || SIZE_WORDS[t] != null || WT.PORTION_MODS[t] != null) return t;
+      let best = null;
+      V.forEach((v) => {
+        if (Math.abs(v.length - t.length) > 2 || v[0] !== t[0]) return;
+        const d = lev(t, v);
+        if (d <= (t.length >= 7 ? 2 : 1) && (!best || d < best.d)) best = { v, d };
+      });
+      if (!best) return t;
+      fixes.push([t, best.v]);
+      return best.v;
+    });
+    return { toks: out, fixes };
+  }
+
   N.parseItem = function (raw, opts) {
     opts = opts || {};
     const text = raw.trim();
@@ -698,12 +767,22 @@
       sizeMult *= +n >= 10 ? 2 : 1; // a 12-inch / footlong sub is about two 6-inch subs
       return ' ';
     });
+    // "a 3-egg omelet", "2 egg scramble": the number counts eggs in one dish, not dishes
+    pre = pre.replace(/\b(\d+)[\s-]*eggs?\s+(omelet|omelette|scramble)\b/g, (m, n, d) => {
+      sizeMult *= +n / 3;
+      return `1 ${d}`;
+    });
     if (/\bfoot\s*long\b|\bfootlong\b/.test(pre)) {
       sizeMult *= 2;
       pre = pre.replace(/\bfoot\s*long\b|\bfootlong\b/g, ' ');
     }
-    const rawToks = tokenize(pre);
-    const toks = rawToks.map(sing);
+    let rawToks = tokenize(pre);
+    let toks = rawToks.map(sing);
+    const typo = correctTypos(toks);
+    if (typo.fixes.length) {
+      toks = typo.toks;
+      rawToks = rawToks.map((w, i) => (typo.toks[i] !== typo.toks[i] || typo.fixes.some(([a]) => a === sing(w)) ? typo.toks[i] : w));
+    }
     const q = readQty(toks);
     const free = toks.map((t, i) => (q.used.has(i) ? null : t));
     let uw = null;
@@ -771,7 +850,9 @@
     }
     if (pm && pm.ambiguous) {
       const top = { brand: pm.brand };
-      const variant = pm.unexplained.length ? titleCase(rawToks.filter((w, i) => pm.unexplained.includes(toks[i])).join(' ')) : '';
+      // name the flavor as typed: "cookies and cream", not just the word no product explains ("cream")
+      const flavorish = pm.unexplained.some((t) => FL.has(t));
+      const variant = pm.unexplained.length ? titleCase(rawToks.filter((w, i) => pm.unexplained.includes(toks[i]) || (flavorish && FL.has(toks[i]))).join(' ')) : '';
       const fb = N.parseItem(raw, { generic: true }); // a generic estimate is always an option
       return Object.assign({ id: WT.uid(), ambiguous: true, candidates: pm.ambiguous.map(N.candidateLabel), variant, brand: top.brand || '', fallback: fb.unknown || fb.parts ? null : fb }, base);
     }
@@ -786,6 +867,7 @@
     }
     const food = m.food, custom = m.custom;
     const matched = new Set(m.idx);
+    const aliasWords = new Set(m.idx.map((i) => toks[i]));
     let unit = null, unitIdx = -1, sizeUsed = '';
     const extras = [];
     free.forEach((t, i) => {
@@ -805,6 +887,7 @@
       }
       if (t === 'fl' || t === 'ml') return;
       if (STOP.has(t) || STOP.has(rawToks[i])) return;
+      if (aliasWords.has(t)) return; // "chicken thighs … rotisserie chicken": a repeated word adds nothing
       extras.push(rawToks[i]);
     });
     // A bare count uses the food's counting unit ("10 shrimp", "20 almonds")
@@ -857,7 +940,7 @@
     let chain = null;
     const out = [];
     splitItems(text).forEach((t, n) => {
-      const r = N.parseItem(t, { chain });
+      const r = withTypoNote(N.parseItem(t, { chain }), t);
       if (r.chainId) chain = r.chainId;
       const list = r.parts ? r.parts : [r];
       list.forEach((it, i) => {
@@ -869,12 +952,25 @@
     return out;
   };
 
+  function withTypoNote(r, t) {
+    const fixes = correctTypos(tokenize(normalize(t)).map(sing)).fixes;
+    if (!fixes.length) return r;
+    const note = `Read ${fixes.map(([a, b]) => `“${a}” as “${b}”`).join(', ')}`;
+    (r.parts || [r]).forEach((it) => {
+      if (it.unknown || it.ambiguous) return;
+      it.note = note + (it.note ? ' · ' + it.note : '');
+      if (it.match === 'exact') it.match = 'close'; // a guess about what you meant is never an exact match
+      it.typo = fixes;
+    });
+    return r;
+  }
+
   /* ───────── Units: what an item can be measured in, and switching between them ───────── */
   function resolveRef(ref) {
     ref = String(ref || '');
     if (ref.startsWith('r:')) return { kind: 'r', r: N.restaurantRef(ref) };
-    if (ref.startsWith('p:')) {
-      const x = N.productById(ref.slice(2));
+    if (ref.startsWith('p:') || ref.startsWith('x:')) {
+      const x = ref.startsWith('x:') ? N.remoteProduct(ref.slice(2)) : N.productById(ref.slice(2));
       return x ? { kind: 'p', x, d: describe(x, false) } : null;
     }
     if (ref.startsWith('my:')) {
@@ -940,7 +1036,7 @@
 
   /** Re-interpret an item as a specific food (from a suggestion, a search, or a correction), keeping its amount. */
   N.resolveAs = function (item, id, variant) {
-    if (id.startsWith('p:') || id.startsWith('my:')) {
+    if (id.startsWith('p:') || id.startsWith('my:') || id.startsWith('x:')) {
       const base = { text: item.text, qty: item.qty || 1, uw: item.uw || null, phrase: item.phrase || '' };
       const it = itemFromRef(id, base, variant);
       if (!it) return item;
@@ -1186,7 +1282,7 @@
     if (!name) return null;
     const existing = (src.id && S().foods.find((f) => f.id === src.id)) || S().foods.find((f) => f.name.toLowerCase() === name.toLowerCase());
     const data = { name, qty: WT.round(+src.qty || 1, 2), unit: src.unit || 'serving', per: Object.assign({ p: 0, cal: null, c: null, f: null }, src.per), fav: fav === undefined && existing ? existing.fav : fav !== false };
-    ['brand', 'flavor', 'serving', 'cat', 'g', 'units', 'approx', 'key', 'productId', 'basedOn', 'source', 'checked'].forEach((k) => src[k] !== undefined && (data[k] = src[k]));
+    ['brand', 'flavor', 'serving', 'cat', 'g', 'units', 'approx', 'key', 'productId', 'basedOn', 'source', 'checked', 'code', 'remoteId'].forEach((k) => src[k] !== undefined && (data[k] = src[k]));
     ['brand', 'flavor', 'serving', 'cat'].forEach((k) => (data[k] = data[k] == null ? (existing && existing[k]) || '' : String(data[k])));
     data.status = src.status || (existing && existing.status) || 'user';
     data.aliases = [...new Set(((existing && existing.aliases) || []).concat(src.aliases || []).map((a) => String(a).trim().toLowerCase()).filter(Boolean))];
@@ -1218,6 +1314,13 @@
       if (!x) return null;
       lib = S().foods.find((f) => (it.variant ? f.basedOn === x.id && f.flavor.toLowerCase() === it.variant.toLowerCase() : f.productId === x.id));
       if (!lib) lib = N.saveFood(Object.assign(libFromProduct(x, it.variant), it.variant ? { aliases: [it.variant.toLowerCase()] } : {}), false);
+    } else if (ref.startsWith('x:')) {
+      const x = N.remoteProduct(ref.slice(2));
+      if (!x) return null;
+      lib = S().foods.find((f) => f.remoteId === x.id || (x.code && f.code && WT.lookup.sameCode(f.code, x.code)));
+      // generic USDA foods stay in the lookup cache; branded products become yours so typing their name finds them
+      if (!lib && (x.brand || x.code)) lib = N.saveFood({ name: `${x.brand ? x.brand + ' ' : ''}${x.line}`.trim(), brand: x.brand, unit: x.unit, serving: x.serv, g: x.g || undefined, units: x.units, per: { p: x.p, cal: x.cal, c: x.c, f: x.f }, qty: 1, status: x.status, source: x.src, code: x.code, remoteId: x.id, checked: N.dayKey() }, false);
+      if (!lib) return null;
     } else if (it.src === 'manual' && it.save !== false) lib = N.saveFood({ name: it.name, unit: it.unit, qty: it.qty, per: it.per, status: 'user', source: { name: 'Entered by you' } }, false);
     if (!lib) return null;
     if (it.learn && it.phrase && it.phrase.length > 2 && it.phrase !== lib.name.toLowerCase()) lib.aliases = [...new Set(lib.aliases.concat(it.phrase))];
@@ -1379,35 +1482,86 @@
     WT.save();
   };
 
-  /* ───────── Search everything (review → "Replace") ───────── */
+  /* ───────── Search everything (review → "Replace", Search foods) ─────────
+   * Score = how much of the query a result covers (exact or prefix words; a 1-letter typo counts half),
+   * plus bonuses for an exact name, a named brand or restaurant, and your own foods.
+   * Naming a brand or a restaurant puts its products first ("oikos" → Oikos's yogurts, not generic yogurt).
+   */
   N.searchAll = function (q, limit) {
-    const C = ptoks(q).filter((t) => !STOP.has(t) || flavSet().has(t));
+    const C = tokenize(normalize(q).replace(/_/g, ' ')).map(sing).filter((t) => !STOP.has(t) || flavSet().has(t));
     if (!C.length) return [];
+    const cover = (words) => {
+      const W = new Set(words);
+      let hit = 0, exact = 0;
+      C.forEach((t) => {
+        if (W.has(t)) {
+          hit++;
+          exact++;
+        } else if (t.length >= 3 && [...W].some((w) => w.length > 3 && w.startsWith(t))) hit++;
+        else if (t.length >= 5 && [...W].some((w) => w.length >= 5 && lev(t, w) <= 1)) hit += 0.5;
+      });
+      return { f: hit / C.length, exact };
+    };
+    const joined = C.join(' ');
+    // brands and chains named in the query
+    const brandsNamed = new Set();
+    LIB().concat(WT.PRODUCTS || []).forEach((x) => {
+      const bt = ptoks(x.brand || '');
+      if (bt.length && bt.every((t) => C.includes(t))) brandsNamed.add(String(x.brand).toLowerCase());
+    });
+    const chainsNamed = new Set(chains().filter((c) => c.names.some((n) => n.every((t) => C.includes(t)))).map((c) => c.ch.id));
     const out = [];
-    const hit = (all) => C.filter((t) => all.some((a) => a === t || (a.length > 3 && t.length > 2 && a.startsWith(t)) || (t.length >= 5 && lev(t, a) <= 1))).length;
-    // your foods & products
-    N.searchLocal(q).forEach((r, i) => out.push(Object.assign({ kind: r.lib ? 'Your foods' : 'Branded', s: 3 - i * 0.01 }, r, { cal: null })));
-    // restaurants
+    const push = (o, words, extra) => {
+      const cv = cover(words);
+      if (!cv.exact && cv.f < 1) return;
+      if (cv.f < 0.5) return;
+      out.push(Object.assign(o, { s: cv.f * 2 + (extra || 0) }));
+    };
+    // your foods & bundled products
+    LIB().forEach((x) => {
+      const words = [x.name, x.brand, x.flavor].concat(x.aliases || []).filter(Boolean).flatMap(ptoks);
+      const named = x.brand && brandsNamed.has(String(x.brand).toLowerCase());
+      push(Object.assign(N.candidateLabel(describe(x, true)), { kind: 'Your foods', brand: x.brand || '', lib: true, cal: x.per.cal }), words, 0.6 + (named ? 1 : 0));
+    });
+    const shadow = new Set(LIB().map((f) => f.productId).filter(Boolean));
+    (WT.PRODUCTS || []).filter((x) => !shadow.has(x.id)).forEach((x) => {
+      const words = [x.brand, x.line, x.flavor].concat(x.flavors || [], x.a || [], x.key || []).filter(Boolean).flatMap(ptoks);
+      const named = brandsNamed.has(String(x.brand).toLowerCase());
+      if (brandsNamed.size && !named) return; // another brand was asked for
+      const lab = N.candidateLabel(describe(x, false));
+      push(Object.assign(lab, { kind: 'Branded', brand: x.brand, cal: x.cal != null ? x.cal : x.est && x.est.cal != null ? x.est.cal : null }), words, 0.4 + (named ? 1.2 : 0));
+    });
+    // restaurants: a chain on its own lists its menu
     chains().forEach((c) => {
-      const chainHit = C.some((t) => c.names.some((n) => n.includes(t)));
-      c.ch.items.forEach((it) => {
-        const toks = it.a.flatMap((a) => tokenize(a).map(sing)).concat(tokenize(it.n).map(sing));
-        const h = hit(toks);
-        if (!h) return;
-        const s = h / C.length + (chainHit ? 1 : 0);
-        if (s < 0.5 || (!chainHit && h < C.length)) return;
+      const named = chainsNamed.has(c.ch.id);
+      if (chainsNamed.size && !named) return;
+      const rest = C.filter((t) => !c.names.some((n) => n.includes(t)));
+      c.ch.items.forEach((it, i) => {
+        const words = it.a.flatMap((a) => tokenize(a).map(sing)).concat(tokenize(it.n).map(sing), named ? c.names.flat() : []);
         const m = restPer(it, it.sizes ? it.def || 'medium' : null);
-        out.push({ id: `r:${c.ch.id}:${it.id}`, kind: 'Restaurant', name: `${it.n.startsWith(c.ch.name) ? '' : c.ch.name + ' '}${it.n}`, brand: c.ch.name, serving: it.serv || (it.sizes ? (it.sizeNames && it.sizeNames[it.def || 'medium']) || 'Medium' : '1 serving'), p: m[1], cal: m[0], status: it.st || c.ch.status, s: s + 1 });
+        const o = { id: `r:${c.ch.id}:${it.id}`, kind: 'Restaurant', name: `${it.n.startsWith(c.ch.name) ? '' : c.ch.name + ' '}${it.n}`, brand: c.ch.name, serving: it.serv || (it.sizes ? (it.sizeNames && it.sizeNames[it.def || 'medium']) || 'Medium' : '1 serving'), p: m[1], cal: m[0], status: it.st || c.ch.status };
+        if (named && !rest.length) out.push(Object.assign(o, { s: 2.5 - i * 0.01 }));
+        else push(o, words, named ? 1.2 : -0.2);
       });
     });
-    // generic foods
-    WT.FOODS.forEach((f) => {
-      const toks = f.a.flatMap((a) => ptoks(a)).concat(ptoks(f.n));
-      const h = hit(toks);
-      if (!h) return;
-      const exact = f.a.some((a) => ptoks(a).join(' ') === C.join(' '));
-      out.push({ id: f.id, kind: f.st === 'reference' ? 'USDA reference' : 'Generic estimate', name: f.n, brand: '', serving: `1 ${f.u}${f.g ? ` (${Math.round(f.g)} g)` : ''}`, p: f.p, cal: f.cal, status: f.st === 'reference' ? 'reference' : 'estimated', s: h / C.length + (exact ? 1.5 : 0) + (f.st === 'reference' ? 0.1 : 0) });
+    // found online before (works offline)
+    if (WT.lookup) WT.lookup.searchCache(q, 10).forEach((rec, i) => {
+      const sv = WT.lookup.servingOf(rec);
+      const named = rec.brand && [...brandsNamed].some((b) => rec.brand.toLowerCase().includes(b));
+      push({ id: 'x:' + rec.id, kind: 'Found online before', name: `${rec.brand ? rec.brand + ' ' : ''}${rec.name}`, brand: rec.brand, serving: sv.text, p: sv.per.p, cal: sv.per.cal, status: rec.status, remote: rec }, ptoks(`${rec.brand} ${rec.name}`), 0.3 + (named ? 1 : 0) - i * 0.01);
     });
-    return out.sort((a, b) => b.s - a.s).slice(0, limit || 20);
+    // the offline USDA database, when built (tools/build-usda.js)
+    if (WT.lookup && WT.lookup.offlineDB()) WT.lookup.searchOffline(q, 10).forEach((rec, i) => {
+      const sv = WT.lookup.servingOf(rec);
+      push({ id: 'x:' + rec.id, kind: 'USDA reference (offline)', name: rec.name, brand: '', serving: sv.text, p: sv.per.p, cal: sv.per.cal, status: 'reference', remote: rec }, ptoks(rec.name), -0.15 - i * 0.01 - (brandsNamed.size || chainsNamed.size ? 1 : 0));
+    });
+    // generic foods (brand searches still show the generic option, lower down)
+    WT.FOODS.forEach((f) => {
+      const exactName = f.a.some((a) => ptoks(a).join(' ') === joined);
+      push({ id: f.id, kind: f.st === 'reference' ? 'USDA reference' : 'Generic estimate', name: f.n, brand: '', serving: `1 ${f.u}${f.g ? ` (${Math.round(f.g)} g)` : ''}`, p: f.p, cal: f.cal, status: f.st === 'reference' ? 'reference' : 'estimated' },
+        f.a.flatMap((a) => ptoks(a)).concat(ptoks(f.n)), (exactName ? 1 : 0) + (f.st === 'reference' ? 0.1 : 0) - (brandsNamed.size || chainsNamed.size ? 1 : 0));
+    });
+    const seen = new Set();
+    return out.sort((a, b) => b.s - a.s).filter((r) => !seen.has(r.id) && seen.add(r.id)).slice(0, limit || 20);
   };
 })();

@@ -260,8 +260,10 @@ ok(/search_terms=oikos\+pro/.test(N.offUrl('oikos pro')) && /^https:\/\/world\.o
 section('Unrecognized foods are never silently logged');
 const unk = one('a plate of zorbleberries');
 ok(unk.unknown === true && !unk.per, 'unknown item flagged, no made-up protein');
-const typo = one('chiken brest');
-ok(typo.unknown && typo.suggestions.length && typo.suggestions[0].id === 'chicken-breast', 'typo → suggestion "Chicken breast" first: ' + JSON.stringify(typo.suggestions.map((s) => s.id)));
+const typo0 = one('chiken brest');
+ok(typo0.foodId === 'chicken-breast' && /Read “brest” as “breast”/.test(typo0.note) && N.confidence(typo0).level !== 'high', 'close typo → corrected, said so, never an exact match');
+const typo = one('chikkn brst');
+ok(typo.unknown && typo.suggestions.some((x) => x.id === 'chicken-breast'), 'bad typo → unknown, "Chicken breast" suggested: ' + JSON.stringify((typo.suggestions || []).map((s) => s.id)));
 const res = N.resolveAs(typo, 'chicken-breast');
 ok(!res.unknown && res.foodId === 'chicken-breast' && P(res) === 53, 'resolving a suggestion gives the estimate');
 

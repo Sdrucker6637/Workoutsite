@@ -174,6 +174,8 @@
     proteinTarget: 150,
     showMacros: true,
     homeProtein: true,
+    onlineLookup: true,
+    fdcKey: '',
     // v6: full nutrition targets (null = not set; carbs and fat then follow from calories) and body tracking
     calorieTarget: null,
     carbTarget: null,
@@ -314,7 +316,9 @@
 
   /* Export / import */
   WT.exportData = function () {
-    return JSON.stringify({ app: 'workout-tracker', exportedAt: new Date().toISOString(), data: WT.db }, null, 2);
+    // your USDA API key is a credential: it stays on this device and never goes into a backup file
+    const data = Object.assign({}, WT.db, { profile: Object.assign({}, WT.db.profile, { fdcKey: '' }) });
+    return JSON.stringify({ app: 'workout-tracker', exportedAt: new Date().toISOString(), data }, null, 2);
   };
   WT.validateImport = function (text) {
     const parsed = JSON.parse(text);
@@ -358,7 +362,9 @@
         bIn[k].forEach((x) => !have.has(x.id) && body[k].push(x));
       });
     } else {
+      const key = WT.db && WT.db.profile && WT.db.profile.fdcKey;
       WT.db = migrate(data);
+      if (key && !WT.db.profile.fdcKey) WT.db.profile.fdcKey = key;
     }
     WT.rebuildExercises();
     WT.save(true);

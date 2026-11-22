@@ -1,0 +1,1 @@
+{"v":1,"source":"","note":"Empty until built: node tools/build-usda.js <FoodData Central SR Legacy / Foundation JSON>. See tools/build-usda.js.","fields":["fdcId","description","kcal","protein","carbs","fat","category","portions"],"per":"100 g","foods":[]}

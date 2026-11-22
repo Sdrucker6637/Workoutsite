@@ -407,6 +407,17 @@
   };
 
   /* Progress lives in views-progress.js */
+  WT.I.pfFdcKey = (el, ev) => {
+    if (ev.type !== 'change') return;
+    WT.db.profile.fdcKey = String(el.value || '').trim();
+    WT.save();
+    WT.toast(WT.db.profile.fdcKey ? 'USDA key saved on this device' : 'Using the shared DEMO_KEY');
+  };
+  A.clearFoodCache = () =>
+    WT.confirm('Clear foods found online?', 'They’ll no longer show up in offline search. Foods you logged stay in your diary and My foods.', 'Clear', () => {
+      WT.lookup.clearCache();
+      WT.rerender();
+    });
   A.pfBodyUnit = (d) => {
     WT.db.profile[d.k] = d.v;
     WT.save();
@@ -462,6 +473,9 @@
         ${H.li({ title: 'Daily protein target', sub: `Flexible: about ${WT.nut ? WT.nut.band(p.proteinTarget || 150).lo + '–' + WT.nut.band(p.proteinTarget || 150).hi : ''} g counts as on target`, trail: `<span class="row" style="gap:6px"><input class="input tnum" style="width:84px;text-align:right;height:34px" type="number" inputmode="numeric" min="20" max="400" step="5" data-in="pfProtein" value="${p.proteinTarget || 150}" aria-label="Daily protein target in grams"><span class="footnote t3">g</span></span>` })}
         ${H.li({ act: 'foodTargets', title: 'Calories, carbs and fat', sub: (() => { const t = WT.nut.targets(); return t.cal ? `${WT.fmtNum(t.cal)} cal · ${t.c} g carbs · ${t.f} g fat` : 'No calorie target set'; })(), chev: true })}
         ${H.li({ title: 'Nutrition on Home', sub: 'Calories and protein for today', trail: H.toggle(p.homeProtein !== false, 'pfToggleOn', 'data-k="homeProtein"') })}
+        ${H.li({ title: 'Online food lookup', sub: 'Search USDA FoodData Central and Open Food Facts, and look up barcodes. Free; logging never needs it.', trail: H.toggle(p.onlineLookup !== false, 'pfToggleOn', 'data-k="onlineLookup"') })}
+        ${p.onlineLookup !== false ? H.li({ title: 'USDA API key (optional)', sub: `${p.fdcKey ? 'Your own key — stored only in this browser, never in backups.' : 'Using the shared DEMO_KEY (about 30 searches an hour). A free personal key from api.data.gov raises that to 1,000.'} <a class="btn-link" href="https://fdc.nal.usda.gov/api-key-signup" target="_blank" rel="noopener">Get a key</a>`, trail: `<input class="input" style="width:150px;height:34px" type="password" autocomplete="off" data-in="pfFdcKey" value="${esc(p.fdcKey || '')}" placeholder="DEMO_KEY" aria-label="USDA API key">` }) : ''}
+        ${WT.lookup ? H.li({ act: 'clearFoodCache', title: 'Foods found online', sub: `${WT.lookup.cacheStats().items} saved on this device for offline search · tap to clear`, trail: `<span class="t3">${I('trash', 15)}</span>` }) : ''}
         ${H.li({ act: 'foodMine', title: 'My foods', sub: 'Saved foods, saved meals and learned matches', trail: `<span class="footnote t2">${(WT.db.nutrition.foods || []).length + (WT.db.nutrition.meals || []).length}</span>`, chev: true })}`, 'Values are tagged by source: manufacturer, USDA or restaurant reference data, your own, or estimates.', 'nutrition')}
       ${grp('Body', `
         ${H.li({ title: 'Body weight unit', trail: H.seg([['lb', 'lb'], ['kg', 'kg']], p.bodyUnit || 'lb', 'pfBodyUnit', 'bodyUnit', '') })}

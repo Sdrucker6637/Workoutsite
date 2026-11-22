@@ -2,7 +2,7 @@
 
 A free, private, offline-first fitness app. It generates workouts from your goals, equipment and recent training, tracks every set and run, and recommends progressive overload from your logged numbers. A food diary turns plain sentences (“Chipotle chicken bowl with rice, beans and guac”) into calories and macros. A Progress dashboard covers strength, cardio, consistency, nutrition and body composition, and explains trends from your own data.
 
-- **No accounts, no servers, no paid APIs.** Your data lives in your browser's local storage.
+- **No accounts, no servers, no paid APIs.** Your data lives in your browser's local storage. Online food lookup (USDA FoodData Central and Open Food Facts, both free) is optional.
 - **Works offline** once it has loaded. YouTube videos are the only thing that needs a connection.
 - **Installable on iPhone** as a home-screen app (a PWA).
 - **No build step.** It is plain HTML, CSS and JavaScript. The charts and icons are written from scratch, so there are no external libraries or CDNs.
@@ -102,6 +102,43 @@ Totals update live.
 Amounts Forge had to assume are marked "(assumed)". Macros missing from a product label are filled only from a clearly labelled estimate (Barilla Protein+ calories, for example).
 
 **It learns from you.** A match you replace is remembered for the same words ("lunch bowl" → Chipotle chicken). An amount you change becomes your usual amount when you don't type one. Products you log are saved to *My foods*, and frequent foods and meals you repeat show up in Quick add. Similar dishes stay distinct: a chicken Caesar wrap, a grilled chicken Caesar salad and a crispy chicken Caesar sandwich each break down differently.
+
+### Search, online lookup and barcode scanning
+
+**Search foods** (under the log box) searches, instantly and offline:
+- your foods and saved products;
+- bundled branded products;
+- restaurant menus;
+- USDA-based foods;
+- foods found online before.
+
+Naming a brand or a restaurant lists its products first: “Oikos” shows Oikos’s yogurts, “Barilla Protein+” shows the product rather than plain pasta, “chipotle” shows the menu, and “rotisserie chicken” separates breast and thigh, with and without skin. **Search online** adds live results from two services (`js/lookup.js`):
+
+| Service | Used for | Key | Status shown |
+|---|---|---|---|
+| [USDA FoodData Central](https://fdc.nal.usda.gov) API (`/fdc/v1/foods/search`) | Generic reference foods (Foundation, SR Legacy, FNDDS) and USDA Branded label data | api.data.gov key. Forge ships none; it uses the public `DEMO_KEY` (about 30 requests an hour) unless you paste your own free key in Settings → Nutrition. Your key stays in this browser and is stripped from exported backups. | **Reference data** |
+| [Open Food Facts](https://world.openfoodfacts.org) (`/api/v2/product/{barcode}`, Search-a-licious text search with the classic `/cgi/search.pl` as fallback) | Branded grocery products and barcodes | None | **Estimate** (community data; check it against your label) |
+
+- Search goes online by itself only when this device has little to offer; otherwise you tap the button. That saves the free quotas.
+- **Results are cached** on the device (`wt.foodcache.v1`, up to 600 foods, separate from your data and backups), so a search or barcode that worked once works offline.
+- **Failures never break logging.** Offline, rate limits (HTTP 429), a rejected key, a busy service or a timeout each produce a one-line message, and local results stay on screen. If Search-a-licious fails, the classic search endpoint is tried.
+- **Missing values stay missing.** The only conversion is kJ → kcal.
+- A branded product you log is saved to *My foods* with its barcode and source. Generic USDA foods stay in the cache instead.
+- Online lookup can be turned off in Settings.
+
+**Scan barcode** opens the camera. It decodes with the browser’s `BarcodeDetector` where available (Chrome on Android); elsewhere, including iOS Safari, it uses the bundled ZXing decoder (`js/vendor/`, Apache-2.0), loaded only when you scan.
+- Only EAN-13, EAN-8, UPC-A and UPC-E codes with a valid check digit are accepted, and ZXing needs two matching reads.
+- Lookup order: your foods → cache → Open Food Facts → USDA Branded (by UPC).
+- The product appears with its source, status, per-serving and per-100 g values; *Add to diary* opens the review screen.
+- **Not found:** you can search by name, or *enter it from the label*. That saves it with its barcode, so the next scan finds it instantly, even offline. Forge never substitutes a generic food.
+- You can always type the barcode digits instead.
+- If camera permission is denied, the camera is missing or busy, or the page isn’t HTTPS, you get a specific explanation, and manual entry stays available.
+
+**Offline USDA database (optional).** `tools/build-usda.js` converts FoodData Central’s free bulk downloads (SR Legacy, about 7,800 foods, and Foundation Foods) into `js/data/usda.json`. Forge then searches those foods offline as “USDA reference (offline)”. The repository ships the file empty, because this build environment couldn’t download the datasets. Run `node tools/build-usda.js <downloaded JSON files>` and commit the result. The converter is tested against fixtures in the official format.
+
+### Accuracy audit
+
+`node tests/accuracy.test.js --report` checks 161 realistic descriptions and writes [`docs/FOOD_ACCURACY_REPORT.md`](docs/FOOD_ACCURACY_REPORT.md). The descriptions cover branded products, fast food, restaurant meals, homemade dishes, generic ingredients, portions, sauces, ambiguous inputs, look-alike dishes, typos, and inputs that must not be fabricated. Each case checks the food, brand, portion, calories (calculated by hand) and the confidence label that should be shown. Every item’s calories are also recomputed from the source data. Current result: 0 failures and 0 calculation errors. Of the 161 descriptions, 32 are exact, 99 close, 19 rough, 9 correctly ask which product, and 2 are correctly not recognized. The report also lists the issues the audit found and how they were fixed.
 
 ### Food database
 
@@ -217,6 +254,9 @@ node tests/nutrition.test.js                        # food parser, brands, ambig
 node tests/food.test.js                             # food tracker in the browser: logging, brands, lookup (mocked), favorites, dates, export/restore
 node tests/overhaul.test.js                         # food DB integrity, brief examples, preparations, restaurants, recipes, units, learning, meals, migration v6, analytics, insights
 node tests/diary.test.js                            # diary in the browser: review/edit/replace/add, saved meals, copy, targets, trends, run & weight, progress filters, layout
+node tests/lookup.test.js                           # USDA / Open Food Facts normalizing, caching, failures, barcodes, offline USDA build (mocked network)
+node tests/scan.test.js                             # browser: ZXing decoding, fake camera, permission denied, manual entry, not-found → label, online search (mocked)
+node tests/accuracy.test.js [--report]              # 161-description recognition accuracy audit → docs/FOOD_ACCURACY_REPORT.md
 ```
 The browser tests use Playwright. `tests/serve.js` serves the repository to the browser in-process, so no separate server is needed; set `REAL_SERVER=1` to use one on :8765 instead.
 The end-to-end test generates every workout type, swaps exercises, logs a full session, refreshes mid-workout, saves, and checks that the next session shows previous weights and an increase recommendation that is only applied on approval. It also checks the v1 → v2 data upgrade, intensity variety across repeated generations through the UI, the intensity picker, PR detection, the charts, export → wipe → import, persistence after refresh, the theme toggle and offline loading.
@@ -236,12 +276,18 @@ js/views-data.js      Exercises, History, Progress, Settings
 js/foods.js           original generic food table (typical values per serving)
 js/fooddb.js          USDA-based foods with preparations and sizes; homemade recipes
 js/restaurants.js     restaurant menus (Chipotle, McDonald's, Chick-fil-A, Taco Bell, Subway, Shake Shack, Panera)
+js/lookup.js          online lookup (USDA FoodData Central, Open Food Facts), cache, barcodes
+js/scan.js            barcode scanner (BarcodeDetector or bundled ZXing), manual entry
+js/vendor/            ZXing barcode decoder (Apache-2.0)
+js/data/usda.json     optional offline USDA database (built by tools/build-usda.js)
+tools/build-usda.js   converts FoodData Central bulk downloads for offline use
 js/analytics.js       period filters, strength/cardio/consistency/nutrition/body summaries, insights
 js/products.js        branded products with sources, serving sizes and status
 js/nutrition.js       food parser, food-log store, trends, guidance
 js/views-food.js      Food diary, review/edit/replace sheets, targets, trends, My foods
 js/views-progress.js  Progress dashboard, record run / weight / measurement / photo sheets
 docs/IMPLEMENTATION_PLAN.md   audit and plan for the nutrition and progress overhaul
+docs/FOOD_ACCURACY_REPORT.md  generated recognition accuracy report
 fonts/                Inter (OFL) + license
 sw.js, manifest.webmanifest, icons/   PWA
 ```

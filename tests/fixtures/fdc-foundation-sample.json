@@ -1,0 +1,5 @@
+{"FoundationFoods":[
+ {"fdcId":2346393,"description":"Kale, raw","foodCategory":{"description":"Vegetables and Vegetable Products"},
+  "foodNutrients":[{"nutrient":{"id":2047,"number":"957","name":"Energy (Atwater General Factors)","unitName":"kcal"},"amount":42},{"nutrient":{"id":1003,"number":"203","unitName":"g"},"amount":2.92},{"nutrient":{"id":1005,"number":"205","unitName":"g"},"amount":4.42},{"nutrient":{"id":1004,"number":"204","unitName":"g"},"amount":1.49}],
+  "foodPortions":[{"amount":1,"gramWeight":21,"measureUnit":{"name":"cup"},"portionDescription":"1 cup, chopped"}]}
+]}

@@ -1,0 +1,9 @@
+{"SRLegacyFoods":[
+ {"fdcId":171477,"description":"Chicken, broilers or fryers, thigh, meat and skin, cooked, roasted","foodCategory":{"description":"Poultry Products"},
+  "foodNutrients":[{"nutrient":{"id":1008,"number":"208","name":"Energy","unitName":"kcal"},"amount":229},{"nutrient":{"id":1062,"number":"268","name":"Energy","unitName":"kJ"},"amount":958},{"nutrient":{"id":1003,"number":"203","name":"Protein","unitName":"g"},"amount":23.26},{"nutrient":{"id":1005,"number":"205","name":"Carbohydrate, by difference","unitName":"g"},"amount":0},{"nutrient":{"id":1004,"number":"204","name":"Total lipid (fat)","unitName":"g"},"amount":14.71}],
+  "foodPortions":[{"amount":1,"gramWeight":62,"modifier":"thigh, bone removed","measureUnit":{"name":"undetermined"}},{"amount":1,"gramWeight":140,"modifier":"chopped or diced","measureUnit":{"name":"cup"}}]},
+ {"fdcId":169704,"description":"Quinoa, cooked","foodCategory":{"description":"Cereal Grains and Pasta"},
+  "foodNutrients":[{"nutrient":{"id":1008,"number":"208","unitName":"kcal"},"amount":120},{"nutrient":{"id":1003,"number":"203","unitName":"g"},"amount":4.4},{"nutrient":{"id":1005,"number":"205","unitName":"g"},"amount":21.3},{"nutrient":{"id":1004,"number":"204","unitName":"g"},"amount":1.92}],
+  "foodPortions":[{"amount":1,"gramWeight":185,"modifier":"","measureUnit":{"name":"cup"}}]},
+ {"fdcId":1,"description":"Water, bottled, generic","foodNutrients":[{"nutrient":{"id":1051,"number":"255","unitName":"g"},"amount":99.9}]}
+]}

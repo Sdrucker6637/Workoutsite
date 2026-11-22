@@ -199,6 +199,7 @@
           <textarea id="foodInput" class="input" rows="2" data-in="foodText" placeholder="e.g. Chipotle chicken bowl with rice, black beans and guac" autocomplete="off" autocapitalize="sentences" enterkeyhint="done">${esc(st.draft)}</textarea>
           <button class="btn btn-primary" id="foodAddBtn" data-act="foodAdd" ${items.length ? '' : 'disabled'}>${!items.length || quickOK(items) ? 'Log' : 'Review'}</button>
         </div>
+        <div class="log-tools"><button class="btn btn-plain btn-sm" data-act="foodSearch">${I('search', 15)}Search foods</button><button class="btn btn-plain btn-sm" data-act="foodScan">${I('barcode', 15)}Scan barcode</button></div>
         <div id="foodPreview" class="mt12" aria-live="polite">${previewHtml(items)}</div>
       </section>
       ${quickAdd(day)}
@@ -709,55 +710,139 @@
   };
 
   /* ───────── Search & replace (all sources) ───────── */
-  A.rvSearch = (d) => {
-    const i = +d.i;
-    const cur = rvState().items[i];
-    if (!cur) return;
-    const st = { q: cur.unknown || cur.ambiguous ? cur.phrase || cur.text : cur.phrase || cur.name, res: [] };
-    const listHtml = () => {
-      st.res = N.searchAll(st.q, 24);
-      if (!st.res.length) return `<p class="footnote t3">No match. Try fewer words, or enter the values yourself.</p>`;
+  /**
+   * Search sheet: everything on this device first (your foods, bundled products, restaurants, USDA reference foods,
+   * foods found online before), then — optionally — live USDA FoodData Central and Open Food Facts results.
+   * opts: { title, eyebrow, q, onPick(result), foot }
+   */
+  function openSearch(opts) {
+    const L = WT.lookup;
+    const st = { q: opts.q || '', res: [], online: null, busy: false, errors: [], seq: 0, asked: '' };
+    const srcTag = (r) => (r.remote ? (r.remote.src === 'fdc' ? 'USDA' : 'Open Food Facts') : '');
+    const row = (r, j) => `<button class="li food-main sr" data-act="srPick" data-j="${j}"><div class="grow"><div class="ti">${esc(r.name)} ${confTag(r.status || 'estimated')}${srcTag(r) ? `<span class="tag src">${srcTag(r)}</span>` : ''}</div><div class="su tnum">${esc(r.serving || '')}${r.cal != null ? ` · ${cal(r.cal)} cal` : ''} · ${r.p == null ? '—' : N.rp(r.p)} g protein</div></div></button>`;
+    const localHtml = () => {
+      const fresh = new Set((st.online || []).map((r) => 'x:' + r.id));
+      const local = N.searchAll(st.q, 24).filter((x) => !fresh.has(x.id)); // this search's online results get their own sections
+      const online = (st.online || []).map((rec) => {
+        const sv = L.servingOf(rec);
+        return { id: 'x:' + rec.id, kind: rec.src === 'fdc' ? 'Online · USDA FoodData Central' : 'Online · Open Food Facts', name: `${rec.brand ? rec.brand + ' ' : ''}${rec.name}`, brand: rec.brand, serving: sv.text, p: sv.per.p, cal: sv.per.cal, status: rec.status, remote: rec };
+      });
+      online.sort((a, b) => (a.kind === b.kind ? 0 : a.kind.includes('USDA') ? 1 : -1)); // branded grocery first
+      st.res = local.concat(online);
+      if (!st.res.length) return `<p class="footnote t3 sr-none">${st.q.trim().length < 2 ? 'Type a food, brand or restaurant item.' : 'Nothing on this device matches. Try fewer words, search online, or enter it from the label.'}</p>`;
       let last = '';
-      return st.res.map((r, j) => {
+      return `<div class="list inset sr-list">${st.res.map((r, j) => {
         const h = r.kind !== last ? `<div class="label sr-kind">${esc(r.kind)}</div>` : '';
         last = r.kind;
-        return `${h}<button class="li food-main sr" data-act="srPick" data-j="${j}"><div class="grow"><div class="ti">${esc(r.name)} ${confTag(r.status || 'estimated')}</div><div class="su tnum">${esc(r.serving || '')}${r.cal != null ? ` · ${cal(r.cal)} cal` : ''} · ${r.p == null ? '—' : N.rp(r.p)} g protein</div></div></button>`;
-      }).join('');
+        return h + row(r, j);
+      }).join('')}</div>`;
     };
+    const onlineBar = () => {
+      if (!L) return '';
+      if (!L.enabled()) return `<p class="footnote t3">Online lookup is off. Turn it on in Settings → Nutrition to search USDA and Open Food Facts.</p>`;
+      const msg = st.busy ? 'Searching USDA and Open Food Facts…' : st.online ? `${st.online.length ? `${st.online.length} online result${st.online.length === 1 ? '' : 's'}` : 'No online results'}${st.cached ? ' (saved earlier)' : ''}` : 'USDA FoodData Central and Open Food Facts — free, optional';
+      return `<div class="row between sr-online"><span class="footnote t2">${msg}</span><button class="btn btn-secondary btn-sm" data-act="srOnline" ${st.busy || st.q.trim().length < 2 ? 'disabled' : ''}>${I('search', 14)}${st.online ? 'Search again' : 'Search online'}</button></div>
+        ${st.errors.map((e) => `<p class="footnote sr-err">${esc(e.text)}</p>`).join('')}`;
+    };
+    const paint = () => {
+      const a1 = document.getElementById('srList'), a2 = document.getElementById('srOnlineBar');
+      if (a1) a1.innerHTML = localHtml();
+      if (a2) a2.innerHTML = onlineBar();
+    };
+    async function goOnline(auto) {
+      const q = st.q.trim();
+      if (q.length < 2 || !L || !L.enabled()) return;
+      if (auto && st.asked === q.toLowerCase()) return;
+      st.asked = q.toLowerCase();
+      const my = ++st.seq;
+      st.busy = true;
+      st.errors = [];
+      paint();
+      const r = await L.search(q);
+      if (my !== st.seq) return; // a newer search replaced this one
+      st.busy = false;
+      st.online = r.results;
+      st.cached = r.cached;
+      st.errors = r.errors;
+      paint();
+    }
     WT.openSheet(() => ({
-      eyebrow: `Replace “${esc(cur.name || cur.text)}”`,
-      title: 'Search foods',
-      body: `<input class="input" id="srQ" data-in="srQ" value="${esc(st.q)}" placeholder="Food, brand or restaurant item" autocomplete="off" aria-label="Search foods">
-        <div id="srList" class="list inset mt12 sr-list">${listHtml()}</div>`,
-      foot: `<button class="btn btn-plain btn-sm" data-act="productAdd" data-t="${esc(cur.text)}" data-i="${i}">${I('plus', 14)}Branded product from label</button><span class="grow"></span><button class="btn btn-secondary" data-act="closeSheet">Cancel</button>`,
+      eyebrow: opts.eyebrow || '',
+      title: opts.title || 'Search foods',
+      body: `<input class="input" id="srQ" data-in="srQ" value="${esc(st.q)}" placeholder="Food, brand, product or restaurant item" autocomplete="off" aria-label="Search foods" enterkeyhint="search">
+        <div id="srOnlineBar" class="mt8">${onlineBar()}</div>
+        <div id="srList" class="mt8">${localHtml()}</div>`,
+      foot: opts.foot || `<button class="btn btn-plain btn-sm" data-act="productAdd">${I('plus', 14)}Enter from a label</button><span class="grow"></span><button class="btn btn-secondary" data-act="closeSheet">Cancel</button>`,
       after: (sh) => {
         const q = sh.querySelector('#srQ');
         if (q && !q.dataset.f) {
           q.dataset.f = 1;
           q.focus();
           q.select();
+          q.addEventListener('keydown', (e) => e.key === 'Enter' && (e.preventDefault(), goOnline(false)));
         }
       },
-    }));
-    let qt = null;
+    }), { wide: true });
+    let qt = null, ot = null;
     WT.I.srQ = (el, ev) => {
       if (ev.type !== 'input') return;
       st.q = el.value;
+      st.online = null;
+      st.errors = [];
+      st.seq++;
+      st.busy = false;
       clearTimeout(qt);
-      qt = setTimeout(() => {
-        const host = document.getElementById('srList');
-        if (host) host.innerHTML = listHtml();
-      }, 120);
+      clearTimeout(ot);
+      qt = setTimeout(paint, 120);
+      // look online by itself only when this device has little to offer (keeps the free quotas for when they matter)
+      ot = setTimeout(() => {
+        const strong = N.searchAll(st.q, 6).filter((r) => r.s >= 2).length;
+        if (st.q.trim().length >= 4 && strong < 2 && navigator.onLine !== false) goOnline(true);
+      }, 900);
     };
+    A.srOnline = () => goOnline(false);
     A.srPick = (dd) => {
       const r = st.res[+dd.j];
-      if (!r) return;
-      const items = rvState().items;
-      const next = N.resolveAs(Object.assign({}, cur), r.id);
-      items[i] = Object.assign(next, { key: cur.key, learnRef: r.id, partOf: cur.partOf, phrase: cur.phrase, text: cur.text, qtyEdited: cur.qtyEdited });
-      WT.closeSheet(); // back to the review
-      WT.refreshSheet();
+      if (r) opts.onPick(r);
     };
+    if (opts.q && opts.autoOnline) setTimeout(() => goOnline(true), 50);
+    // the offline USDA copy (if built) loads on first use; refresh the list when it arrives
+    if (L && !L.offlineDB()) L.loadOffline().then((db) => db && db.foods.length && paint());
+  }
+  WT.openFoodSearch = openSearch;
+
+  /** Replace an item in the review with a search result. */
+  A.rvSearch = (d) => {
+    const i = +d.i;
+    const cur = rvState().items[i];
+    if (!cur) return;
+    openSearch({
+      eyebrow: `Replace “${esc(cur.name || cur.text)}”`,
+      q: cur.unknown || cur.ambiguous ? cur.phrase || cur.text : cur.phrase || cur.name,
+      foot: `<button class="btn btn-plain btn-sm" data-act="productAdd" data-t="${esc(cur.text)}" data-i="${i}">${I('plus', 14)}Branded product from label</button><span class="grow"></span><button class="btn btn-secondary" data-act="closeSheet">Cancel</button>`,
+      onPick: (r) => {
+        const items = rvState().items;
+        const next = N.resolveAs(Object.assign({}, cur), r.id);
+        items[i] = Object.assign(next, { key: cur.key, learnRef: r.id, partOf: cur.partOf, phrase: cur.phrase, text: cur.text, qtyEdited: cur.qtyEdited });
+        WT.closeSheet(); // back to the review
+        WT.refreshSheet();
+      },
+    });
+  };
+  /** Search foods → pick one → review it (amount, meal) → log. */
+  A.foodSearch = () => {
+    openSearch({
+      title: 'Search foods',
+      q: '',
+      onPick: (r) => {
+        WT.closeSheet(true);
+        const it = N.resolveAs({ id: WT.uid(), text: r.name, qty: 1, phrase: '' }, r.id);
+        if (!it || !it.per) return WT.toast('Couldn’t open that food', 'error');
+        it.key = 'search:' + r.id;
+        it.match = it.src === 'restaurant' || it.src === 'product' || it.src === 'my' || it.src === 'online' ? 'exact' : it.match || 'close';
+        openReview([it]);
+      },
+    });
   };
 
   /* ───────── Edit a logged entry ───────── */
@@ -959,7 +1044,7 @@
     };
     const form = {
       brand: src.brand || '', line: lineOf(src), flavor: src.flavor || '', unit: src.unit || 'serving', serving: src.serving || '', g: src.g || '',
-      p: v(per.p), cal: v(per.cal), c: v(per.c), f: v(per.f), aliases: (src.aliases || []).join(', '), qty: src.qty || 1, fav: f ? !!f.fav : !!opts.fav,
+      p: v(per.p), cal: v(per.cal), c: v(per.c), f: v(per.f), aliases: (src.aliases || []).join(', '), qty: src.qty || 1, fav: f ? !!f.fav : !!opts.fav, code: src.code || '',
     };
     const snap = () => JSON.stringify([form.p, form.cal, form.c, form.f, form.unit, form.serving].map((x) => String(x).trim()));
     const orig = snap();
@@ -977,6 +1062,7 @@
         <div class="fields">${fld('p', 'Protein per serving (g)', 'number')}${fld('g', 'Serving weight (g, optional)', 'number')}</div>
         ${P().showMacros !== false ? `<div class="fields" style="grid-template-columns:repeat(3,minmax(0,1fr))">${fld('cal', 'Calories', 'number')}${fld('c', 'Carbs (g)', 'number')}${fld('f', 'Fat (g)', 'number')}</div><p class="footnote t3">Calories, carbs and fat are optional — leave them blank if you like.</p>` : ''}
         ${fld('aliases', 'Shorthand names (optional, comma-separated)', 'text', 'placeholder="e.g. snickerdoodle shake, my shake"')}
+        ${fld('code', 'Barcode (optional)', 'text', 'inputmode="numeric" placeholder="Digits under the barcode"')}
         <div class="fields">${fld('qty', 'Usual amount (servings)', 'number', 'step="0.5"')}<div></div></div>
         ${H.li({ title: 'Favorite', sub: 'Show as a one-tap button', trail: H.toggle(form.fav, 'mfFav') })}
       </div>`,
@@ -1007,11 +1093,14 @@
         productId: f ? f.productId : pre.productId, cat: (f && f.cat) || pre.cat || '',
         units: (f && f.units) || pre.units, approx: (f && f.approx) || pre.approx, key: (f && f.key) || pre.key,
         checked: newStatus === 'verified' ? (f && f.checked) || pre.checked : today(),
+        code: String(form.code || '').replace(/\D/g, '') || undefined,
       };
+      if (data.code && WT.lookup && !WT.lookup.validCode(data.code)) return WT.toast('That barcode’s check digit doesn’t add up — check the digits', 'error');
       if (f) f.aliases = []; // aliases come from the form as edited
       if (data.productId && !f && WT.db.nutrition.foods.some((x) => x.productId === data.productId)) delete data.productId;
       const saved = N.saveFood(data, !!form.fav);
       WT.closeSheet(true);
+      if (opts.onSaved) return opts.onSaved(saved);
       if (opts.ctx && opts.ctx.text) {
         ui().fix[opts.ctx.text] = { id: 'my:' + saved.id };
         if (opts.ctx.review != null) {

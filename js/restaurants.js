@@ -162,7 +162,7 @@
         R('mac', 'Mac & Cheese', ['mac and cheese', 'mac n cheese', 'mac'], null, { role: 'entree', sizes: { small: [470, 18, 37, 27], medium: [940, 37, 74, 54], large: [940, 37, 74, 54] }, def: 'medium', sizeWords: { cup: 'small', bowl: 'medium' } }),
         R('caesar-chicken', 'Caesar Salad with Chicken', ['caesar salad with chicken', 'chicken caesar salad', 'chicken caesar'], [470, 36, 19, 29], { role: 'entree', half: [240, 18, 10, 15] }),
         R('greek-salad', 'Greek Salad', ['greek salad'], [400, 7, 15, 36], { role: 'entree', half: [200, 4, 8, 18] }),
-        R('fuji-apple-chicken', 'Fuji Apple Salad with Chicken', ['fuji apple salad', 'fuji apple chicken salad', 'apple salad'], [570, 32, 33, 34], { role: 'entree', half: [290, 16, 17, 17] }),
+        R('fuji-apple-chicken', 'Fuji Apple Salad with Chicken', ['fuji apple salad with chicken', 'fuji apple salad', 'fuji apple chicken salad', 'apple salad'], [570, 32, 33, 34], { role: 'entree', half: [290, 16, 17, 17] }),
         R('turkey-sandwich', 'Roasted Turkey & Avocado BLT', ['turkey avocado blt', 'turkey sandwich', 'turkey and avocado'], [870, 46, 70, 46], { role: 'entree', half: [440, 23, 35, 23] }),
         R('chipotle-melt', 'Chipotle Chicken Avocado Melt', ['chipotle chicken avocado melt', 'chicken avocado melt', 'chipotle chicken melt'], [930, 47, 80, 46], { role: 'entree', half: [470, 24, 40, 23] }),
         R('frontega', 'Frontega Chicken Panini', ['frontega chicken', 'frontega'], [790, 46, 74, 34], { role: 'entree', own: ['frontega chicken', 'frontega'], half: [400, 23, 37, 17] }),

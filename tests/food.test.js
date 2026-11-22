@@ -100,9 +100,12 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   ok(n.entries.length === 6, 'both items logged');
   const manual = n.entries.find((e) => e.src === 'manual');
   ok(manual && Math.round(manual.per.p * manual.qty) === 4 && /zorbleberr/i.test(manual.name), 'manual item keeps the user’s 4 g');
-  // typo → pick a suggestion inline
-  await type('chiken brest');
-  await page.tap('#foodPreview [data-act="foodPick"]');
+  // a close typo is corrected and says so
+  await type('2 chiken brests');
+  ok(/Read “brest” as “breast”/.test(await page.textContent('#foodPreview')) && /Close match/.test(await page.textContent('#foodPreview')), 'close typo corrected, shown, never “exact”');
+  // a far typo → pick a suggestion inline
+  await type('2 chikkn brst');
+  await page.tap('#foodPreview [data-act="foodPick"][data-id="chicken-breast"]');
   await page.waitForTimeout(150);
   ok(/Chicken breast/.test(await page.textContent('#foodPreview')) && !(await page.locator('#foodPreview .li.unk').count()), 'typo resolved by tapping a suggestion');
   await page.tap('#foodAddBtn');

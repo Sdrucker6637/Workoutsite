@@ -64,7 +64,7 @@
     /* ── Ground beef: lean % × cooked/raw ── */
     ...[[80, [265, 25.7, 0, 17.4], [254, 17.2, 0, 20]], [85, [250, 26, 0, 15.4], [215, 18.6, 0, 15]], [90, [217, 26.1, 0, 11.7], [176, 20, 0, 10]], [93, [198, 27.2, 0, 9.3], [152, 20.9, 0, 7]], [95, [164, 25.4, 0, 6.4], [137, 21.4, 0, 5]]].flatMap(([pct, cooked, raw]) => [
       G(`ground-beef-${pct}`, `Ground beef ${pct}/${100 - pct}, cooked`, [`${pct}lean ground beef`, `ground beef ${pct}lean`, `${pct}lean beef`, `cooked ${pct}lean ground beef`],
-        cooked, ['serving', 113], { patty: 85, cup: 125, bowl: 170, lb: 340 }, { usda: `Beef, ground, ${pct}% lean / ${100 - pct}% fat, cooked`, serv: '4 oz cooked' }),
+        cooked, ['serving', 113], { patty: 85, cup: 125, bowl: 170, lb: 340 }, { usda: `Beef, ground, ${pct}% lean / ${100 - pct}% fat, cooked`, serv: '4 oz cooked; “1 lb” means a pound as bought, ≈ 340 g once cooked' }),
       G(`ground-beef-${pct}-raw`, `Ground beef ${pct}/${100 - pct}, raw`, [`raw ${pct}lean ground beef`, `${pct}lean ground beef raw`, `uncooked ${pct}lean ground beef`, `ground beef ${pct}lean raw`],
         raw, ['serving', 113], { patty: 113, lb: 453.6, package: 453.6 }, { usda: `Beef, ground, ${pct}% lean / ${100 - pct}% fat, raw`, serv: '4 oz raw (as packaged)' }),
     ]),
@@ -101,6 +101,8 @@
     G('caesar-dressing', 'Caesar dressing', ['caesar dressing'], [540, 2.2, 3.3, 57.9], ['tbsp', 15], { serving: 30, packet: 43 }, est({ usda: 'Salad dressing, caesar, regular (typical)', dq: 2 })),
     G('vinaigrette', 'Vinaigrette', ['vinaigrette', 'italian dressing', 'balsamic vinaigrette', 'salad dressing', 'dressing'], [290, 0.4, 10, 28], ['tbsp', 15], { serving: 30 }, est({ usda: 'Salad dressing, vinaigrette / Italian (typical)', dq: 2 })),
     G('soy-sauce', 'Soy sauce', ['soy sauce', 'soya sauce', 'tamari'], [53, 8.1, 4.9, 0.6], ['tbsp', 16], { tsp: 5.3, packet: 9 }, { usda: 'Soy sauce made from soy and wheat', dq: 1 }),
+    G('bbq-sauce', 'Barbecue sauce', ['bbq sauce', 'barbecue sauce', 'barbeque sauce', 'bbq'], [172, 0.8, 40.8, 0.6], ['tbsp', 17], { serving: 34, packet: 28, cup: 272 }, { usda: 'Sauce, barbecue', dq: 2 }),
+    G('hot-sauce', 'Hot sauce', ['hot sauce', 'sriracha', 'buffalo sauce', 'tabasco', 'frank s red hot', 'franks red hot'], [20, 1, 3, 0.5], ['tsp', 5], { tbsp: 15, packet: 7, serving: 5 }, est({ usda: 'Hot pepper sauce (typical; buffalo sauce with butter is higher)', dq: 1 })),
     G('honey', 'Honey', ['honey'], [304, 0.3, 82.4, 0], ['tbsp', 21], { tsp: 7, drizzle: 10, serving: 21 }, { usda: 'Honey', dq: 1 }),
     G('maple-syrup', 'Syrup', ['maple syrup', 'syrup', 'pancake syrup'], [260, 0, 67, 0.1], ['tbsp', 20], { serving: 60, drizzle: 20 }, { usda: 'Syrups, maple', dq: 2 }),
     G('sugar', 'Sugar', ['sugar', 'white sugar', 'brown sugar'], [387, 0, 100, 0], ['tsp', 4.2], { tbsp: 12.5, packet: 3, cube: 4, spoon: 4.2 }, { usda: 'Sugars, granulated', dq: 1 }),
@@ -131,7 +133,7 @@
       [440, 9, 60, 17.5], ['package', 85], { serving: 85, bowl: 85, cup: 64 }, est({ usda: 'Noodles, instant, dry with seasoning (typical)', serv: '1 package (≈ 3 oz dry) with seasoning' })),
     G('rolled-oats', 'Oats, dry', ['rolled oats', 'dry oats', 'old fashioned oats', 'quick oats', 'oats dry', 'uncooked oats', 'oat'],
       [379, 13.2, 67.7, 6.5], ['cup', 81], { serving: 40, scoop: 40, handful: 20, packet: 28, tbsp: 5 }, { usda: 'Oats, rolled, dry', dq: 0.5, serv: 'dry; ½ cup ≈ 40 g' }),
-    G('oatmeal', 'Oatmeal, cooked', ['oatmeal', 'porridge', 'cooked oatmeal', 'bowl of oatmeal', 'cooked oats'],
+    G('oatmeal', 'Oatmeal, cooked', ['oatmeal', 'porridge', 'cooked oatmeal', 'cooked oats'],
       [71, 2.5, 12, 1.5], ['cup', 234], { bowl: 293, serving: 234, packet: 234 }, { usda: 'Cereals, oats, regular, cooked with water', serv: 'cooked with water' }),
     G('bread', 'White bread', ['bread', 'white bread', 'toast', 'white toast', 'sandwich bread', 'slice of bread', 'sourdough', 'sourdough bread', 'sourdough toast', 'french bread', 'italian bread'],
       [266, 7.6, 49.4, 3.3], ['slice', 28], { piece: 28, serving: 56, roll: 43 }, { usda: 'Bread, white, commercially prepared (toasted or not)', serv: '≈ 1 oz slice', count: 'slice', sizes: { small: 22, medium: 28, large: 40, thin: 20, thick: 40 } }),

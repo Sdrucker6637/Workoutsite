@@ -67,6 +67,7 @@
     run: '<circle cx="14.5" cy="4.5" r="1.8"/><path d="M6 21l3.5-5.5L13 17v4M8 11.5l2.5-3.5h4l2.5 3.5 3 1M10.5 8 9 13l4 2.5"/>',
     camera: '<path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.5"/>',
     bulb: '<path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2V16h5v-.1c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z"/>',
+    barcode: '<path d="M3 6v12M6 6v12M9.5 6v12M13 6v12M15 6v12M18 6v12M21 6v12"/>',
     grip: '<circle cx="9" cy="6" r="1" fill="currentColor"/><circle cx="15" cy="6" r="1" fill="currentColor"/><circle cx="9" cy="12" r="1" fill="currentColor"/><circle cx="15" cy="12" r="1" fill="currentColor"/><circle cx="9" cy="18" r="1" fill="currentColor"/><circle cx="15" cy="18" r="1" fill="currentColor"/>',
   };
   WT.icon = (name, size, cls) =>
