@@ -330,7 +330,8 @@
     const r = WT.periodRange(key || '30d', now);
     const items = [];
     const first = WT.firstTracked();
-    const coversPrev = first && first <= r.prevStart;
+    // the previous period must be (mostly) tracked before comparing with it
+    const coversPrev = first && first.getTime() <= r.prevStart.getTime() + (r.days / 4) * DAY;
     const pw = periodWords(r);
 
     // 1. Workout consistency: this period vs the one before
@@ -425,5 +426,34 @@
     }
     const order = { down: 0, up: 1, info: 2 };
     return { items: items.sort((a, b) => order[a.kind] - order[b.kind]), needMore, range: r };
+  };
+
+  /* ───────── Recording a run (Home / Progress quick sheet) ───────── */
+  const parseTime = (s) => {
+    // "28:30", "1:05:00", "28.5" (minutes), "28" → minutes
+    s = String(s || '').trim();
+    if (!s) return 0;
+    if (/^\d+(\.\d+)?$/.test(s)) return +s;
+    const p = s.split(':').map(Number);
+    if (p.some(isNaN)) return 0;
+    return p.length === 3 ? p[0] * 60 + p[1] + p[2] / 60 : p[0] + p[1] / 60;
+  };
+  WT.parseRunTime = parseTime;
+  /** Save a completed run as a workout in history (so it counts everywhere workouts do). */
+  WT.saveRun = function (o) {
+    const exId = WT.ex(o.exId) ? o.exId : 'outdoor-run';
+    const ex = WT.ex(exId);
+    const date = WT.nut.validDay(o.date) ? o.date : WT.nut.dayKey();
+    const start = date === WT.nut.dayKey() ? new Date(Date.now() - Math.round((o.time || 0) * 60000)) : new Date(WT.nut.parseDay(date).getTime() + 8 * 36e5);
+    const item = WT.sessionItem(exId);
+    item.sets = [{ time: String(WT.round(o.time || 0, 2)), dist: o.dist ? String(WT.round(o.dist, 2)) : '', w: '', r: '', done: true, at: start.toISOString() }];
+    item.targetSets = 1;
+    const s = { id: WT.uid(), type: 'cardio', title: ex.name, startedAt: start.toISOString(), settings: null, notes: o.notes || '', exercises: [item], recorded: true };
+    WT.finishSession(s);
+    s.endedAt = new Date(start.getTime() + Math.round((o.time || 0) * 60000)).toISOString();
+    s.durationSec = Math.round((o.time || 0) * 60);
+    WT.db.history.push(s);
+    WT.save(true);
+    return s;
   };
 })();

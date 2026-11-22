@@ -25,7 +25,7 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
     history: [{ id: 'old1', type: 'push', title: 'Push', startedAt: '2026-10-01T17:00:00.000Z', endedAt: '2026-10-01T18:00:00.000Z', durationSec: 3600, totals: { sets: 3, volume: 1200 }, prs: [], exercises: [{ uid: 'u1', exId: 'db-bench-press', name: 'Dumbbell Bench Press', intensity: 'regular', targetSets: 3, repMin: 6, repMax: 10, sets: [{ w: '40', r: '10', done: true }, { w: '40', r: '10', done: true }, { w: '40', r: '10', done: true }] }] }], customExercises: [], overrides: {} })));
   await page.reload();
   let m = await db();
-  ok(m.version === 5 && m.history.length === 1 && m.profile.name === 'Old' && m.profile.excluded[0] === 'crunch', 'v1 history and settings preserved');
+  ok(m.version === 6 && m.history.length === 1 && m.profile.name === 'Old' && m.profile.excluded[0] === 'crunch', 'v1 history and settings preserved');
   ok(m.profile.theme === 'light' && m.profile.goals[0].startsWith('Reduce overall') && m.profile.intensityRandom === true, 'new defaults applied (theme, unedited goals, intensity odds)');
   ok((await page.evaluate(() => WT.personalRecords('db-bench-press').heaviest.w)) === 40, 'old history feeds records');
   await page.evaluate(() => { WT.flush = WT.save = () => {}; localStorage.clear(); });
@@ -177,6 +177,9 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
     ok(+(await page.locator('.field-num input[data-f="w"]').inputValue()) === rec.weight, 'Apply sets recommended weight only on approval');
     for (let i = 0; i < it.sets.length; i++) { await page.click(`[data-act="woCheck"][data-uid="${it.uid}"]`); if (i < it.sets.length - 1) await page.click(`[data-act="woFocus"][data-uid="${it.uid}"]`); }
     await shot('train-progress');
+  } else {
+    // bodyweight / timed / cardio first exercise: log its sets as they come (pre-filled from last time)
+    for (let i = 0; i < it.sets.length; i++) { await page.click(`[data-act="woCheck"][data-uid="${it.uid}"]`); if (i < it.sets.length - 1) await page.click(`[data-act="woFocus"][data-uid="${it.uid}"]`); }
   }
   await page.click('.mtop [data-act="woFinish"]'); await page.click('[data-act="woSave"]'); await page.waitForTimeout(300);
   d = await db();
@@ -186,11 +189,14 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
 
   console.log('Progress');
   await page.goto(URL + '#/progress'); await page.waitForTimeout(350);
+  ok((await page.locator('.ins-card').count()) === 1 && (await page.locator('.ov-card').count()) === 5, 'progress overview: insights + five categories');
+  await page.click('[data-act="progTab"][data-v="strength"]'); await page.waitForTimeout(300);
   ok((await page.locator('#progChart svg').count()) === 1, 'one chart at a time (strength)');
-  await page.click('[data-act="progTab"][data-v="frequency"]'); await page.waitForTimeout(250);
-  ok((await page.locator('#weeksChart svg').count()) === 1 && (await page.locator('#progChart').count()) === 0, 'frequency tab swaps the chart');
-  await page.click('[data-act="progTab"][data-v="volume"]'); await page.waitForTimeout(250);
-  ok((await page.locator('#volChart svg').count()) === 1, 'volume chart');
+  await page.click('[data-act="progTab"][data-v="consistency"]'); await page.waitForTimeout(250);
+  ok((await page.locator('#weeksChart svg').count()) === 1 && (await page.locator('#progChart').count()) === 0, 'consistency tab: workouts-per-week chart');
+  ok((await page.locator('#volChart svg').count()) === 1 && (await page.locator('.heatmap .hm-c.on').count()) >= 1, 'volume chart and training calendar');
+  for (const p of ['7d', '90d', '6m', '1y', 'all', '30d']) { await page.click(`[data-act="progPeriod"][data-v="${p}"]`); await page.waitForTimeout(120); }
+  ok((await page.locator('#weeksChart svg').count()) === 1, 'every period filter renders');
 
   console.log('Exercises');
   await page.goto(URL + '#/library');

@@ -35,7 +35,7 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   await page.evaluate((s) => { WT.flush = WT.save = () => {}; localStorage.clear(); localStorage.setItem('wt.data.v1', JSON.stringify(s)); }, SEED);
   await page.reload();
   let m = await db();
-  ok(m.version === 5 && JSON.stringify(m.history) === JSON.stringify(SEED.history), 'v3 → v5: workout history byte-identical');
+  ok(m.version === 6 && JSON.stringify(m.history) === JSON.stringify(SEED.history), 'v3 → v6: workout history byte-identical');
   ok(m.profile.name === 'Lifter' && m.profile.proteinTarget === 150 && m.nutrition.entries.length === 0, 'settings kept; empty food log; 150 g default target');
   const histBefore = JSON.stringify(m.history);
 
@@ -45,26 +45,29 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   await page.waitForSelector('#foodInput');
   ok((await page.evaluate(() => location.hash)) === '#/food', 'Food screen opens');
   ok(!(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)), 'no horizontal overflow on a phone');
-  ok(/Nothing logged yet today/.test(await page.textContent('.food-sum')), 'empty day explained, not shown as 0 g short');
+  ok(/Nothing logged yet today/.test(await page.textContent('.nut-sum')), 'empty day explained, not shown as 0 g short');
 
   console.log('Logging one food');
   await type('3 eggs');
-  ok(/Eggs/.test(await page.textContent('#foodPreview')) && /≈18 g/.test(await page.textContent('#foodPreview')), 'live breakdown before logging');
+  ok(/Eggs/.test(await page.textContent('#foodPreview')) && /≈19 g/.test(await page.textContent('#foodPreview')), 'live breakdown before logging (3 large eggs ≈ 19 g, USDA)');
   await page.tap('#foodAddBtn');
   await page.waitForTimeout(250);
   let n = await nut();
   ok(n.entries.length === 1 && n.entries[0].name === 'Eggs' && n.entries[0].qty === 3, 'one entry logged');
-  ok((await total()) === 18, 'daily total 18 g');
+  ok((await total()) === 19, 'daily total 19 g');
   ok((await page.inputValue('#foodInput')) === '', 'input cleared after logging');
 
   console.log('Logging multiple foods in one sentence (Enter key)');
   await type('2 chicken breasts, a protein shake, and 2 hot dogs');
   ok((await page.locator('#foodPreview .li.pv').count()) === 3, 'three items previewed');
   await page.press('#foodInput', 'Enter');
+  await page.waitForSelector('.sheet [data-act="rvLog"]');
+  ok((await page.locator('.sheet .rv').count()) === 3, 'three items → review screen opens instead of logging blind');
+  await page.tap('.sheet [data-act="rvLog"]');
   await page.waitForTimeout(250);
   n = await nut();
   ok(n.entries.length === 4, 'three more entries logged');
-  ok((await total()) === 18 + 106 + 25 + 10, 'daily total adds up (' + (await total()) + ')');
+  ok((await total()) === 19 + 105 + 25 + 10, 'daily total adds up (' + (await total()) + ')');
   ok((await page.locator('.food-row').count()) === 4, 'four rows in the list');
   ok(/reached your protein goal/.test(await page.textContent('.food-msg')), 'guidance shown: ' + (await page.textContent('.food-msg')));
 
@@ -76,7 +79,7 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   await type('2 Ball Park hot dogs and 1 Snickerdoodle protein shake');
   const pv2 = await page.textContent('#foodPreview');
   ok(/Ball Park hot dog/.test(pv2) && /not label data/.test(pv2), 'brand without product data → typical estimate, says so');
-  ok(/Snickerdoodle protein shake/.test(pv2) && (await page.locator('#foodPreview .tag.conf.e').count()) === 2, 'unknown flavor → clearly labelled Estimate');
+  ok(/Snickerdoodle protein shake/.test(pv2) && (await page.locator('#foodPreview .tag.conf.e').count()) === 2 && (await page.locator('#foodPreview .mt.low').count()) === 2, 'unknown flavor → clearly labelled Estimate and Rough estimate');
   await type('');
 
   console.log('Unrecognized food must be resolved, never silently logged');
@@ -86,8 +89,9 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   await page.waitForSelector('.sheet [data-act="rvLog"]');
   ok(await page.isDisabled('.sheet [data-act="rvLog"]'), 'Log is disabled until it is resolved');
   ok((await nut()).entries.length === 4, 'nothing logged yet');
-  await page.fill('.sheet [data-in="rvNum"][data-k="manual"]', '4');
-  await page.dispatchEvent('.sheet [data-in="rvNum"][data-k="manual"]', 'change');
+  await page.fill('.sheet [data-in="rvNum"][data-k="manual-p"]', '4');
+  await page.fill('.sheet [data-in="rvNum"][data-k="manual-cal"]', '60');
+  await page.tap('.sheet [data-act="rvManual"]');
   await page.waitForTimeout(100);
   ok(!(await page.isDisabled('.sheet [data-act="rvLog"]')), 'resolved with the user’s own estimate');
   await page.tap('.sheet [data-act="rvLog"]');
@@ -106,7 +110,7 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   ok((await nut()).entries.length === 7, 'resolved suggestion logged');
 
   console.log('Editing estimated protein and quantity');
-  const firstId = (await nut()).entries.find((e) => e.name === 'Chicken breast' && e.qty === 2).id;
+  const firstId = (await nut()).entries.find((e) => e.name === 'Chicken breast, cooked' && e.qty === 2).id;
   await page.tap(`[data-act="foodEdit"][data-id="${firstId}"]`);
   await page.waitForSelector('.sheet [data-in="feNum"][data-k="p"]');
   await page.fill('.sheet [data-in="feNum"][data-k="p"]', '90');
@@ -152,7 +156,7 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   await page.waitForTimeout(200);
   ok((await total()) === before + 30, 'one tap logs 30 g');
   await type('1 Snickerdoodle protein shake');
-  ok(/Confirmed by you/.test(await page.textContent('#foodPreview')) && /≈30 g/.test(await page.textContent('#foodPreview')), 'typing the name now uses the saved values (30 g, not generic 25 g)');
+  ok(/Confirmed by you/.test(await page.textContent('#foodPreview')) && /Exact match/.test(await page.textContent('#foodPreview')) && /≈30 g/.test(await page.textContent('#foodPreview')), 'typing the name now uses the saved values (30 g, not generic 25 g)');
   await type('');
   const rec = page.locator('[data-act="foodQuick"][data-k^="rec:"]').first();
   const recCount = (await nut()).entries.length;
@@ -181,7 +185,7 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   await page.tap('.food-date [aria-label="Previous day"]');
   await page.waitForTimeout(250);
   ok((await page.evaluate(() => location.hash)) === '#/food/' + y, 'previous day');
-  ok(/Yesterday/.test(await page.textContent('.food-day')) && /Nothing logged for this day/.test(await page.textContent('.food-sum')), 'past empty day explained');
+  ok(/Yesterday/.test(await page.textContent('.food-day')) && /Nothing logged for this day/.test(await page.textContent('.nut-sum')), 'past empty day explained');
   await type('a cup of cottage cheese');
   await page.tap('#foodAddBtn');
   await page.waitForTimeout(200);
@@ -208,14 +212,16 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
 
   console.log('Trends (7 / 30 days)');
   await page.goto(URL + '#/food');
+  await page.waitForTimeout(200);
+  await page.tap('[data-act="foodTab"][data-v="trends"]');
   await page.waitForTimeout(300);
-  ok((await page.locator('#foodChart svg').count()) === 1, '7-day chart drawn');
-  ok(/2\s*\/\s*7/.test(await page.textContent('.summary')), '2 of 7 days logged');
+  ok((await page.locator('#foodChart svg').count()) === 1 && (await page.locator('#foodCalChart svg').count()) === 1, '7-day protein and calorie charts drawn');
+  ok(/2\s*\/\s*7/.test(await page.textContent('.summary.mt16')), '2 of 7 days logged');
   ok(/left out of the average/.test(await page.textContent('body')), 'unlogged days explained');
   ok((await page.locator('.li.muted').count()) === 5, 'unlogged days listed as “Not logged”, not 0 g');
   await page.tap('[data-act="foodTrend"][data-v="30"]');
   await page.waitForTimeout(250);
-  ok(/2\s*\/\s*30/.test(await page.textContent('.summary')) && (await page.locator('#foodChart svg').count()) === 1, '30-day view');
+  ok(/2\s*\/\s*30/.test(await page.textContent('.summary.mt16')) && (await page.locator('#foodChart svg').count()) === 1, '30-day view');
 
   console.log('Target setting');
   await page.goto(URL + '#/settings');
@@ -226,12 +232,18 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   ok((await db()).profile.proteinTarget === 180, 'target changed to 180 g');
   await page.goto(URL + '#/food');
   await page.waitForTimeout(200);
-  ok(/Target ~180 g/.test(await page.textContent('.food-sum')) && /160–200/.test(await page.textContent('.food-sum')), 'summary uses the new target and range');
-  await page.goto(URL + '#/settings');
-  await page.tap('[data-act="pfToggleOn"][data-k="showMacros"]');
-  await page.goto(URL + '#/food');
+  await page.tap('[data-act="foodTab"][data-v="diary"]');
   await page.waitForTimeout(200);
-  ok(!/cal ·/.test(await page.textContent('.food-sum')), 'calories/carbs/fat can be hidden');
+  ok(/\/ 180 g/.test(await page.textContent('.nut-sum')), 'summary uses the new protein target');
+  await page.tap('.nut-sum [data-act="foodTargets"]');
+  await page.waitForSelector('.sheet [data-in="tgNum"][data-k="cal"]');
+  await page.fill('.sheet [data-in="tgNum"][data-k="cal"]', '2400');
+  await page.dispatchEvent('.sheet [data-in="tgNum"][data-k="cal"]', 'input');
+  await page.tap('.sheet [data-act="tgSave"]');
+  await page.waitForTimeout(200);
+  const tg = await page.evaluate(() => WT.nut.targets());
+  ok(tg.cal === 2400 && tg.p === 180 && tg.c > 0 && tg.f > 0 && Math.abs(tg.p * 4 + tg.c * 4 + tg.f * 9 - 2400) < 60, 'calorie target set; carbs and fat follow from it');
+  ok(/Target 2,400/.test(await page.textContent('.nut-sum')) && /left|over/.test(await page.textContent('#calLeft')), 'summary shows target and calories remaining');
 
   console.log('Home summary stays small');
   await page.goto(URL + '#/dashboard');
@@ -244,7 +256,7 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   await type('2 Oscar Mayer beef hot dogs');
   let bpv = await page.textContent('#foodPreview');
   ok(/Oscar Mayer Classic Beef Franks/.test(bpv) && /2 franks/.test(bpv) && /≈10 g/.test(bpv), 'exact product, quantity doubled');
-  ok((await page.locator('#foodPreview .tag.conf.v').count()) === 1 && /oscarmayer\.com/.test(bpv), 'marked Verified with its source');
+  ok((await page.locator('#foodPreview .tag.conf.v').count()) === 1 && (await page.locator('#foodPreview .mt.high').count()) === 1 && /oscarmayer\.com/.test(bpv), 'marked Verified + Exact match with its source');
   await type('3 tablespoons Oikos Triple Zero Greek yogurt');
   ok(/≈5 g/.test(await page.textContent('#foodPreview')) && /converted/.test(await page.textContent('#foodPreview')), 'tablespoons converted from the 150 g cup (≈)');
 
@@ -298,7 +310,7 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
     ok(/Snickerdoodle/.test(pv) && pv.includes(gText) && !(await page.locator('#foodPreview .li.amb').count()), `“${t}” → your Snickerdoodle shake (${gText})`);
   }
   await type('2 Pioneer Pastures Snickerdoodle shakes and 3 tablespoons Oikos Triple Zero');
-  ok((await page.locator('#foodPreview .li.pv').count()) === 2 && /Estimated ≈65 g protein/.test(await page.textContent('#foodPreview')), 'two products in one entry: 60 + 5 g');
+  ok((await page.locator('#foodPreview .li.pv').count()) === 2 && /≈65 g protein/.test(await page.textContent('#foodPreview')), 'two products in one entry: 60 + 5 g');
   await type('');
 
   console.log('Correcting a product updates the library');

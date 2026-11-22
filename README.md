@@ -1,6 +1,6 @@
 # Forge
 
-A free, private, offline-first workout app. It generates workouts from your goals, equipment and recent training, tracks every set, and recommends progressive overload from your logged numbers. A lightweight food diary keeps an approximate count of your daily protein.
+A free, private, offline-first fitness app. It generates workouts from your goals, equipment and recent training, tracks every set and run, and recommends progressive overload from your logged numbers. A food diary turns plain sentences (“Chipotle chicken bowl with rice, beans and guac”) into calories and macros. A Progress dashboard covers strength, cardio, consistency, nutrition and body composition, and explains trends from your own data.
 
 - **No accounts, no servers, no paid APIs.** Your data lives in your browser's local storage.
 - **Works offline** once it has loaded. YouTube videos are the only thing that needs a connection.
@@ -20,7 +20,7 @@ A quiet, precise interface in the spirit of Apple, Linear and Things: generous w
 - **Phone:** a 6-tab bar (Home, Generate, Train, History, Progress, Food). Exercises and Settings sit in the top bar.
 
 **Screens**
-- **Home:** one focal "Generate workout" panel, a 7-day strip, a small "Protein today" card (can be turned off), the three most recent workouts, and a three-number summary of the last 30 days.
+- **Home:** one focal "Generate workout" panel, four shortcuts (Log food, Start workout, Record run, Log weight), today's calories and protein, the 7-day strip, your latest run, one insight with a three-number summary of the last 30 days, and recent workouts.
 - **Generate:**
   - Type chips plus two options (exercise count and duration); everything else sits under *More options*.
   - The plan is a single list. Each row shows the name, muscle, sets × reps, the suggested weight from your history and a subtle intensity marker, with video, swap and more buttons.
@@ -29,7 +29,8 @@ A quiet, precise interface in the spirit of Apple, Linear and Things: generous w
   - Completed sets show as a short checklist.
   - A large editor has −/+ weight and rep controls. Weight steps to the next dumbbell you own; values are pre-filled from your last session.
   - One "Complete set" tap logs the set and starts the rest timer. Supersets alternate automatically.
-- **Progress:** one chart at a time (Strength, Frequency or Volume tabs), then personal records and weekly sets per muscle group.
+- **Progress:** a period filter (7 days to all time) and six tabs: Overview (insights + one card per area), Strength (the per-exercise charts, PRs and weekly sets per muscle are kept, plus an overall summary), Cardio, Consistency, Nutrition and Body. Each tab without data shows an empty state that says what to track.
+- **Food:** a daily diary (Breakfast, Lunch, Dinner, Snacks) under a calories ring and protein/carbs/fat bars, a plain-language log box with a meal picker, Quick add (saved meals, usual combinations, favorites, frequent, recent) and a Trends tab.
 
 ## Features
 
@@ -42,8 +43,11 @@ A quiet, precise interface in the spirit of Apple, Linear and Things: generous w
 | **Progressive overload** | Uses your recorded sets (double progression). For example, 30 lb × 10, 10, 9 gives "Maintain 30 lb — aim for 10, 10, 10". All sets at the top of the range → add weight (+5 lb upper-body dumbbell or +2.5 if you have micro-plates, +5–10 lb lower body, snapped to dumbbells you own). Within range → add reps. Missed reps once → hold; missed twice → drop about 10%. Long layoffs restart conservatively. Bodyweight lifts get more reps, added load or a harder variation. **Weights only change when you tap Apply.** Every recommendation explains why. |
 | **Library** | 185 exercises, each with muscles, equipment, category, movement pattern, difficulty, sets, reps, rest, intensity class and a video link. Search, filters, favorites, exclusions, custom exercises and editing are supported. |
 | **History** | Permanent log with every set. Open any workout, repeat it, use it as a template, edit notes or delete it. |
-| **Progress** | Workouts, per-week average, sets and volume; a workouts-per-week chart; a consistency heatmap; per-exercise charts (est. 1RM, top weight, volume, reps); PRs; weekly volume per muscle group against targets. Everything is calculated from logged data only. |
-| **Food & protein** | Type what you ate in plain words ("2 chicken breasts, a protein shake and 2 hot dogs"); each item is recognized and its protein estimated, with a live breakdown before you log. Edit name, amount and protein; delete entries; browse and edit any past day. Favorites and recent foods log with one tap, and your own saved foods are recognized when typed. A flexible daily target (default 150 g, ±10% counts as on target), friendly guidance, and 7/30-day trends that leave unlogged days out of averages. Calories, carbs and fat are optional secondary estimates. |
+| **Progress** | Every number follows the selected period (7d / 30d / 90d / 6m / 1y / all). **Strength:** exercises improving vs declining and median change (first vs last sessions in the period), plus per-exercise charts (est. 1RM, top weight, volume, reps), PRs, and weekly sets per muscle group against targets. **Cardio:** distance, runs, time, average pace, distance per week or month, pace over time, longest run, fastest pace, other cardio. **Consistency:** workouts, per week, week streak and longest streak, per-week and per-month charts, volume, muscle-group frequency and a training calendar. **Nutrition:** average calories and macros on logged days, days near the protein target. **Body:** weight trend (least-squares per week), measurements, progress photos. Everything is calculated from logged data only. |
+| **Insights** | Deterministic rules (`js/analytics.js`) that compare this period with the one before. Each rule has a minimum amount of data: 2+ sessions per exercise, 2+ runs in each period, 5+ logged food days, 3+ weigh-ins over 14 days, and the previous period at least ¾ tracked. They cover workout count, strength by region, muscle-group balance (e.g. lower-body sets falling), run distance and pace, protein and calories vs target, and weight trend. Each comes with an action where one makes sense. Without enough data you get an explanation, not a guess. No AI service is used. |
+| **Body** | Optional weigh-ins (lb/kg, one per day), body fat, waist/chest/arm/hips/thigh/neck or custom measurements, and progress photos. Photos are downscaled and kept in IndexedDB on the device; they are never uploaded and not included in backups. |
+| **Food diary** | Calories, protein, carbs and fat against your targets. You set calories and protein; carbs and fat follow from them unless you set them too, and nothing is assumed when a target isn't set. Entries are grouped by meal. You can edit, delete, move between meals and days, duplicate a meal to another day, save meals, and browse any date. See *Food diary & natural-language logging* below. |
+| **Food (original protein tracker)** | Type what you ate in plain words ("2 chicken breasts, a protein shake and 2 hot dogs"); each item is recognized and its protein estimated, with a live breakdown before you log. Edit name, amount and protein; delete entries; browse and edit any past day. Favorites and recent foods log with one tap, and your own saved foods are recognized when typed. A flexible daily target (default 150 g, ±10% counts as on target), friendly guidance, and 7/30-day trends that leave unlogged days out of averages. Calories, carbs and fat are optional secondary estimates. |
 | **Data** | Export a JSON backup (workouts **and** food log), then import it to merge or fully restore. Erase all data. Storage is persisted between sessions. |
 
 ### Your profile (pre-loaded, editable in Settings)
@@ -70,7 +74,49 @@ Single-pose references are labelled "Still image". Attribution appears under eve
 ### About the videos
 No video IDs are hard-coded, because they can't be checked offline and they break over time. Each exercise opens a **YouTube search** for that exercise's form tutorial. If you find a video you like, paste its link into the exercise (Library → exercise → paste link, or Edit). After that it **plays embedded** inside the app.
 
-## Food & protein tracker
+## Food diary & natural-language logging
+
+Type a meal the way you'd say it. Forge splits it into items, recognizes brands, restaurant items and preparations, reads quantities ("a handful", "two slices", "half a jar", "a medium potato", "150 g"), and shows calories, protein, carbs and fat for each item before anything is saved.
+
+**Matching priority** (`js/nutrition.js`, deterministic and offline):
+1. A correction you made before.
+2. An exact branded product, or one of your foods.
+3. A restaurant menu item. A chain named once applies to the rest of the sentence, so in "Chipotle chicken bowl with white rice, black beans…" the rice is Chipotle's 4 oz portion.
+4. A homemade recipe, broken into editable components.
+5. A generic food with the right preparation.
+6. Unknown, which gets suggestions and is never given numbers.
+
+**Quick log or review.** One or two confident items log in one tap. Anything else opens the review screen. That includes multi-part meals, rough estimates, unknown items and ambiguous brands. On the review screen you can:
+- change amounts with −/+ and switch units (the amount stays equivalent: 1 cup of rice becomes 158 g);
+- **Replace** an item by searching your foods, branded products, restaurant menus and USDA foods;
+- remove items or add missing ones;
+- correct the values;
+- pick the meal and save the whole thing as a meal.
+
+Totals update live.
+
+**Two separate labels on every item:**
+- *Where the numbers come from:* **Verified** (checked on the manufacturer's page), **Reference data** (USDA FoodData Central or the chain's published nutrition, transcribed), **Confirmed by you**, or **Estimate**.
+- *How well it matched what you typed:* **Exact match**, **Close match** or **Rough estimate**.
+
+Amounts Forge had to assume are marked "(assumed)". Macros missing from a product label are filled only from a clearly labelled estimate (Barilla Protein+ calories, for example).
+
+**It learns from you.** A match you replace is remembered for the same words ("lunch bowl" → Chipotle chicken). An amount you change becomes your usual amount when you don't type one. Products you log are saved to *My foods*, and frequent foods and meals you repeat show up in Quick add. Similar dishes stay distinct: a chicken Caesar wrap, a grilled chicken Caesar salad and a crispy chicken Caesar sandwich each break down differently.
+
+### Food database
+
+| Source | File | What | Status |
+|---|---|---|---|
+| USDA FoodData Central (SR Legacy / FNDDS) | `js/fooddb.js` | ≈90 generic foods, entered per 100 g with typical portions and named sizes. They cover distinct preparations: chicken breast/thigh/drumstick (raw, cooked, with or without skin, rotisserie), ground beef 80/85/90/93/95 (cooked and raw), white/brown rice (cooked and dry), pasta (cooked, dry, whole wheat), russet/red/sweet/mashed/roasted potatoes, black/pinto/kidney/white/refried/baked beans, eggs (boiled, scrambled, fried), milk by fat level, fruit, vegetables, oils, sauces | Reference data |
+| Homemade recipes | `js/fooddb.js` | 21 dishes (Caesar wrap/salad/sandwich, stir-fries, spaghetti with meat sauce, burrito bowl, smoothie…) as component breakdowns | Estimate |
+| Restaurant menus | `js/restaurants.js` | Chipotle (every component, plus bowl/burrito/tacos/salad builds), McDonald's, Chick-fil-A, Taco Bell, Subway, Shake Shack, Panera. Sizes, nugget counts, 6-inch vs footlong, Panera cup vs bowl; `extra`, `double` and `light` portions | Chipotle, McDonald's, Chick-fil-A and Taco Bell core items: Reference data. Subway, Panera and Shake Shack: Estimate |
+| Branded products | `js/products.js` | 23 products (17 verified against manufacturers on 2026-11-02, plus Rao's, Oscar Mayer deli meats and Dave's Killer Bread as estimates until you confirm them) | Verified or Estimate |
+| The original generic table | `js/foods.js` | ≈100 everyday foods, sandwiches and drinks | Estimate |
+| Open Food Facts (optional, online) | `js/nutrition.js` | Label lookup from *My foods → Find product* | Estimate until you confirm it |
+
+The bundled USDA and restaurant values were **transcribed**. This build environment had no network access to FoodData Central or the chains' sites, so they could not be re-imported or re-checked automatically. They are labelled accordingly, and any correction you make is saved as yours. `tests/overhaul.test.js` checks each food's calories against its macros (4/4/9 kcal per gram, within tolerance) and checks that no alias points to two foods.
+
+## Food & protein tracker (original)
 
 Built for speed, not precision: no weighing, no grams, no calorie targets. Every number is an estimate.
 
@@ -126,7 +172,16 @@ Specific products are matched **before** generic foods, from two places: your li
 
 **Personal library.** Branded products are saved to *My foods* automatically when logged, with their source and status. When you resolve an ambiguous entry, the words you typed become shorthand, so "Oscar Mayer hot dogs" or "Snickerdoodle shake" resolve directly next time. You can star favorites (one-tap buttons), edit values, add shorthand names and delete products. *Recent* shows the last distinct foods you logged.
 
-**Storage.** The food log lives in the same local store as workouts (`wt.data.v1`, data version 5) under `nutrition: { entries, foods }`, keyed by local date. Version 4 → 5 only adds fields (product brand / flavor / aliases / status / source, and each entry's confidence); workout data is untouched. Export includes the log and the library with aliases. *Replace* restores them exactly. *Merge* adds missing entries and products by id without duplicates.
+**Storage.** Everything lives in one local store (`wt.data.v1`, **data version 6**):
+- `nutrition: { entries, foods, meals, learned, portions }`
+- `body: { weights, measures, photos }`
+- profile fields `calorieTarget`, `carbTarget`, `fatTarget` (null means not set), `bodyUnit` and `lengthUnit`.
+
+Every migration has been additive:
+- 4 → 5 added product fields and confidence.
+- 5 → 6 gave each entry a `meal` (worked out from the time it was logged) and a `group`, and added saved meals, learned matches, usual portions and body tracking.
+
+Workout history is never rewritten. Export includes all of it except photo images. *Replace* restores exactly. *Merge* adds missing entries, products, meals and body records by id without duplicates.
 
 ## Run locally
 
@@ -155,12 +210,15 @@ Netlify Drop (drag the folder onto app.netlify.com/drop) and Cloudflare Pages al
 
 ```bash
 node tests/engine.test.js                          # generator, intensity statistics over 3,200 workouts, progression, PRs, import/export (≈37k assertions)
-python3 -m http.server 8765 & node tests/e2e.test.js   # full browser flow (needs Playwright)
+node tests/e2e.test.js                              # full browser flow (needs Playwright)
 node tests/features.test.js                         # exercise demonstrations + More options panel
 node tests/settypes.test.js                         # drop sets, build-up sets, plain set types unchanged
 node tests/nutrition.test.js                        # food parser, brands, ambiguity, library, estimates, trends, migration, backup
 node tests/food.test.js                             # food tracker in the browser: logging, brands, lookup (mocked), favorites, dates, export/restore
+node tests/overhaul.test.js                         # food DB integrity, brief examples, preparations, restaurants, recipes, units, learning, meals, migration v6, analytics, insights
+node tests/diary.test.js                            # diary in the browser: review/edit/replace/add, saved meals, copy, targets, trends, run & weight, progress filters, layout
 ```
+The browser tests use Playwright. `tests/serve.js` serves the repository to the browser in-process, so no separate server is needed; set `REAL_SERVER=1` to use one on :8765 instead.
 The end-to-end test generates every workout type, swaps exercises, logs a full session, refreshes mid-workout, saves, and checks that the next session shows previous weights and an increase recommendation that is only applied on approval. It also checks the v1 → v2 data upgrade, intensity variety across repeated generations through the UI, the intensity picker, PR detection, the charts, export → wipe → import, persistence after refresh, the theme toggle and offline loading.
 
 ## Project layout
@@ -175,10 +233,15 @@ js/charts.js          SVG line/bar charts + rings
 js/ui.js              shell, router, sheets, toasts, rest timer
 js/views-train.js     Home, Generate, Train (active workout)
 js/views-data.js      Exercises, History, Progress, Settings
-js/foods.js           bundled generic food reference (typical values per serving)
+js/foods.js           original generic food table (typical values per serving)
+js/fooddb.js          USDA-based foods with preparations and sizes; homemade recipes
+js/restaurants.js     restaurant menus (Chipotle, McDonald's, Chick-fil-A, Taco Bell, Subway, Shake Shack, Panera)
+js/analytics.js       period filters, strength/cardio/consistency/nutrition/body summaries, insights
 js/products.js        branded products with sources, serving sizes and status
 js/nutrition.js       food parser, food-log store, trends, guidance
-js/views-food.js      Food screen, review/edit sheets, My foods
+js/views-food.js      Food diary, review/edit/replace sheets, targets, trends, My foods
+js/views-progress.js  Progress dashboard, record run / weight / measurement / photo sheets
+docs/IMPLEMENTATION_PLAN.md   audit and plan for the nutrition and progress overhaul
 fonts/                Inter (OFL) + license
 sw.js, manifest.webmanifest, icons/   PWA
 ```

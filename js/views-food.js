@@ -126,7 +126,7 @@
         const tot = N.itemTotals(it);
         const head = it.partOf && it.partOf !== lastPart ? `<div class="pv-group">${esc(it.partOf)}</div>` : '';
         lastPart = it.partOf || '';
-        return `${head}<div class="li pv ${it.partOf ? 'part' : ''}"><div class="grow"><div class="ti">${esc(it.name)} ${matchTag(it)}</div><div class="su">${esc(amountLabel(it))} · ${macroShort(tot)}${it.lookup ? ` · <button class="btn-link" data-act="productAdd" data-t="${esc(it.text)}">Find the exact product</button>` : ''}</div></div><span class="tnum strong">${cal(tot.cal)}<small class="t3"> cal</small></span></div>`;
+        return `${head}<div class="li pv ${it.partOf ? 'part' : ''}"><div class="grow"><div class="ti">${esc(it.name)} ${confTag(it.conf)}${matchTag(it)}</div><div class="su">${esc(amountLabel(it))} · ${macroShort(tot)}${it.lookup ? ` · <button class="btn-link" data-act="productAdd" data-t="${esc(it.text)}">Find the exact product</button>` : ''}</div>${it.note ? `<div class="su pv-note">${esc(it.note)}</div>` : ''}</div><span class="tnum strong">${cal(tot.cal)}<small class="t3"> cal</small></span></div>`;
       })
       .join('');
     const known = items.filter((i) => !i.unknown && !i.ambiguous);

@@ -3545,3 +3545,9 @@ button.demo:active {
     font-size: 20px;
   }
 }
+
+.pv-note {
+  font-size: 12px;
+  color: var(--text-3);
+  margin-top: 2px;
+}

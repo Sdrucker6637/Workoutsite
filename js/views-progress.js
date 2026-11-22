@@ -24,6 +24,8 @@
   V.progress = function (param) {
     const s = st();
     if (param && TABS.some((t) => t[0] === param)) s.tab = param;
+    if (!TABS.some((t) => t[0] === s.tab)) s.tab = 'overview';
+    if (!WT.PERIODS.some((p) => p[0] === s.period)) s.period = '30d';
     const r = WT.periodRange(s.period);
     const tabs = `<div class="prog-tabs" role="tablist">${TABS.map(([k, n]) => `<button role="tab" class="${k === s.tab ? 'on' : ''}" aria-selected="${k === s.tab}" data-act="progTab" data-v="${k}">${n}</button>`).join('')}</div>`;
     const periods = `<div class="seg period-seg" role="group" aria-label="Time period">${WT.PERIODS.map(([k, n]) => `<button class="${k === s.period ? 'on' : ''}" aria-pressed="${k === s.period}" data-act="progPeriod" data-v="${k}">${k === 'all' ? 'All' : n.replace(' days', 'd').replace(' months', 'm').replace(' year', 'y')}</button>`).join('')}</div>`;
@@ -292,33 +294,7 @@
   };
 
   /* ═════════════════════ Quick records (Progress + Home) ═════════════════════ */
-  const parseTime = (s) => {
-    // "28:30", "1:05:00", "28.5" (minutes), "28" → minutes
-    s = String(s || '').trim();
-    if (!s) return 0;
-    if (/^\d+(\.\d+)?$/.test(s)) return +s;
-    const p = s.split(':').map(Number);
-    if (p.some(isNaN)) return 0;
-    return p.length === 3 ? p[0] * 60 + p[1] + p[2] / 60 : p[0] + p[1] / 60;
-  };
-  WT.parseRunTime = parseTime;
-  /** Save a completed run as a workout in history (so it counts everywhere workouts do). */
-  WT.saveRun = function (o) {
-    const exId = WT.ex(o.exId) ? o.exId : 'outdoor-run';
-    const ex = WT.ex(exId);
-    const date = N.validDay(o.date) ? o.date : today();
-    const start = date === today() ? new Date(Date.now() - Math.round((o.time || 0) * 60000)) : new Date(N.parseDay(date).getTime() + 8 * 36e5);
-    const item = WT.sessionItem(exId);
-    item.sets = [{ time: String(WT.round(o.time || 0, 2)), dist: o.dist ? String(WT.round(o.dist, 2)) : '', w: '', r: '', done: true, at: start.toISOString() }];
-    item.targetSets = 1;
-    const s = { id: WT.uid(), type: 'cardio', title: ex.name, startedAt: start.toISOString(), settings: null, notes: o.notes || '', exercises: [item], recorded: true };
-    WT.finishSession(s);
-    s.endedAt = new Date(start.getTime() + Math.round((o.time || 0) * 60000)).toISOString();
-    s.durationSec = Math.round((o.time || 0) * 60);
-    WT.db.history.push(s);
-    WT.save(true);
-    return s;
-  };
+  const parseTime = (x) => WT.parseRunTime(x);
   A.recordRun = () => {
     const runs = WT.exercises.filter((e) => WT.trackType(e) === 'cardio');
     const f = { date: today(), dist: '', time: '', exId: 'outdoor-run', notes: '' };

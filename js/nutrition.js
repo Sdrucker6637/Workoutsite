@@ -844,7 +844,7 @@
     const item = {
       id: WT.uid(), text, name, qty, unit: r.unit, per: r.per, foodId: custom ? 'my:' + food.id : food.id, src: custom ? 'my' : 'db', generic, rough: r.rough, note,
       conf: generic ? 'estimated' : st, brand: brand ? brand.name : '', lookup: !!brand, phrase, sizeMult: sizeMult, sizeWord: sizeUsed,
-      match: custom ? 'exact' : generic || r.rough || st !== 'reference' ? 'rough' : 'close', assumed: !typedAmount,
+      match: custom ? 'exact' : generic || r.rough ? 'rough' : 'close', assumed: !typedAmount,
     };
     if (!typedAmount && food.dq && !custom) item.note = `Amount assumed (${N.fmtAmount(qty, r.unit)})${item.note ? ' · ' + item.note : ''}`;
     return applyUsual(item, typedAmount);
@@ -1310,7 +1310,7 @@
     const since = N.addDays(N.dayKey(), -60);
     const by = new Map();
     S().entries.forEach((e) => {
-      if (e.date < since) return;
+      if (e.date < since || e.partOf) return; // recipe / build-your-own parts show up as whole meals instead
       const k = entryKey(e);
       const o = by.get(k) || { n: 0, last: e, amounts: new Map() };
       o.n++;
