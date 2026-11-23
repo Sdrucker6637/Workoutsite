@@ -54,6 +54,9 @@
     treadmill: 'Treadmill',
     rower: 'Rowing machine',
     bike: 'Stationary bike',
+    wall: 'Wall',
+    towel: 'Towel / sliders',
+    anchor: 'Foot anchor (couch, partner)',
   };
   WT.PATTERNS = {
     'h-push': 'Horizontal press',
@@ -88,6 +91,9 @@
     'knee-flexion': 'Leg curl',
     calf: 'Calf raise',
     adduction: 'Adduction',
+    abduction: 'Hip abduction',
+    'back-ext': 'Back extension (floor)',
+    swoop: 'Swooping push-up',
     'anti-ext': 'Anti-extension',
     'anti-rot': 'Anti-rotation',
     'leg-raise': 'Leg raise',
@@ -155,10 +161,11 @@
     burnouts: true,
     // Intensity: probability-based randomisation (default) or fixed counts
     intensityRandom: true,
-    intensityOdds: { heavy: 22, regular: 30, burnout: 16, standard: 32 },
-    intensityFixed: { heavy: 2, burnout: 1 },
+    // Drop / build-up sets can also be drawn automatically (v6). Low odds: they are techniques, not defaults.
+    intensityOdds: { heavy: 22, regular: 30, burnout: 16, standard: 32, drop: 7, buildup: 7 },
+    intensityFixed: { heavy: 2, burnout: 1, drop: 0, buildup: 0 },
     experience: 'intermediate',
-    equipment: ['db', 'bench', 'cable', 'lat', 'row', 'mb', 'bw', 'bar'],
+    equipment: ['db', 'bench', 'cable', 'lat', 'row', 'mb', 'bw', 'bar', 'wall', 'towel', 'anchor'],
     dumbbells: { min: 5, max: 60, step: 5, microLoad: false },
     cableStep: 5,
     prioritize: ['chest', 'biceps', 'triceps', 'abs', 'obliques'],
@@ -182,11 +189,16 @@
     fatTarget: null,
     bodyUnit: 'lb',
     lengthUnit: 'in',
+    // Achievements (v6): optional and quiet. Celebrations can be turned off separately.
+    achievements: true,
+    achCelebrate: true,
+    // Recommendations learn from what you actually do (all on-device)
+    adaptive: true,
   });
 
   /* ───────── Store ───────── */
   const KEY = 'wt.data.v1';
-  const DATA_VERSION = 6;
+  const DATA_VERSION = 7;
   const fresh = () => ({
     version: DATA_VERSION,
     profile: WT.defaultProfile(),
@@ -197,8 +209,61 @@
     draft: null,
     nutrition: { entries: [], foods: [], meals: [], learned: {}, portions: {} },
     body: { weights: [], measures: [], photos: [] },
+    meals: freshMeals(),
+    achievements: freshAch(),
+    learn: freshLearn(),
     createdAt: new Date().toISOString(),
   });
+
+  /* v6 stores. Each is self-contained so older data simply gains empty ones. */
+  function freshMeals() {
+    if (WT.meals && WT.meals.fresh) return WT.meals.fresh();
+    return { custom: [], edits: {}, selected: [], unavailable: [], staples: [], usage: {}, favorites: [], recent: [], prefs: { diets: [], disliked: [], dislikedText: [], airFryer: true, servings: 2, maxTime: 0 } };
+  }
+  function freshAch() {
+    // unlocked: { id: { at: date it was reached, found: when Forge noticed, retro: reached before tracking began } }
+    return { unlocked: {}, since: null, seen: [] };
+  }
+  function freshLearn() {
+    // Draft-level signals the history can't show: exercises removed or swapped out of a plan before starting.
+    // v7: notes: standing exercise notes ({ id, exId, text, at }); forgotten: keys of note signals you dismissed.
+    return { dropped: {}, notes: [], forgotten: [], trials: {} };
+  }
+  WT.freshMeals = freshMeals;
+  const arr = (a) => (Array.isArray(a) ? a : []);
+  function normalizeMeals(m) {
+    // The meal planner owns its schema (js/meals.js); this fallback only keeps the shape valid without it
+    if (WT.meals && WT.meals.normalize) return WT.meals.normalize(m);
+    const f = freshMeals();
+    m = m && typeof m === 'object' ? m : {};
+    const out = Object.assign(f, m);
+    ['custom', 'selected', 'unavailable', 'staples', 'favorites', 'recent'].forEach((k) => (out[k] = arr(out[k])));
+    out.custom = out.custom.filter((x) => x && x.id && x.name && ['protein', 'carb', 'veg'].includes(x.cat));
+    out.favorites = out.favorites.filter((x) => x && x.key && x.name);
+    out.edits = out.edits && typeof out.edits === 'object' ? out.edits : {};
+    out.usage = out.usage && typeof out.usage === 'object' ? out.usage : {};
+    out.prefs = Object.assign(freshMeals().prefs, out.prefs || {});
+    ['diets', 'disliked', 'dislikedText'].forEach((k) => (out.prefs[k] = arr(out.prefs[k])));
+    return out;
+  }
+  function normalizeAch(a) {
+    a = a && typeof a === 'object' ? a : {};
+    const out = Object.assign(freshAch(), a);
+    out.unlocked = out.unlocked && typeof out.unlocked === 'object' ? out.unlocked : {};
+    out.seen = arr(out.seen);
+    return out;
+  }
+  function normalizeLearn(l) {
+    l = l && typeof l === 'object' ? l : {};
+    const out = Object.assign(freshLearn(), l);
+    out.dropped = out.dropped && typeof out.dropped === 'object' ? out.dropped : {};
+    out.notes = arr(out.notes).filter((n) => n && typeof n.text === 'string');
+    out.forgotten = arr(out.forgotten);
+    // trials: answers to "how did your <joint> feel on <exercise · modification>?" keyed joint|exId|modId → { ok, at }
+    out.trials = out.trials && typeof out.trials === 'object' && !Array.isArray(out.trials) ? out.trials : {};
+    return out;
+  }
+  WT.normalizeMeals = normalizeMeals;
 
   const V1_GOALS = [
     'Reduce body fat and get leaner and more defined',
@@ -228,10 +293,21 @@
     // status / source, log entries gain a confidence level. Purely additive; workout data is untouched.
     out.nutrition = normalizeNutrition(out.nutrition);
     if (!(+out.profile.proteinTarget > 0)) out.profile.proteinTarget = 150;
-    // v5 → v6: meals, saved meals, learned matches and portions (nutrition) and body tracking. Additive only.
+    // v5 → v6 (both additive, applied to every load): saved meals, learned matches and portions (nutrition) and
+    // body tracking; and the meal planner, achievements and recommendation learning stores. Nothing existing is
+    // rewritten. New intensity odds (drop / build-up) arrive through the defaults merge above.
     out.body = normalizeBody(out.body);
+    out.meals = normalizeMeals(out.meals);
+    out.achievements = normalizeAch(out.achievements);
+    out.learn = normalizeLearn(out.learn);
     // v2 → v3: multi-stage sets (drop / build-up). Existing sets need no change — a set without
     // `stages` is a plain set. Only sanitise staged sets so later code can rely on their shape.
+    // v6 → v7: walls, towels and foot anchors became explicit equipment (so "no equipment" really means
+    // none). Everyone who trained with them before keeps them. Standing exercise notes and dismissed note
+    // signals join the `learn` store (normalizeLearn). Purely additive.
+    if (d && (d.version || 1) < 7) {
+      ['wall', 'towel', 'anchor'].forEach((q) => !out.profile.equipment.includes(q) && out.profile.equipment.push(q));
+    }
     if ((out.version || 1) < DATA_VERSION) out.version = DATA_VERSION;
     const fixSets = (e) => (e && Array.isArray(e.sets) ? e.sets.forEach(normalizeStagedSet(e)) : null);
     out.history.forEach((sess) => (sess.exercises || []).forEach(fixSets));
@@ -303,6 +379,7 @@
         console.error(e);
         WT.toast && WT.toast('Could not save — storage may be full. Export a backup.', 'error');
       }
+      if (WT.onSaved) WT.onSaved();
     };
     if (immediate) write();
     else saveTimer = setTimeout(write, 150);
@@ -349,9 +426,9 @@
       const fids = new Set(nut.foods.map((f) => f.id));
       const fnames = new Set(nut.foods.map((f) => String(f.name).toLowerCase()));
       nIn.foods.forEach((f) => !fids.has(f.id) && !fnames.has(String(f.name).toLowerCase()) && nut.foods.push(f));
-      const mids = new Set(nut.meals.map((m) => m.id));
-      const mnames = new Set(nut.meals.map((m) => m.name.toLowerCase()));
-      nIn.meals.forEach((m) => !mids.has(m.id) && !mnames.has(m.name.toLowerCase()) && nut.meals.push(m));
+      const smids = new Set(nut.meals.map((m) => m.id));
+      const smnames = new Set(nut.meals.map((m) => m.name.toLowerCase()));
+      nIn.meals.forEach((m) => !smids.has(m.id) && !smnames.has(m.name.toLowerCase()) && nut.meals.push(m));
       nut.learned = Object.assign({}, nIn.learned, nut.learned);
       nut.portions = Object.assign({}, nIn.portions, nut.portions);
       // Body: weigh-ins, measurements and photo records not here yet (by id)
@@ -361,6 +438,33 @@
         const have = new Set(body[k].map((x) => x.id));
         bIn[k].forEach((x) => !have.has(x.id) && body[k].push(x));
       });
+      // Meal planner: add custom ingredients and saved recipes that aren't here; keep this device's selections and prefs.
+      const mIn = normalizeMeals(JSON.parse(JSON.stringify(data.meals || {})));
+      const meals = (WT.db.meals = normalizeMeals(WT.db.meals));
+      const mids = new Set(meals.custom.map((x) => x.id));
+      const mnames = new Set(meals.custom.map((x) => String(x.name).toLowerCase()));
+      mIn.custom.forEach((x) => !mids.has(x.id) && !mnames.has(String(x.name).toLowerCase()) && meals.custom.push(x));
+      if (Array.isArray(mIn.kitchen) && Array.isArray(meals.kitchen)) mIn.kitchen.forEach((id) => !meals.kitchen.includes(id) && (meals.custom.some((c) => c.id === id) || !id.startsWith('ing-')) && meals.kitchen.push(id));
+      if (mIn.overrides && meals.overrides) Object.entries(mIn.overrides).forEach(([k, v]) => !meals.overrides[k] && (meals.overrides[k] = v)); // this device's corrections win
+      const rkeys = new Set(meals.favorites.map((x) => x.key));
+      mIn.favorites.forEach((x) => !rkeys.has(x.key) && meals.favorites.push(x));
+      mIn.staples.forEach((x) => !meals.staples.includes(x) && meals.staples.push(x));
+      Object.entries(mIn.usage).forEach(([k, v]) => (meals.usage[k] = Math.max(+meals.usage[k] || 0, +v || 0)));
+      // Achievements: keep the earliest record of each one.
+      const aIn = normalizeAch(data.achievements);
+      const ach = (WT.db.achievements = normalizeAch(WT.db.achievements));
+      Object.entries(aIn.unlocked).forEach(([k, v]) => {
+        const cur = ach.unlocked[k];
+        if (!cur || (v && v.at && new Date(v.at) < new Date(cur.at))) ach.unlocked[k] = v;
+      });
+      if (aIn.since && (!ach.since || new Date(aIn.since) < new Date(ach.since))) ach.since = aIn.since;
+      // Exercise notes and forgotten note signals
+      const lIn = normalizeLearn(JSON.parse(JSON.stringify(data.learn || {})));
+      const lrn = (WT.db.learn = normalizeLearn(WT.db.learn));
+      const nids = new Set(lrn.notes.map((n) => n.id));
+      lIn.notes.forEach((n) => !nids.has(n.id) && lrn.notes.push(n));
+      lIn.forgotten.forEach((k) => !lrn.forgotten.includes(k) && lrn.forgotten.push(k));
+      Object.entries(lIn.trials).forEach(([k, v]) => (!lrn.trials[k] || new Date(v.at) > new Date(lrn.trials[k].at)) && (lrn.trials[k] = v));
     } else {
       const key = WT.db && WT.db.profile && WT.db.profile.fdcKey;
       WT.db = migrate(data);
@@ -400,6 +504,17 @@
     const eq = new Set(equipment || WT.db.profile.equipment);
     eq.add('bw');
     return ex.equipment.every((e) => eq.has(e));
+  };
+  /** Truly equipment-free: body and floor only (no bar, bench, wall, towel, anchor…). */
+  WT.isEquipmentFree = (ex) => !!ex && ex.equipment.every((q) => q === 'bw');
+  /** A modification of an exercise (item.variation → ex.mods entry), or null for the exercise as written. */
+  WT.modOf = (ex, id) => (ex && id && (ex.mods || []).find((m) => m.id === id)) || null;
+  /** Display name including the chosen modification, e.g. "Push-Up · From the knees". */
+  WT.itemName = (item) => {
+    const ex = WT.ex(item.exId);
+    const base = ex ? ex.name : item.name || item.exId;
+    const m = WT.modOf(ex, item.variation);
+    return m ? `${base} · ${m.name}` : base;
   };
   WT.isRestricted = function (ex, profile) {
     profile = profile || WT.db.profile;

@@ -14,7 +14,7 @@
     const tt = WT.trackType(ex);
     const u = WT.db.profile.unit;
     if (tt === 'cardio' || tt === 'time') return '';
-    const rec = WT.recommend(exId, { repMin: item.repMin, repMax: item.repMax, sets: item.sets || item.targetSets, intensity: item.intensity, stages: item.stageCount });
+    const rec = WT.recommend(exId, { repMin: item.repMin, repMax: item.repMax, sets: item.sets || item.targetSets, intensity: item.intensity, stages: item.stageCount, variation: item.variation || null });
     if (rec && rec.stages) {
       const ws = rec.stages.map((x) => x.w).filter((w) => w > 0);
       return ws.length ? `${ws.map((w) => WT.fmtNum(w)).join(' → ')} ${u}` : '';
@@ -38,18 +38,41 @@
     const greet = `Good ${h < 12 ? 'morning' : h < 18 ? 'afternoon' : 'evening'}${p.name ? ', ' + esc(p.name) : ''}`;
 
     // Focal action
-    const hero = active
-      ? `<div class="panel hero">
+    const runBtn = (cls) => `<button class="btn ${cls || 'btn-secondary'} btn-lg" data-act="runRecord">${I('cardio', 18)}Record a run</button>`;
+    let hero;
+    if (active)
+      hero = `<div class="panel hero">
           <div class="kicker">In progress</div>
           <h2>${esc(active.title)}</h2>
           <p class="tnum">${doneSets(active)} of ${totalSets(active)} sets · <span id="dashClock">${WT.fmtClock((Date.now() - new Date(active.startedAt)) / 1000)}</span></p>
-          <div class="actions"><a class="btn btn-primary btn-lg" href="#/workout">Resume workout</a></div></div>`
-      : `<div class="panel hero">
+          <div class="actions"><a class="btn btn-primary btn-lg" href="#/workout">Resume workout</a>${runBtn('btn-plain')}</div></div>`;
+    else if (sugg.kind === 'run')
+      hero = `<div class="panel hero">
+          <div class="kicker">Up next</div>
+          <h2>Run day</h2>
+          <p>${esc(sugg.reason)}</p>
+          <div class="actions">${runBtn('btn-primary')}
+            <button class="btn btn-secondary btn-lg" data-act="quickGen" data-k="cardio">${I('sparkles', 18)}Generate cardio</button>
+            <a class="btn btn-plain" href="#/generate">Choose another type</a>
+          </div></div>`;
+    else if (sugg.kind === 'recovery')
+      hero = `<div class="panel hero">
+          <div class="kicker">Up next</div>
+          <h2>Recovery</h2>
+          <p>${esc(sugg.reason)}</p>
+          ${sugg.reasons.length ? `<p class="footnote t3 mt8">${esc(sugg.reasons.join(' '))}</p>` : ''}
+          <div class="actions">${runBtn()}
+            <button class="btn btn-plain" data-act="quickGen" data-k="${sugg.type}">Generate ${esc(WT.typeName(sugg.type))} anyway</button>
+          </div></div>`;
+    else
+      hero = `<div class="panel hero">
           <div class="kicker">Up next</div>
           <h2>${WT.typeName(sugg.type)}</h2>
           <p>${esc(sugg.reason)}</p>
+          ${sugg.reasons.length ? `<p class="footnote t3 mt8">${esc(sugg.reasons.join(' '))}</p>` : ''}
           <div class="actions">
             <button class="btn btn-primary btn-lg" data-act="quickGen" data-k="${sugg.type}">${I('sparkles', 18)}Generate workout</button>
+            ${runBtn()}
             <a class="btn btn-plain" href="#/generate">Choose another type</a>
           </div></div>`;
 
@@ -123,6 +146,7 @@
       <section class="section">
         <div class="section-title"><h2>This week</h2><span class="footnote t2 tnum">${week.strength} of ${p.strengthPerWeek} workouts${p.runsPerWeek ? ` · ${runs} of ${p.runsPerWeek} runs` : ''}</span></div>
         <div class="week">${days.join('')}</div>
+        ${WT.runList().length ? `<div class="row between mt12"><span class="footnote t3">${lastRunLine()}</span><button class="btn-link footnote" data-act="runList">All runs</button></div>` : ''}
       </section>
       <section class="section">
         <div class="section-title"><h2>Cardio</h2>${lastRun ? `<a class="btn-link footnote" href="#/progress/cardio">Trends</a>` : ''}</div>
@@ -155,13 +179,21 @@
       if (ta) ta.focus();
     });
   };
+  function lastRunLine() {
+    const r = WT.runList()[0];
+    if (!r) return '';
+    return `Last run ${WT.fmtRelDay(r.s.startedAt).toLowerCase()} · ${r.dist ? WT.fmtNum(r.dist) + ' mi' : ''}${r.dist && r.time ? ' in ' : ''}${r.time ? WT.fmtRunTime(r.time) : ''}${r.dist && r.time ? ` · ${WT.fmtPace(r.time / r.dist)} /mi` : ''}`;
+  }
   function runsThisWeek() {
     const start = WT.startOfWeek(new Date());
     return WT.db.history.filter((s) => new Date(s.startedAt) >= start && s.exercises.some((e) => !e.skipped && WT.ex(e.exId) && WT.ex(e.exId).tags.includes('run'))).length;
   }
 
   A.quickGen = (d) => {
+    const sugg = WT.suggestNext();
     WT.ui.gen = WT.defaultSettings(d.k);
+    if (sugg.duration && d.k !== 'cardio') WT.ui.gen.duration = sugg.duration; // sized to what you usually complete
+    WT.ui.gen.suggested = sugg.kind === 'strength' ? sugg.type : null;
     WT.db.draft = WT.generate(WT.ui.gen);
     WT.save();
     WT.go('generate');
@@ -175,6 +207,119 @@
     };
     if (WT.db.active) WT.confirm('Replace current workout?', 'A workout is in progress. Starting a run will discard it.', 'Discard and start', begin, true);
     else begin();
+  };
+
+  /* ═════════════════════ RECORD A RUN ═════════════════════
+   * A recorded run is a normal history session (type 'cardio', one run exercise, one set with time in decimal
+   * minutes and distance in miles) — exactly what the live "Log a run" flow saves, so history, the week strip,
+   * stats, recommendations and achievements all treat both the same way.
+   */
+  const RUN_KINDS = [['outdoor-run', 'Outdoor'], ['treadmill-run', 'Treadmill'], ['interval-run', 'Intervals']];
+  // WT.runList and WT.saveRun live in analytics.js (data only, shared with Progress and the tests)
+  function runForm(id) {
+    const N = WT.nut;
+    const ex0 = id ? WT.runList().find((r) => r.s.id === id) : null;
+    const t = ex0 ? Math.round(ex0.time * 60) : 0;
+    const f = ex0
+      ? { id, date: N.dayKey(new Date(ex0.s.startedAt)), h: t >= 3600 ? String(Math.floor(t / 3600)) : '', m: t ? String(Math.floor((t % 3600) / 60)) : '', s: t ? String(t % 60).padStart(2, '0') : '', dist: ex0.dist ? String(ex0.dist) : '', kind: ex0.e.exId, effort: ex0.e.effort || '', notes: ex0.s.notes || '' }
+      : { id: null, date: N.dayKey(), h: '', m: '', s: '', dist: '', kind: 'outdoor-run', effort: '', notes: '' };
+    const paceText = () => {
+      const sec = (+f.h || 0) * 3600 + (+f.m || 0) * 60 + (+f.s || 0);
+      const dist = parseFloat(String(f.dist).replace(',', '.')) || 0;
+      return sec > 0 && dist > 0 ? `${WT.fmtPace(sec / 60 / dist)} /mi average pace` : 'Pace appears once you enter distance and time';
+    };
+    WT.openSheet(() => ({
+      eyebrow: f.id ? 'Edit run' : 'Record a run',
+      title: f.id ? 'Run' : 'New run',
+      body: `<div class="stack" style="gap:18px">
+          ${H.seg(RUN_KINDS.filter(([k]) => WT.ex(k)), f.kind, 'runKind', '', 'full')}
+          <div class="row" style="gap:12px;align-items:flex-end">
+            <label class="stack grow" style="gap:6px"><span class="label">Distance</span><span class="row" style="gap:8px"><input class="input tnum run-in" id="runDist" type="text" inputmode="decimal" data-in="runF" data-k="dist" value="${esc(f.dist)}" placeholder="0.0" aria-label="Distance in miles" autocomplete="off"><span class="footnote t3">mi</span></span></label>
+            <label class="stack grow" style="gap:6px"><span class="label">Date</span><input class="input" type="date" data-in="runF" data-k="date" value="${esc(f.date)}" max="${N.dayKey()}" aria-label="Date"></label>
+          </div>
+          <div class="stack" style="gap:6px"><span class="label">Duration</span>
+            <div class="row run-time" style="gap:6px"><input class="input tnum" type="text" inputmode="numeric" data-in="runF" data-k="h" value="${esc(f.h)}" placeholder="0" aria-label="Hours"><span class="t3">h</span><input class="input tnum" type="text" inputmode="numeric" data-in="runF" data-k="m" value="${esc(f.m)}" placeholder="00" aria-label="Minutes"><span class="t3">m</span><input class="input tnum" type="text" inputmode="numeric" data-in="runF" data-k="s" value="${esc(f.s)}" placeholder="00" aria-label="Seconds"><span class="t3">s</span></div>
+            <span class="footnote t2 tnum" id="runPace">${paceText()}</span></div>
+          <div class="stack" style="gap:8px"><span class="label">How did it feel? <span class="t3">· optional</span></span>${H.seg([['easy', 'Easy'], ['good', 'Solid'], ['hard', 'Hard']], f.effort, 'runEffort', '', 'full')}</div>
+          <label class="stack" style="gap:6px"><span class="label">Notes <span class="t3">· optional</span></span><textarea class="input" data-in="runF" data-k="notes" style="min-height:64px" placeholder="Route, weather, how your legs felt…">${esc(f.notes)}</textarea></label>
+        </div>`,
+      foot: `${f.id ? `<button class="btn btn-plain btn-sm" style="color:var(--danger)" data-act="runDelete">Delete</button><span class="grow"></span>` : ''}<button class="btn btn-primary ${f.id ? '' : 'btn-lg btn-block'}" data-act="runSave">${f.id ? 'Save changes' : 'Save run'}</button>`,
+      after: (sheet) => {
+        if (!f.id && !f._focused) {
+          f._focused = true;
+          const el = sheet.querySelector('#runDist');
+          if (el) setTimeout(() => el.focus(), 60);
+        }
+      },
+    }));
+    WT.I.runF = (el) => {
+      let v = el.value;
+      if (['h', 'm', 's'].includes(el.dataset.k)) {
+        v = v.replace(/[^0-9]/g, '').slice(0, 3);
+        if (v !== el.value) el.value = v;
+      }
+      if (el.dataset.k === 'dist') {
+        v = v.replace(/[^0-9.,]/g, '');
+        if (v !== el.value) el.value = v;
+      }
+      f[el.dataset.k] = v;
+      const pe = document.getElementById('runPace');
+      if (pe) pe.textContent = paceText();
+    };
+    A.runKind = (d) => {
+      f.kind = d.v;
+      WT.refreshSheet();
+    };
+    A.runEffort = (d) => {
+      f.effort = f.effort === d.v ? '' : d.v;
+      WT.refreshSheet();
+    };
+    A.runSave = () => {
+      try {
+        const s = WT.saveRun(f);
+        WT.closeSheet(true);
+        WT.rerender();
+        const r = WT.runList().find((x) => x.s.id === s.id);
+        WT.toast(f.id ? 'Run updated' : `Run saved${r && r.dist && r.time ? ` · ${WT.fmtPace(r.time / r.dist)} /mi` : ''}`, 'good');
+      } catch (e) {
+        WT.toast(e.message, 'error');
+      }
+    };
+    A.runDelete = () =>
+      WT.confirm('Delete run?', 'It will be removed from your history and statistics.', 'Delete', () => {
+        WT.db.history = WT.db.history.filter((x) => x.id !== f.id);
+        WT.save(true);
+        WT.closeSheet(true);
+        if (WT.ui.route === 'history' && WT.ui.param === f.id) WT.go('history');
+        else WT.rerender();
+        WT.toast('Run deleted');
+      }, true);
+  }
+  WT.runForm = runForm;
+  A.runRecord = () => runForm(null);
+  A.runEdit = (d) => {
+    WT.closeSheet(true);
+    runForm(d.id);
+  };
+  A.runList = () => {
+    WT.openSheet(() => {
+      const list = WT.runList();
+      return {
+        title: 'Runs',
+        body: list.length
+          ? `<div class="list inset">${list
+              .map((r) => H.li({
+                act: 'runEdit',
+                attrs: `data-id="${r.s.id}"`,
+                title: `${r.dist ? WT.fmtNum(r.dist) + ' mi' : WT.ex(r.e.exId).name}${r.time ? ` · ${WT.fmtRunTime(r.time)}` : ''}`,
+                sub: `${WT.fmtDate(r.s.startedAt, { weekday: 'short', month: 'short', day: 'numeric' })}${r.dist && r.time ? ` · ${WT.fmtPace(r.time / r.dist)} /mi` : ''}${r.e.effort ? ` · ${{ easy: 'Easy', good: 'Solid', hard: 'Hard' }[r.e.effort]}` : ''}`,
+                trail: `<span class="t3">${I('edit', 15)}</span>`,
+              }))
+              .join('')}</div><p class="footnote t3 mt12">Tap a run to edit or delete it.</p>`
+          : `<p class="t2">No runs yet.</p>`,
+        foot: `<button class="btn btn-primary btn-block" data-act="runRecord">${I('plus', 15)}Record a run</button>`,
+      };
+    });
   };
 
   /* ═════════════════════ GENERATE ═════════════════════ */
@@ -192,19 +337,21 @@
     const types = GEN_TYPES.concat(GEN_TYPES.includes(g.type) ? [] : [g.type])
       .map((t) => `<button class="chip ${g.type === t ? 'on' : ''}" data-act="genType" data-k="${t}" aria-pressed="${g.type === t}">${WT.typeName(t)}</button>`)
       .join('');
-    const reg = Math.max(0, g.count - (+g.heavy || 0) - (+g.burnout || 0));
+    const reg = Math.max(0, g.count - (+g.heavy || 0) - (+g.burnout || 0) - (+g.drop || 0) - (+g.buildup || 0));
 
     const advanced = `
       <details class="adv mt24" ${H.keepOpen('genAdv')}><summary>${I('chevR', 14)}More options</summary>
         <div class="adv-body">
           <div class="adv-block"><span class="label">Intensity</span>
             <div class="row between wrap" style="gap:12px">${H.seg([['random', 'Randomized'], ['manual', 'Fixed']], random ? 'random' : 'manual', 'genSet', 'intensityMode')}
-            ${random ? `<span class="footnote t3 tnum">${['heavy', 'regular', 'burnout'].map((k) => `${H.pct(p.intensityOdds, k)}% ${k}`).join(' · ')}</span>` : ''}</div>
+            ${random ? `<span class="footnote t3 tnum">${['heavy', 'regular', 'burnout', 'drop', 'buildup'].filter((k) => +p.intensityOdds[k] > 0).map((k) => `${H.pct(p.intensityOdds, k)}% ${k === 'buildup' ? 'build-up' : k}`).join(' · ')}</span>` : ''}</div>
             ${
               random
-                ? `<p class="footnote t3 mt12">Each exercise is assigned independently, weighted by what suits it — some workouts have no heavy or burnout work at all. <a class="btn-link" href="#/settings">Adjust odds</a></p>`
+                ? `<p class="footnote t3 mt12">Each exercise is drawn from your odds, weighted by what suits it: heavy and build-up sets go to compound lifts early on, burnout and drop sets to safer isolation work near the end, and a workout never stacks too many techniques. <a class="btn-link" href="#/settings">Adjust odds</a></p>`
                 : `<div class="row between mt16"><span class="int heavy">Heavy</span>${H.stepper(g.heavy, 'genStep', 'heavy', 0, 12)}</div>
                    <div class="row between mt12"><span class="int burnout">Burnout</span>${H.stepper(g.burnout, 'genStep', 'burnout', 0, 12)}</div>
+                   <div class="row between mt12"><span class="int drop">Drop set</span>${H.stepper(g.drop || 0, 'genStep', 'drop', 0, 3)}</div>
+                   <div class="row between mt12"><span class="int buildup">Build-up set</span>${H.stepper(g.buildup || 0, 'genStep', 'buildup', 0, 3)}</div>
                    <p class="footnote t3 mt12">${reg} regular.</p>`
             }</div>
           <div class="adv-block"><div class="row between"><div><div class="strong" style="font-size:14.5px">Supersets</div><div class="footnote t3">Pair non-competing exercises</div></div>${H.toggle(g.supersets, 'genToggle', 'data-k="supersets"')}</div>
@@ -223,45 +370,55 @@
       plan = `<section class="section" id="planCol" style="scroll-margin-top:72px">
         <div class="plan-head"><div><h2 class="title2">${esc(d.title)}</h2><div class="plan-meta">${plural(d.exercises.length, 'exercise')} · ${sets} sets · about ${d.estimatedMin} min</div></div>
           <div class="row" style="gap:2px"><button class="icon-btn" data-act="rerollIntensity" title="Re-roll intensities" aria-label="Re-roll intensities">${I('zap', 17)}</button><button class="icon-btn" data-act="regenerate" title="Regenerate" aria-label="Regenerate">${I('refresh', 17)}</button><button class="icon-btn" data-act="clearDraft" title="Discard" aria-label="Discard plan">${I('x', 18)}</button></div></div>
-        <div class="plan-list fade-in">${planRows(d)}</div>
-        <div class="row between mt12"><button class="btn btn-plain btn-sm" data-act="openAdd" data-ctx="draft" style="margin-left:-10px">${I('plus', 15)}Add exercise</button>${(d.notes || []).length ? `<span class="footnote t3">${esc(d.notes[d.notes.length - 1])}</span>` : ''}</div>
+        ${(d.notes || []).length ? `<ul class="plan-why">${d.notes.slice(0, 4).map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
+        <div class="plan-list fade-in" id="planList">${planRows(d)}</div>
+        ${(d.adjustments || []).length ? `<details class="adv learned mt12" ${H.keepOpen('genLearned')}><summary>${I('chevR', 13)}Personalized from your notes · ${d.adjustments.length}</summary><ul class="learned-list">${d.adjustments.map((a) => `<li>${esc(a)}</li>`).join('')}</ul></details>` : ''}
+        <div class="row between mt12"><button class="btn btn-plain btn-sm" data-act="openAdd" data-ctx="draft" style="margin-left:-10px">${I('plus', 15)}Add exercise</button></div>
         <div class="sticky-cta"><button class="btn btn-primary btn-lg btn-block" data-act="startDraft">Start workout</button></div>
       </section>`;
     }
 
+    const act = WT.db.active;
     return `<div class="page">
       <div class="head"><h1 class="large-title">Generate</h1><p class="sub">Built from your goals, equipment and recent training.</p></div>
+      ${act ? `<a class="callout mb24" href="#/workout" style="margin-bottom:24px">${I('activity', 15)}<span class="grow"><span class="strong">${esc(act.title)}</span> is in progress</span><span class="btn-link footnote">Resume</span></a>` : ''}
       <div class="types">${types}</div>
       ${g.type === 'custom' ? `<div class="mt16"><div class="label" style="margin-bottom:10px">Muscle groups</div>${H.chipGroup(WT.CUSTOM_TARGETS, g.targets, 'genTarget', 'sm')}</div>` : ''}
       <div class="opts mt32">
         <span class="opt-label">Exercises</span><div>${g.autoCount ? `<span class="t2">Automatic</span>` : H.stepper(g.count, 'genStep', 'count', 1, 12)}</div>
         <span class="opt-label">Duration</span><div>${H.seg([[30, '30'], [45, '45'], [60, '60'], [75, '75'], [90, '90 min']], g.duration, 'genSet', 'duration')}</div>
+        <span class="opt-label">Equipment</span><div>${H.seg([['mine', 'My equipment'], ['none', 'None']], bwOnly(g) ? 'none' : 'mine', 'genEquipMode', '')}</div>
       </div>
       ${advanced}
       ${d ? `<button class="btn btn-secondary mt24" data-act="generate">${I('sparkles', 16)}Generate again</button>` : `<button class="btn btn-primary btn-lg btn-block mt24" data-act="generate">${I('sparkles', 18)}Generate workout</button>`}
       ${plan}
+      ${d ? '' : `<div class="row wrap mt16" style="gap:4px 8px"><button class="btn btn-plain btn-sm" data-act="startEmpty" style="margin-left:-10px">${I('plus', 15)}Start an empty workout</button><button class="btn btn-plain btn-sm" data-act="runRecord">${I('cardio', 15)}Record a run</button><button class="btn btn-plain btn-sm" data-act="logRun">${I('timer', 15)}Track a run live</button></div>`}
     </div>`;
   };
 
   function planRows(d) {
     let n = 0;
-    return WT.groupBlocks(d.exercises)
-      .map((b) => {
-        const rows = b.map((it) => planRow(it, ++n, b.length > 1 ? b[0].superset : null)).join('');
-        return b.length > 1 ? `<div class="ss">${rows}</div>` : rows;
+    const blocks = WT.groupBlocks(d.exercises);
+    return blocks
+      .map((b, bi) => {
+        const ss = b.length > 1 ? b[0].superset : null;
+        const rows = b.map((it) => planRow(it, ++n, ss, bi, d.exercises.length)).join('');
+        return `<div class="plan-block${ss ? ' ss' : ''}" data-block="${bi}">${rows}</div>`;
       })
       .join('');
   }
-  function planRow(it, n, ss) {
+  function planRow(it, n, ss, bi, total) {
     const ex = WT.ex(it.exId);
     if (!ex) return '';
     const load = WT.suggestedLoad(ex.id, it);
-    return `<div class="ex-row ${it.locked ? 'locked' : ''}">
-      <span class="n">${it.locked ? I('lock', 13).replace('<svg', '<svg style="margin:0 auto"') : n}</span>
-      ${H.demo(ex.id, 'sm')}
+    const mod = WT.modOf(ex, it.variation);
+    return `<div class="ex-row ${it.locked ? 'locked' : ''}" data-uid="${it.uid}">
+      <button type="button" class="n drag" data-drag="${bi}" title="Drag to reorder" aria-label="Reorder ${esc(ex.name)}, exercise ${n} of ${total}. Drag, or use the arrow keys">${I('grip', 16)}</button>
+      ${H.demo(ex.id, 'sm', { variation: it.variation })}
       <div style="min-width:0">
-        <button class="nm" data-act="exDetail" data-id="${ex.id}">${esc(ex.name)}</button>
-        <div class="meta"><span>${WT.muscleName(ex.primary)}</span><span class="rx">${H.target(it, ex)}</span>${load ? `<span>${load}</span>` : ''}${it.intensity !== 'standard' ? H.intensity(it.intensity, 'pickIntensity', it.uid, 'draft') : ''}${ss ? `<span class="ss-tag">Superset ${ss}</span>` : ''}</div>
+        <button class="nm" data-act="exDetail" data-id="${ex.id}">${it.locked ? `<span class="lock-ic" title="Locked">${I('lock', 12)}</span>` : ''}${esc(ex.name)}</button>
+        <div class="meta"><span>${WT.muscleName(ex.primary)}</span><span class="rx">${H.target(it, ex)}</span>${mod ? `<button class="var-tag" data-act="pickVariation" data-ctx="draft" data-uid="${it.uid}" aria-label="Variation: ${esc(mod.name)}. Change">${esc(mod.name)}</button>` : ''}${it.trial ? `<span class="trial-tag" title="A trial for your ${esc(WT.JOINT_NAMES[it.trial.joint])}: you’ll be asked how it felt">Trial · ${esc(WT.JOINT_NAMES[it.trial.joint])}</span>` : ''}${load ? `<span>${load}</span>` : ''}${it.intensity !== 'standard' ? H.intensity(it.intensity, 'pickIntensity', it.uid, 'draft') : ''}${ss ? `<button class="ss-tag" data-act="ssMenu" data-uid="${it.uid}" aria-label="Superset ${ss} options">Superset ${ss}</button>` : ''}</div>
+        ${it.why && it.why[0] && !['Swapped in', 'Added by you'].includes(it.why[0]) ? `<div class="why">${esc(it.why[0])}</div>` : ''}
       </div>
       <div class="acts">
         <a class="icon-btn sm" href="${esc(WT.videoUrl(ex))}" target="_blank" rel="noopener" title="Watch tutorial" aria-label="Watch ${esc(ex.name)} tutorial">${I('play', 15)}</a>
@@ -269,6 +426,107 @@
         <button class="icon-btn sm" data-act="planMenu" data-uid="${it.uid}" aria-label="More options for ${esc(ex.name)}">${I('more', 17)}</button>
       </div></div>`;
   }
+  const bwOnly = (g) => (g.equipment || []).every((q) => q === 'bw');
+  A.genEquipMode = (d) => {
+    const g = gen();
+    if (d.v === 'none') {
+      if (!bwOnly(g)) g.prevEquipment = g.equipment.slice();
+      g.equipment = ['bw'];
+    } else g.equipment = (g.prevEquipment || WT.db.profile.equipment).slice();
+    WT.rerender();
+  };
+
+  /* ───────── Reordering: drag a block by its handle (mouse, touch or pen), or arrow keys ───────── */
+  A.planMoveBlock = (d) => {
+    const dr = WT.db.draft;
+    if (!dr) return;
+    const n = WT.groupBlocks(dr.exercises).length;
+    const from = +d.from, to = WT.clamp(+d.to, 0, n - 1);
+    if (to === from) return;
+    dr.exercises = WT.moveBlock(dr.exercises, from, to);
+    dr.userArranged = true;
+    dr.estimatedMin = WT.estimateMinutes(dr.exercises);
+    WT.save();
+    WT.closeSheet(true);
+    WT.rerender();
+    // The re-render is synchronous, so focus can move with the block right away (keyboard reordering).
+    if (d.focus) {
+      const h = document.querySelector(`[data-drag="${to}"]`);
+      if (h) h.focus();
+    }
+  };
+  (function dragToReorder() {
+    if (typeof document === 'undefined') return;
+    let st = null;
+    const pageY = (e) => e.clientY + window.scrollY;
+    document.addEventListener('pointerdown', (e) => {
+      const h = e.target.closest && e.target.closest('[data-drag]');
+      if (!h || (e.pointerType === 'mouse' && e.button !== 0)) return;
+      const list = h.closest('.plan-list');
+      if (!list) return;
+      e.preventDefault();
+      const blocks = [...list.children].filter((b) => b.classList.contains('plan-block'));
+      const from = +h.dataset.drag;
+      if (!blocks[from]) return;
+      const rects = blocks.map((b) => {
+        const r = b.getBoundingClientRect();
+        return { top: r.top + window.scrollY, h: r.height };
+      });
+      st = { list, blocks, from, to: from, rects, y0: pageY(e), pid: e.pointerId, moved: false, h };
+      try {
+        h.setPointerCapture(e.pointerId);
+      } catch (err) {}
+    });
+    document.addEventListener('pointermove', (e) => {
+      if (!st || e.pointerId !== st.pid) return;
+      const dy = pageY(e) - st.y0;
+      if (!st.moved && Math.abs(dy) < 4) return;
+      if (!st.moved) {
+        st.moved = true;
+        st.list.classList.add('dragging');
+        st.blocks[st.from].classList.add('lifted');
+      }
+      st.blocks[st.from].style.transform = `translateY(${dy}px)`;
+      const r0 = st.rects[st.from];
+      // Leading edge decides: a tall superset block moves as soon as its top (or bottom) passes a neighbour's middle.
+      const topY = r0.top + dy, botY = r0.top + r0.h + dy;
+      let to = st.from;
+      st.rects.forEach((r, i) => {
+        const c = r.top + r.h / 2;
+        if (i < st.from && topY < c) to = Math.min(to, i);
+        if (i > st.from && botY > c) to = Math.max(to, i);
+      });
+      st.to = to;
+      st.blocks.forEach((b, i) => {
+        if (i === st.from) return;
+        const shift = st.from < to && i > st.from && i <= to ? -r0.h : st.from > to && i >= to && i < st.from ? r0.h : 0;
+        b.style.transform = shift ? `translateY(${shift}px)` : '';
+      });
+      // Keep the dragged block in view
+      if (e.clientY < 70) window.scrollBy(0, -12);
+      else if (e.clientY > innerHeight - 90) window.scrollBy(0, 12);
+    });
+    const end = (e) => {
+      if (!st || e.pointerId !== st.pid) return;
+      const s = st;
+      st = null;
+      s.list.classList.remove('dragging');
+      s.blocks.forEach((b) => {
+        b.style.transform = '';
+        b.classList.remove('lifted');
+      });
+      if (s.moved && s.to !== s.from && e.type === 'pointerup') A.planMoveBlock({ from: s.from, to: s.to });
+    };
+    document.addEventListener('pointerup', end);
+    document.addEventListener('pointercancel', end);
+    document.addEventListener('keydown', (e) => {
+      const h = e.target && e.target.closest && e.target.closest('[data-drag]');
+      if (!h || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
+      e.preventDefault();
+      const from = +h.dataset.drag;
+      A.planMoveBlock({ from, to: from + (e.key === 'ArrowUp' ? -1 : 1), focus: true });
+    });
+  })();
 
   A.genType = (d) => {
     gen().type = d.k;
@@ -285,7 +543,11 @@
       g.heavy = Math.min(g.heavy, g.count);
       g.burnout = Math.min(g.burnout, g.count - g.heavy);
     }
-    if ((d.k === 'heavy' || d.k === 'burnout') && g.heavy + g.burnout > g.count) g[d.k] = g.count - (d.k === 'heavy' ? g.burnout : g.heavy);
+    const fixedKeys = ['heavy', 'burnout', 'drop', 'buildup'];
+    if (fixedKeys.includes(d.k)) {
+      const others = fixedKeys.filter((k) => k !== d.k).reduce((a, k) => a + (+g[k] || 0), 0);
+      if (others + g[d.k] > g.count) g[d.k] = Math.max(0, g.count - others);
+    }
     WT.rerender();
   };
   A.genSet = (d) => {
@@ -325,6 +587,8 @@
   A.generate = () => {
     const g = gen();
     if (g.type === 'custom' && !g.targets.length) return WT.toast('Choose at least one muscle group', 'error');
+    const sugg = WT.suggestNext();
+    g.suggested = sugg.kind === 'strength' ? sugg.type : null; // remembered so Forge can learn which types you prefer
     compose(() => WT.generate(g));
   };
   A.regenerate = () => {
@@ -339,10 +603,20 @@
     let tries = 0;
     do {
       d.exercises.forEach((i) => !i.locked && (i.intensity = null));
-      WT.randomizeIntensities(d.exercises);
+      WT.randomizeIntensities(d.exercises, WT.buildContext(Object.assign(WT.defaultSettings(d.type), d.settings || {}, { type: d.type })));
     } while (JSON.stringify(WT.intensityTally(d.exercises)) === before && ++tries < 6);
-    d.exercises.forEach((i) => Object.assign(i, WT.prescribe(WT.ex(i.exId), i.intensity)));
-    d.exercises = WT.arrange(d.exercises, (d.settings || {}).supersets !== false, d.type);
+    d.exercises.forEach((i) => {
+      if (i.locked && i.sets) return;
+      if (!WT.STAGED[i.intensity]) {
+        delete i.stageCount;
+        delete i.stageRest;
+      }
+      if (i.ownRest != null) delete i.ownRest;
+      Object.assign(i, WT.prescribe(WT.ex(i.exId), i.intensity));
+    });
+    // Keep an order / supersets you arranged yourself; otherwise re-arrange around the new intensities.
+    d.exercises = d.userArranged ? WT.applySupersetRest(d.exercises) : WT.arrange(d.exercises, (d.settings || {}).supersets !== false, d.type);
+    d.plan = WT.intensityTally(d.exercises);
     d.estimatedMin = WT.estimateMinutes(d.exercises);
     WT.save();
     WT.rerender();
@@ -355,19 +629,113 @@
   };
   const draftItem = (uid) => WT.db.draft && WT.db.draft.exercises.find((i) => i.uid === uid);
   A.planMenu = (d) => {
+    WT.closeSheet(true);
+    WT.openSheet(() => {
+      const dr = WT.db.draft;
+      const it = draftItem(d.uid);
+      if (!it) return { title: '' };
+      const ex = WT.ex(it.exId);
+      const blocks = WT.groupBlocks(dr.exercises);
+      const bi = blocks.findIndex((b) => b.includes(it));
+      const u = `data-uid="${it.uid}"`;
+      const hasVar = (ex.mods || []).length || ex.easier || ex.harder;
+      return {
+        eyebrow: WT.muscleName(ex.primary),
+        title: esc(ex.name),
+        body: `<div class="list inset">
+          ${H.li({ act: 'openSwap', attrs: `data-ctx="draft" ${u}`, title: 'Swap exercise', chev: true })}
+          ${hasVar ? H.li({ act: 'pickVariation', attrs: `data-ctx="draft" ${u}`, title: 'Variation', trail: `<span class="footnote t2">${esc((WT.modOf(ex, it.variation) || { name: 'As written' }).name)}</span>`, chev: true }) : ''}
+          ${H.li({ act: 'pickIntensity', attrs: `data-ctx="draft" ${u}`, title: 'Intensity', trail: `<span class="footnote t2">${WT.INTENSITY_INFO[it.intensity].name}</span>`, chev: true })}
+          ${WT.STAGED[it.intensity] ? H.li({ title: 'Stages per set', sub: `${WT.stageReps(it.intensity, it.stageCount || 3, it.repMin, it.repMax).join(' / ')} reps${WT.suggestedLoad(ex.id, it) ? ' · ' + esc(WT.suggestedLoad(ex.id, it)) : ''} — loads and reps stay editable during the workout`, trail: H.stepper(it.stageCount || 3, 'planStages', it.uid, 2, 5) }) : ''}
+          ${WT.STAGED[it.intensity] ? H.li({ title: 'Sets', trail: H.stepper(it.sets || 2, 'planSets', it.uid, 1, 4) }) : ''}
+          ${H.li({ act: 'exDetail', attrs: `data-id="${ex.id}"`, title: 'Details and history', chev: true })}
+        </div>
+        <div class="list inset mt16">
+          ${bi > 0 ? H.li({ act: 'planMoveBlock', attrs: `data-from="${bi}" data-to="${bi - 1}"`, title: it.superset ? 'Move superset up' : 'Move up' }) : ''}
+          ${bi < blocks.length - 1 ? H.li({ act: 'planMoveBlock', attrs: `data-from="${bi}" data-to="${bi + 1}"`, title: it.superset ? 'Move superset down' : 'Move down' }) : ''}
+          ${it.superset ? H.li({ act: 'planUnpair', attrs: u, title: 'Separate superset', sub: 'Each exercise keeps its sets, reps and intensity, with its own rest' }) + H.li({ act: 'planFlip', attrs: u, title: 'Swap order within superset' }) : ''}
+          ${dr.exercises.length > 1 ? H.li({ act: 'planPairPick', attrs: u, title: it.superset ? 'Add an exercise to this superset' : 'Superset with…', chev: true }) : ''}
+        </div>
+        <div class="list inset mt16">
+          ${H.li({ act: 'planLock', attrs: u, title: it.locked ? 'Unlock' : 'Lock', sub: 'Locked exercises stay when you regenerate' })}
+          ${H.li({ act: 'planRemove', attrs: u, title: 'Remove', cls: 'danger' })}
+        </div>`,
+      };
+    });
+  };
+  /* Supersets: separate, flip, create */
+  A.ssMenu = (d) => {
+    const dr = WT.db.draft;
     const it = draftItem(d.uid);
-    const ex = WT.ex(it.exId);
+    if (!it || !it.superset) return;
+    const members = dr.exercises.filter((e) => e.superset === it.superset).map((e) => WT.ex(e.exId).name);
+    WT.closeSheet(true);
     WT.openSheet(() => ({
-      eyebrow: WT.muscleName(ex.primary),
-      title: esc(ex.name),
+      eyebrow: members.map(esc).join(' + '),
+      title: 'Superset ' + it.superset,
       body: `<div class="list inset">
-        ${H.li({ act: 'openSwap', attrs: `data-ctx="draft" data-uid="${it.uid}"`, title: 'Swap exercise', chev: true })}
-        ${H.li({ act: 'pickIntensity', attrs: `data-ctx="draft" data-uid="${it.uid}"`, title: 'Intensity', trail: `<span class="footnote t2">${WT.INTENSITY_INFO[it.intensity].name}</span>`, chev: true })}
-        ${H.li({ act: 'exDetail', attrs: `data-id="${ex.id}"`, title: 'Details and history', chev: true })}
-        ${H.li({ act: 'planLock', attrs: `data-uid="${it.uid}"`, title: it.locked ? 'Unlock' : 'Lock', sub: 'Locked exercises stay when you regenerate' })}
-        ${H.li({ act: 'planRemove', attrs: `data-uid="${it.uid}"`, title: 'Remove', cls: 'danger' })}
+        ${H.li({ act: 'planUnpair', attrs: `data-uid="${it.uid}"`, title: 'Separate into individual exercises', sub: 'Sets, reps and intensity stay the same; each gets its own rest' })}
+        ${H.li({ act: 'planFlip', attrs: `data-uid="${it.uid}"`, title: 'Swap order', sub: `Start with ${esc(members[members.length - 1])}` })}
       </div>`,
     }));
+  };
+  const planChanged = (msg) => {
+    const dr = WT.db.draft;
+    dr.userArranged = true;
+    dr.estimatedMin = WT.estimateMinutes(dr.exercises);
+    WT.save();
+    WT.closeSheet(true);
+    WT.rerender();
+    if (msg) WT.toast(msg);
+  };
+  A.planUnpair = (d) => {
+    const dr = WT.db.draft;
+    dr.exercises = WT.unpairItem(dr.exercises, d.uid);
+    planChanged('Superset separated');
+  };
+  A.planFlip = (d) => {
+    const dr = WT.db.draft;
+    dr.exercises = WT.flipSuperset(dr.exercises, d.uid);
+    planChanged();
+  };
+  A.planPairPick = (d) => {
+    const uid = d.uid;
+    WT.closeSheet(true);
+    WT.openSheet(() => {
+      const dr = WT.db.draft;
+      const it = draftItem(uid);
+      if (!it) return { title: '' };
+      const others = dr.exercises.filter((e) => e !== it && (!it.superset || e.superset !== it.superset));
+      return {
+        eyebrow: esc(WT.ex(it.exId).name),
+        title: 'Superset with',
+        body: `<div class="list inset">${others.map((o) => { const ox = WT.ex(o.exId); return H.li({ act: 'planPair', attrs: `data-a="${uid}" data-b="${o.uid}"`, lead: H.demo(ox.id, 'sm', { static: true }), title: esc(ox.name), sub: `${WT.muscleName(ox.primary)} · ${H.target(o, ox)}${o.superset ? ` · leaves superset ${o.superset}` : ''}` }); }).join('')}</div>
+          <p class="footnote t3 mt12">The exercise you pick moves next to ${esc(WT.ex(it.exId).name)}. You alternate between them and rest after each round.</p>`,
+      };
+    });
+  };
+  A.planPair = (d) => {
+    const dr = WT.db.draft;
+    dr.exercises = WT.pairItems(dr.exercises, d.a, d.b);
+    planChanged('Superset created');
+  };
+  A.planStages = (d) => {
+    const it = draftItem(d.k);
+    if (!it) return;
+    it.stageCount = WT.clamp((it.stageCount || 3) + +d.d, 2, 5);
+    WT.db.draft.estimatedMin = WT.estimateMinutes(WT.db.draft.exercises);
+    WT.save();
+    WT.refreshSheet();
+    WT.rerender();
+  };
+  A.planSets = (d) => {
+    const it = draftItem(d.k);
+    if (!it) return;
+    it.sets = WT.clamp((it.sets || 2) + +d.d, 1, 4);
+    WT.db.draft.estimatedMin = WT.estimateMinutes(WT.db.draft.exercises);
+    WT.save();
+    WT.refreshSheet();
+    WT.rerender();
   };
   A.planLock = (d) => {
     const it = draftItem(d.uid);
@@ -378,12 +746,9 @@
   };
   A.planRemove = (d) => {
     const dr = WT.db.draft;
-    dr.exercises = dr.exercises.filter((i) => i.uid !== d.uid);
-    const left = {};
-    dr.exercises.forEach((i) => i.superset && (left[i.superset] = (left[i.superset] || 0) + 1));
-    dr.exercises.forEach((i) => {
-      if (i.superset && left[i.superset] < 2) i.superset = null;
-    });
+    const gone = dr.exercises.find((i) => i.uid === d.uid);
+    if (gone && !gone.locked) WT.recordDrop(gone.exId); // learning: removed before starting
+    dr.exercises = WT.applySupersetRest(WT.relabelSupersets(dr.exercises.filter((i) => i.uid !== d.uid)));
     dr.estimatedMin = WT.estimateMinutes(dr.exercises);
     WT.save();
     WT.closeSheet(true);
@@ -492,6 +857,104 @@
 
   /* ═════════════════════ SWAP & ADD ═════════════════════ */
   const ctxWorkout = (ctx) => (ctx === 'active' ? WT.db.active : WT.db.draft);
+  /** Replace an exercise in the plan or the active workout, keeping its place, set count and intensity. */
+  function swapItem(ctx, uid, newId) {
+    const w = ctxWorkout(ctx);
+    const idx = w.exercises.findIndex((e) => e.uid === uid);
+    if (idx < 0) return;
+    const old = w.exercises[idx];
+    if (ctx === 'active') {
+      const ex = WT.ex(newId);
+      const pr = WT.prescribe(ex, WT.nearestIntensity(ex, old.intensity || 'standard'));
+      if (WT.trackType(ex) !== 'cardio') pr.sets = old.targetSets;
+      pr.variation = WT.pickVariation(ex, WT.learnedPrefs()).id;
+      const ni = WT.sessionItem(newId, pr);
+      ni.superset = old.superset;
+      ni.uid = old.uid;
+      if (old.ownRest != null) ni.ownRest = old.ownRest;
+      if (old.superset) ni.rest = Math.max(ni.rest, old.rest);
+      w.exercises[idx] = ni;
+    } else {
+      const ownRest = old.ownRest;
+      WT.applySwap(old, newId);
+      if (ownRest != null) WT.applySupersetRest(w.exercises);
+      w.estimatedMin = WT.estimateMinutes(w.exercises);
+    }
+    WT.save();
+    WT.rerender();
+  }
+
+  /** For a sore joint: mark which joint-friendly modifications work for you (the same answer as after a trial). */
+  function jointCheck(ex, it) {
+    const prefs = WT.learnedPrefs();
+    const rows = [];
+    Object.keys(prefs.joints).forEach((j) => {
+      if (!(ex.joints || []).includes(j)) return;
+      [{ id: null, name: 'As written' }].concat(WT.easingMods(ex, j)).forEach((m) => {
+        const st = WT.trialStatus(j, ex, m.id, prefs);
+        rows.push(H.li({ title: `${esc(m.name)}${m.id === (it.variation || null) ? ' <span class="lvl">Current</span>' : ''}`, sub: st === 'ok' ? 'Works for you' : st === 'bad' ? 'Doesn’t work for you' : 'Not tried yet', trail: H.seg([['1', 'Works'], ['0', 'Doesn’t']], st === 'ok' ? '1' : st === 'bad' ? '0' : '', 'varTrial', `${j}|${m.id || ''}`) }));
+      });
+    });
+    return rows.length ? `<div class="list-head mt24" style="padding-left:0">Your ${esc(WT.JOINT_NAMES[Object.keys(prefs.joints).find((j) => (ex.joints || []).includes(j))])}</div><div class="list inset">${rows.join('')}</div>` : '';
+  }
+
+  /* ───────── Variations: modifications of the same exercise, and progressions to other exercises ───────── */
+  A.pickVariation = (d) => {
+    const ctx = d.ctx, uid = d.uid;
+    WT.closeSheet(true);
+    WT.openSheet(() => {
+      const w = ctxWorkout(ctx);
+      const it = w && w.exercises.find((e) => e.uid === uid);
+      if (!it) return { title: '' };
+      const ex = WT.ex(it.exId);
+      const eq = (ctx === 'draft' && w.settings && w.settings.equipment) || WT.db.profile.equipment;
+      const opts = [{ id: '', name: 'As written', level: 0, cue: ex.cue ? ex.cue.split('. ')[0] + '.' : 'The standard version of the exercise.' }].concat((ex.mods || []).slice().sort((a, b) => a.level - b.level));
+      const tag = (m) => [m.level < 0 ? `<span class="lvl easier">Easier</span>` : m.level > 0 ? `<span class="lvl harder">Harder</span>` : '', m.wrist ? '<span class="lvl">Wrist-friendly</span>' : '', m.needs ? `<span class="lvl">Uses a ${esc((WT.EQUIPMENT[m.needs] || m.needs).toLowerCase())}</span>` : ''].join('');
+      const cur = it.variation || '';
+      const prog = (id, label) => {
+        const o = id && WT.ex(id);
+        if (!o) return '';
+        const can = WT.hasEquipment(o, eq);
+        return H.li({ act: 'variationSwap', attrs: `data-id="${o.id}" ${can ? '' : 'disabled'}`, lead: H.demo(o.id, 'sm', { static: true }), title: esc(o.name), sub: `${label} · ${WT.cap(o.difficulty)}${can ? '' : ' · needs ' + o.equipment.filter((q) => q !== 'bw').map((q) => WT.EQUIPMENT[q]).join(', ')}`, chev: can });
+      };
+      const rec = WT.recommend(ex.id, planOf(Object.assign({ targetSets: it.targetSets || it.sets }, it)), ctx === 'active' ? w.id : undefined);
+      return {
+        eyebrow: esc(ex.name),
+        title: 'Variation',
+        body: `${rec && rec.nextVariation !== undefined && rec.action === 'progress' ? `<div class="callout mt4">${I('trendUp', 15)}<span>${esc(rec.reasons[rec.reasons.length - 1])}</span></div>` : ''}
+          <div class="list inset ${rec && rec.action === 'progress' ? 'mt12' : ''}">${opts.map((m) => H.li({ act: 'setVariation', cls: cur === (m.id || '') ? 'on' : '', attrs: `data-k="${m.id}"`, title: `${esc(m.name)} ${tag(m)}`, sub: esc(m.cue || ''), trail: cur === (m.id || '') ? `<span class="accent">${I('check', 18)}</span>` : '' })).join('')}</div>
+          ${jointCheck(ex, it)}
+          ${ex.easier || ex.harder ? `<div class="list-head mt24" style="padding-left:0">Progressions · a different exercise</div><div class="list inset">${prog(ex.easier, 'One step easier')}${prog(ex.harder, 'One step harder')}</div>` : ''}
+          <p class="footnote t3 mt12">A variation changes leverage, range or hand position of the same exercise; your history is tracked per variation. A progression swaps in the next exercise.</p>`,
+      };
+    });
+    A.setVariation = (dd) => {
+      const w = ctxWorkout(ctx);
+      const it = w.exercises.find((e) => e.uid === uid);
+      it.variation = dd.k || null;
+      if (it.trial && it.trial.mod !== it.variation) delete it.trial; // no longer the trial version
+      if (ctx === 'active') it.recApplied = false;
+      WT.save();
+      WT.closeSheet();
+      WT.rerender();
+      const ex = WT.ex(it.exId);
+      WT.toast(dd.k ? `${ex.name}: ${WT.modOf(ex, dd.k).name.toLowerCase()}` : `${ex.name}: as written`);
+    };
+    A.varTrial = (dd) => {
+      const w = ctxWorkout(ctx);
+      const it = w.exercises.find((e) => e.uid === uid);
+      const [j, mod] = dd.k.split('|');
+      WT.recordTrial(j, it.exId, mod || null, dd.v === '1');
+      WT.refreshSheet();
+      WT.rerender();
+    };
+    A.variationSwap = (dd) => {
+      swapItem(ctx, uid, dd.id);
+      WT.closeSheet();
+      WT.toast('Swapped in ' + WT.ex(dd.id).name);
+    };
+  };
+
   A.openSwap = (d) => {
     const state = { wide: false };
     const ctx = d.ctx, uid = d.uid;
@@ -522,24 +985,10 @@
     };
     A.doSwap = (dd) => {
       const w = ctxWorkout(ctx);
-      const idx = w.exercises.findIndex((e) => e.uid === uid);
-      if (idx < 0) return;
-      const old = w.exercises[idx];
-      if (ctx === 'active') {
-        const ex = WT.ex(dd.id);
-        const pr = WT.prescribe(ex, WT.nearestIntensity(ex, old.intensity || 'standard'));
-        if (WT.trackType(ex) !== 'cardio') pr.sets = old.targetSets;
-        const ni = WT.sessionItem(dd.id, pr);
-        ni.superset = old.superset;
-        ni.uid = old.uid;
-        w.exercises[idx] = ni;
-      } else {
-        WT.applySwap(old, dd.id);
-        w.estimatedMin = WT.estimateMinutes(w.exercises);
-      }
-      WT.save();
+      const old = w.exercises.find((e) => e.uid === uid);
+      if (ctx === 'draft' && old && !old.locked && (old.why || [])[0] !== 'Swapped in') WT.recordDrop(old.exId); // learning: generated pick swapped out
+      swapItem(ctx, uid, dd.id);
       WT.closeSheet();
-      WT.rerender();
       WT.toast('Swapped in ' + WT.ex(dd.id).name);
     };
     A.excludeFromSwap = (dd) => {
@@ -633,7 +1082,7 @@
   const val = (s, f, d) => (s[f] !== '' && s[f] != null ? s[f] : d[f]);
 
   /* ───────── Multi-stage sets (drop / build-up) ───────── */
-  const planOf = (it) => ({ repMin: it.repMin, repMax: it.repMax, sets: it.targetSets, intensity: it.intensity, stages: it.stageCount });
+  const planOf = (it) => ({ repMin: it.repMin, repMax: it.repMax, sets: it.targetSets, intensity: it.intensity, stages: it.stageCount, variation: it.variation || null });
   /** Last performance + recommendation, comparing like with like (plain sets vs. the same staged kind). */
   function histCtx(it, a) {
     const hist = WT.exerciseHistory(it.exId, a.id, WT.kindOf(it.intensity));
@@ -756,7 +1205,7 @@
         const cls = e.skipped ? 'skipped' : complete ? 'done' : e === it ? 'current' : '';
         return `<button class="next-row ${cls}" data-act="woFocus" data-uid="${e.uid}">
           <span class="state">${complete ? I('check', 13) : k + 1}</span>
-          <div style="min-width:0"><div class="ti ellipsis">${esc(ex.name)}</div><div class="su">${e.skipped ? 'Skipped' : H.target({ sets: e.targetSets, repMin: e.repMin, repMax: e.repMax, intensity: e.intensity, stageCount: e.stageCount }, ex)}${e.superset ? ` · Superset ${e.superset}` : ''}</div></div>
+          <div style="min-width:0"><div class="ti ellipsis">${esc(WT.itemName(e))}</div><div class="su">${e.skipped ? 'Skipped' : H.target({ sets: e.targetSets, repMin: e.repMin, repMax: e.repMax, intensity: e.intensity, stageCount: e.stageCount }, ex)}${e.superset ? ` · Superset ${e.superset}` : ''}</div></div>
           <span class="cnt">${e.skipped ? '' : `${d}/${e.sets.length}`}</span></button>`;
       })
       .join('');
@@ -768,20 +1217,39 @@
           <button class="btn btn-primary" data-act="woFinish">Finish</button></div></div>
       <div class="progress" role="progressbar" aria-label="Sets completed" aria-valuenow="${done}" aria-valuemin="0" aria-valuemax="${total}"><i style="width:${total ? (done / total) * 100 : 0}%"></i></div>
       <div class="footnote t3 tnum mt8">${done} of ${total} sets</div>
-      ${ask ? effortPrompt(ask) : ''}
+      ${ask ? (ask.trial && ask.trialOk == null ? trialPrompt(ask) : effortPrompt(ask)) : ''}
       <div class="mt16">${it ? current(it, a) : `<div class="empty"><h3>Empty workout</h3><p>Add an exercise to start logging.</p></div>`}</div>
       <section class="section">
         <div class="section-title"><h2>Exercises</h2><button class="btn-link footnote" data-act="openAdd" data-ctx="active">Add</button></div>
         <div class="list">${next}</div>
       </section>
       <section class="section">
-        <textarea class="input" data-in="sessionNotes" placeholder="Workout notes" style="min-height:72px">${esc(a.notes || '')}</textarea>
+        <textarea class="input" data-in="sessionNotes" placeholder="Workout notes — Forge learns from what you write here" style="min-height:72px">${esc(a.notes || '')}</textarea>
         <button class="btn btn-primary btn-lg btn-block mt16" data-act="woFinish">Finish workout</button>
         <div style="text-align:center" class="mt12"><button class="btn btn-plain btn-sm" data-act="woDiscard">Discard workout</button></div>
       </section>
     </div>`;
   };
 
+  /** After a trial of a joint-friendly modification: did it work? The answer shapes future plans. */
+  function trialPrompt(it) {
+    return `<div class="effort trial fade-in"><span>How did your <span class="strong" style="color:var(--text)">${esc(WT.JOINT_NAMES[it.trial.joint])}</span> feel on ${esc(WT.itemName(it))}?</span>${H.seg([['1', 'Fine'], ['0', 'Not good']], '', 'woTrial', it.uid)}<button class="icon-btn sm" data-act="dismissEffort" aria-label="Answer later">${I('x', 15)}</button></div>`;
+  }
+  function trialRow(it) {
+    if (!it.trial) return '';
+    const j = esc(WT.JOINT_NAMES[it.trial.joint]);
+    if (it.trialOk != null) return `<p class="footnote t2 mt12">${I('check', 13)} Noted: ${esc((WT.modOf(WT.ex(it.exId), it.variation) || { name: 'this version' }).name.toLowerCase())} ${it.trialOk ? 'works' : 'doesn’t work'} for your ${j}.</p>`;
+    return `<div class="row between wrap mt12" style="gap:8px"><span class="footnote t2">Trial — how did your ${j} feel?</span>${H.seg([['1', 'Fine'], ['0', 'Not good']], '', 'woTrial', it.uid)}</div>`;
+  }
+  A.woTrial = (d) => {
+    const it = actItem(d.k);
+    if (!it || !it.trial) return;
+    it.trialOk = d.v === '1';
+    WT.recordTrial(it.trial.joint, it.exId, it.variation, it.trialOk);
+    WT.save();
+    WT.rerender();
+    WT.toast(it.trialOk ? 'Good to know — it can come back in future plans' : 'Noted — Forge will try something else next time');
+  };
   function effortPrompt(it) {
     const ex = WT.ex(it.exId);
     return `<div class="effort fade-in"><span>How did <span class="strong" style="color:var(--text)">${esc(ex.name)}</span> feel?</span>${H.seg([['easy', 'Easy'], ['good', 'Solid'], ['hard', 'Hard']], it.effort || '', 'woEffort', it.uid)}<button class="icon-btn sm" data-act="dismissEffort" aria-label="Dismiss">${I('x', 15)}</button></div>`;
@@ -863,7 +1331,7 @@
     } else if (allDone) {
       const nxt = a.exercises.find((e) => !e.skipped && e.sets.some((s) => !s.done));
       editor = `<div class="editor"><div class="row between wrap" style="gap:12px"><span class="strong accent">${I('check', 16).replace('<svg', '<svg style="display:inline;vertical-align:-3px;margin-right:6px"')}Exercise complete</span>
-        ${nxt ? `<button class="btn btn-primary" data-act="woFocus" data-uid="${nxt.uid}">Next: ${esc(WT.ex(nxt.exId).name)}</button>` : `<button class="btn btn-primary" data-act="woFinish">Finish workout</button>`}</div></div>`;
+        ${nxt ? `<button class="btn btn-primary" data-act="woFocus" data-uid="${nxt.uid}">Next: ${esc(WT.ex(nxt.exId).name)}</button>` : `<button class="btn btn-primary" data-act="woFinish">Finish workout</button>`}</div>${trialRow(it)}</div>`;
     }
 
     const recIcon = { increase: 'trendUp', progress: 'trendUp', decrease: 'trendDown', hold: 'equal', reps: 'plus', return: 'refresh' }[rec.action] || 'info';
@@ -882,17 +1350,17 @@
       <div class="cur-top"><div class="grow">
           ${it.superset ? `<div class="cur-over">Superset ${it.superset}</div>` : ''}
           <h2><button data-act="exDetail" data-id="${ex.id}">${esc(ex.name)}</button></h2>
-          <div class="cur-meta"><span class="rx">${H.target({ sets: it.targetSets, repMin: it.repMin, repMax: it.repMax, intensity: it.intensity, stageCount: it.stageCount }, ex)}</span>${it.rest ? `<span>${WT.fmtClock(it.rest)} rest</span>` : ''}${H.intensity(it.intensity, 'pickIntensity', it.uid, 'active')}</div>
+          <div class="cur-meta"><span class="rx">${H.target({ sets: it.targetSets, repMin: it.repMin, repMax: it.repMax, intensity: it.intensity, stageCount: it.stageCount }, ex)}</span>${(ex.mods || []).length ? `<button class="var-tag" data-act="pickVariation" data-ctx="active" data-uid="${it.uid}" aria-label="Variation: ${esc((WT.modOf(ex, it.variation) || { name: 'As written' }).name)}. Change">${esc((WT.modOf(ex, it.variation) || { name: 'As written' }).name)}</button>` : ''}${it.rest ? `<span>${WT.fmtClock(it.rest)} rest</span>` : ''}${H.intensity(it.intensity, 'pickIntensity', it.uid, 'active')}</div>
         </div>
         <div class="row" style="gap:0;margin:-6px -8px 0 0">
           <button class="icon-btn" data-act="openSwap" data-ctx="active" data-uid="${it.uid}" title="Swap" aria-label="Swap exercise">${I('swap', 18)}</button>
           <button class="icon-btn" data-act="woMenu" data-uid="${it.uid}" aria-label="More options">${I('more', 19)}</button>
         </div></div>
-      ${WT.db.profile.trainDemos !== false ? `<div class="cur-demo">${H.demo(ex.id, 'md')}${H.demoCredit(ex.id)}</div>` : ''}
+      ${WT.db.profile.trainDemos !== false ? `<div class="cur-demo">${H.demo(ex.id, 'md', { variation: it.variation })}${H.demoCredit(ex.id, it.variation)}</div>` : ''}
       ${advice}
       <div class="sets">${setLines}</div>
       ${editor}
-      ${it.showNotes || it.notes ? `<textarea class="input mt12" style="min-height:60px" data-in="exNotes" data-uid="${it.uid}" placeholder="Notes for this exercise">${esc(it.notes || '')}</textarea>` : ''}
+      ${it.showNotes || it.notes ? `<textarea class="input mt12" style="min-height:60px" data-in="exNotes" data-uid="${it.uid}" placeholder="Notes for this exercise — e.g. “too easy”, “hard on my wrists”, “love these”. Future workouts adapt.">${esc(it.notes || '')}</textarea>` : ''}
     </div>`;
   }
   function fmtSets(sets, tt, ex) {
@@ -1231,6 +1699,7 @@
       body: `<div class="list inset">
           ${H.li({ act: 'openSwap', attrs: `data-ctx="active" ${u}`, title: 'Replace exercise', chev: true })}
           ${H.li({ act: 'exDetail', attrs: `data-id="${ex.id}"`, title: 'Video, details and history', chev: true })}
+          ${(ex.mods || []).length || ex.easier || ex.harder ? H.li({ act: 'pickVariation', attrs: `data-ctx="active" ${u}`, title: 'Variation', trail: `<span class="footnote t2">${esc((WT.modOf(ex, it.variation) || { name: 'As written' }).name)}</span>`, chev: true }) : ''}
           ${H.li({ act: 'pickIntensity', attrs: `data-ctx="active" ${u}`, title: 'Intensity', trail: `<span class="footnote t2">${WT.INTENSITY_INFO[it.intensity] ? WT.INTENSITY_INFO[it.intensity].name : ''}</span>`, chev: true })}
         </div>
         <div class="list inset mt16">

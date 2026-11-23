@@ -122,7 +122,8 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   await page.tap('.sheet-head [data-act="closeSheet"]');
 
   console.log('Active workout');
-  await page.evaluate(() => { WT.db.draft.exercises[0].exId = 'db-bench-press'; WT.save(true); });
+  // a plain set: the random plan may have given this slot a drop / build-up set, whose editor logs stages instead
+  await page.evaluate(() => { Object.assign(WT.db.draft.exercises[0], { exId: 'db-bench-press', intensity: 'standard' }); WT.save(true); });
   await page.goto(URL + '#/generate'); await page.waitForTimeout(200);
   await page.tap('.sticky-cta [data-act="startDraft"]');
   await page.waitForSelector('.cur');

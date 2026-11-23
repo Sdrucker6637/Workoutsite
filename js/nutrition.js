@@ -555,7 +555,8 @@
     const x = pick.d.x, lib = pick.d.lib;
     const own = WT.catalogFor(x.brand);
     // another brand was named ("Fage triple zero" is not Oikos)
-    const other = brandsTyped.find((bt) => bt.c.b !== own);
+    // (a food of yours whose own name carries the brand — "Turkey kielbasa (Hillshire)" — is that brand's, not another's)
+    const other = brandsTyped.find((bt) => bt.c.b !== own && !(lib && bt.c.names.some((n) => n.every((t) => pick.d.all.has(t)))));
     if (other && !brandsTyped.some((bt) => bt.c.b === own)) return { c: other.c, why: 'brand' };
     if (!own) return null;
     const c = catIdx().find((cc) => cc.b === own);

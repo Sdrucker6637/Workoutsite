@@ -167,11 +167,12 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   await page.click('.shortcut[data-act="recordRun"]');
   await page.waitForSelector('#runDist');
   await page.fill('#runDist', '3.1'); await page.dispatchEvent('#runDist', 'input');
-  await page.fill('.sheet [data-in="runF"][data-k="time"]', '27:54'); await page.dispatchEvent('.sheet [data-in="runF"][data-k="time"]', 'input');
+  await page.fill('.sheet [data-in="runF"][data-k="m"]', '27'); await page.dispatchEvent('.sheet [data-in="runF"][data-k="m"]', 'input');
+  await page.fill('.sheet [data-in="runF"][data-k="s"]', '54'); await page.dispatchEvent('.sheet [data-in="runF"][data-k="s"]', 'input');
   ok(/9:00 \/mi/.test(await page.textContent('#runPace')), 'pace preview 9:00 /mi');
   await page.click('.sheet [data-act="runSave"]'); await page.waitForTimeout(200);
   let d = await db();
-  const run = d.history.find((s) => s.recorded);
+  const run = d.history.find((s) => s.type === 'cardio' && s.exercises[0].sets[0].dist === '3.1');
   ok(run && run.exercises[0].sets[0].dist === '3.1' && Math.round(run.durationSec) === 1674, 'run saved to history');
   ok(/3\.1 mi/.test(await page.textContent('.run-card')) && /9:00 \/mi/.test(await page.textContent('.run-card')), 'Home shows the recent run');
   await page.click('.shortcut[data-act="logWeight"]');

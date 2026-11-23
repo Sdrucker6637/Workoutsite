@@ -439,19 +439,79 @@
     return p.length === 3 ? p[0] * 60 + p[1] + p[2] / 60 : p[0] + p[1] / 60;
   };
   WT.parseRunTime = parseTime;
-  /** Save a completed run as a workout in history (so it counts everywhere workouts do). */
-  WT.saveRun = function (o) {
-    const exId = WT.ex(o.exId) ? o.exId : 'outdoor-run';
+  /* Recorded runs: a normal history session (type 'cardio', one run exercise, one set with time in decimal minutes
+   * and distance in miles) — what the live run flow saves too. One implementation for Home, Progress and History. */
+  WT.runList = function () {
+    return WT.sessions()
+      .filter((s) => WT.isRunSession(s))
+      .map((s) => {
+        const e = s.exercises.find((x) => !x.skipped && WT.ex(x.exId) && WT.ex(x.exId).tags.includes('run'));
+        const set = (e.sets || []).find((x) => x.done) || {};
+        return { s, e, set, dist: +set.dist || 0, time: +set.time || 0 };
+      })
+      .reverse();
+  };
+  /** Save a run (new or edited). f: { id?, date 'YYYY-MM-DD', h, m, s, dist, kind, effort, notes } */
+  WT.saveRun = function (f) {
+    // also accepts { date, dist, time (minutes), exId } — the form the Progress / diary code uses
+    if (f && f.time != null && f.h == null && f.m == null && f.s == null) {
+      const sec = Math.round(+f.time * 60) || 0;
+      f = Object.assign({}, f, { h: Math.floor(sec / 3600), m: Math.floor((sec % 3600) / 60), s: sec % 60, kind: f.kind || f.exId });
+    }
+    const dist = WT.round(parseFloat(String(f.dist).replace(',', '.')) || 0, 2);
+    const sec = (+f.h || 0) * 3600 + (+f.m || 0) * 60 + (+f.s || 0);
+    if (!(dist > 0) && !(sec > 0)) throw new Error('Enter a distance or a time');
+    if (dist > 200) throw new Error('That distance looks too long');
+    if (sec > 24 * 3600) throw new Error('That time looks too long');
+    const N = WT.nut;
+    const today = N.dayKey();
+    if (!N.validDay(f.date) || f.date > today) throw new Error('Choose a date that isn’t in the future');
+    const exId = WT.ex(f.kind) ? f.kind : 'outdoor-run';
     const ex = WT.ex(exId);
-    const date = WT.nut.validDay(o.date) ? o.date : WT.nut.dayKey();
-    const start = date === WT.nut.dayKey() ? new Date(Date.now() - Math.round((o.time || 0) * 60000)) : new Date(WT.nut.parseDay(date).getTime() + 8 * 36e5);
-    const item = WT.sessionItem(exId);
-    item.sets = [{ time: String(WT.round(o.time || 0, 2)), dist: o.dist ? String(WT.round(o.dist, 2)) : '', w: '', r: '', done: true, at: start.toISOString() }];
-    item.targetSets = 1;
-    const s = { id: WT.uid(), type: 'cardio', title: ex.name, startedAt: start.toISOString(), settings: null, notes: o.notes || '', exercises: [item], recorded: true };
-    WT.finishSession(s);
-    s.endedAt = new Date(start.getTime() + Math.round((o.time || 0) * 60000)).toISOString();
-    s.durationSec = Math.round((o.time || 0) * 60);
+    const existing = f.id ? WT.db.history.find((x) => x.id === f.id) : null;
+    // Time of day: keep an edited run's time; a new run today ends now; a past run sits at 7 am that day.
+    let end;
+    if (existing && N.dayKey(new Date(existing.startedAt)) === f.date) end = new Date(existing.endedAt || existing.startedAt);
+    else if (f.date === today) end = new Date();
+    else end = new Date(N.parseDay(f.date).getTime() + 7 * 36e5 + Math.max(sec, 60) * 1000);
+    const start = new Date(end.getTime() - Math.max(sec, 0) * 1000);
+    // A run that would start before midnight of its date (e.g. a long run recorded just after midnight) starts at
+    // the beginning of that day instead, keeping start before end and the duration intact.
+    if (WT.startOfDay(start).getTime() !== N.parseDay(f.date).getTime()) {
+      start.setTime(N.parseDay(f.date).getTime());
+      end.setTime(start.getTime() + Math.max(sec, 0) * 1000);
+    }
+    const set = { w: '', r: '', time: sec ? String(WT.round(sec / 60, 4)) : '', dist: dist ? String(dist) : '', done: true, at: end.toISOString() };
+    if (existing) {
+      let e = existing.exercises.find((x) => WT.ex(x.exId) && WT.ex(x.exId).tags.includes('run'));
+      if (!e) return null;
+      if (e.exId !== exId) Object.assign(e, { exId, name: ex.name });
+      const i = (e.sets || []).findIndex((x) => x.done);
+      if (i >= 0) e.sets[i] = Object.assign({}, e.sets[i], set);
+      else e.sets = [set];
+      e.effort = f.effort || null;
+      existing.notes = f.notes || '';
+      existing.startedAt = start.toISOString();
+      existing.endedAt = end.toISOString();
+      if (existing.exercises.length === 1) existing.durationSec = sec;
+      WT.save(true);
+      return existing;
+    }
+    const pr = WT.prescribe(ex, 'standard');
+    const s = {
+      id: WT.uid(),
+      type: 'cardio',
+      title: 'Run',
+      startedAt: start.toISOString(),
+      endedAt: end.toISOString(),
+      durationSec: sec,
+      settings: null,
+      notes: f.notes || '',
+      exercises: [{ uid: WT.uid(), exId, name: ex.name, intensity: 'standard', targetSets: 1, repMin: pr.repMin, repMax: pr.repMax, rest: 0, superset: null, note: '', notes: '', effort: f.effort || null, skipped: false, sets: [set] }],
+      totals: { sets: 1, volume: 0 },
+      prs: [],
+      meta: { source: 'run' },
+    };
     WT.db.history.push(s);
     WT.save(true);
     return s;

@@ -34,6 +34,7 @@
       <div class="head head-row"><div><div class="over">${esc(r.label === 'All time' ? 'All time' : 'Last ' + r.label)}</div><h1 class="large-title">Progress</h1></div>${periods}</div>
       ${tabs}
       <div class="prog-body">${body}</div>
+      ${WT.db.profile.achievements !== false && WT.ach && WT.ach.counts ? `<div class="list inset mt24"><a class="li" href="#/achievements"><span class="ach-ic" aria-hidden="true">${I('trophy', 17)}</span><div class="grow"><div class="ti">Achievements</div><div class="su">${WT.ach.counts().earned} of ${WT.ach.counts().total} earned</div></div><span class="chev">${I('chevR', 16)}</span></a></div>` : ''}
     </div>`;
   };
 
@@ -295,47 +296,8 @@
 
   /* ═════════════════════ Quick records (Progress + Home) ═════════════════════ */
   const parseTime = (x) => WT.parseRunTime(x);
-  A.recordRun = () => {
-    const runs = WT.exercises.filter((e) => WT.trackType(e) === 'cardio');
-    const f = { date: today(), dist: '', time: '', exId: 'outdoor-run', notes: '' };
-    WT.openSheet(() => {
-      const t = parseTime(f.time), d = +f.dist;
-      return {
-        title: 'Record a run',
-        body: `<div class="fstack" style="gap:14px">
-          <div class="fields"><label class="fstack" style="gap:6px"><span class="label">Distance (mi)</span><input class="input tnum" id="runDist" type="number" inputmode="decimal" step="0.01" min="0" data-in="runF" data-k="dist" value="${esc(f.dist)}" placeholder="3.1"></label>
-            <label class="fstack" style="gap:6px"><span class="label">Time (h:mm:ss or minutes)</span><input class="input tnum" type="text" inputmode="numeric" data-in="runF" data-k="time" value="${esc(f.time)}" placeholder="28:30"></label></div>
-          <div class="fields"><label class="fstack" style="gap:6px"><span class="label">Activity</span><select class="input" data-in="runF" data-k="exId">${runs.map((e) => `<option value="${e.id}" ${e.id === f.exId ? 'selected' : ''}>${esc(e.name)}</option>`).join('')}</select></label>
-            <label class="fstack" style="gap:6px"><span class="label">Date</span><input class="input" type="date" data-in="runF" data-k="date" value="${f.date}" max="${today()}"></label></div>
-          <label class="fstack" style="gap:6px"><span class="label">Notes (optional)</span><input class="input" data-in="runF" data-k="notes" value="${esc(f.notes)}" placeholder="Easy, hilly, intervals…"></label>
-          <p class="footnote t2 tnum" id="runPace">${d > 0 && t > 0 ? `Pace ${WT.fmtPace(t / d)}` : 'Enter distance and time to see your pace.'}</p>
-        </div>`,
-        foot: `<span class="grow"></span><button class="btn btn-secondary" data-act="closeSheet">Cancel</button><button class="btn btn-primary" data-act="runSave">Save run</button>`,
-        after: (sh) => {
-          const i = sh.querySelector('#runDist');
-          if (i && !i.dataset.f) {
-            i.dataset.f = 1;
-            i.focus();
-          }
-        },
-      };
-    });
-    WT.I.runF = (el) => {
-      f[el.dataset.k] = el.value;
-      const p = document.getElementById('runPace');
-      const t = parseTime(f.time), d = +f.dist;
-      if (p) p.textContent = d > 0 && t > 0 ? `Pace ${WT.fmtPace(t / d)}` : 'Enter distance and time to see your pace.';
-    };
-    A.runSave = () => {
-      const t = parseTime(f.time), d = +f.dist;
-      if (!(t > 0) && !(d > 0)) return WT.toast('Enter a distance or a time', 'error');
-      if (d < 0 || d > 200) return WT.toast('Check the distance', 'error');
-      WT.saveRun({ date: f.date, dist: d > 0 ? d : 0, time: t, exId: f.exId, notes: f.notes });
-      WT.closeSheet();
-      WT.rerender();
-      WT.toast(`Run saved${d > 0 ? ` · ${mi(d)} mi` : ''}${d > 0 && t > 0 ? ` · ${WT.fmtPace(t / d)}` : ''}`, 'good');
-    };
-  };
+  // One run form for the whole app (Home, Progress, History): views-train.js
+  A.recordRun = () => A.runRecord();
 
   A.logWeight = () => {
     const unit = WT.db.profile.bodyUnit || 'lb';

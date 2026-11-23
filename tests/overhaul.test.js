@@ -254,7 +254,7 @@ section('Migration v5 → v6 keeps everything');
   mem['wt.data.v1'] = JSON.stringify(v5);
   WT.load();
   const d = WT.db;
-  ok(d.version === 6, 'version 6');
+  ok(d.version === 7, 'version 7');
   ok(d.profile.name === 'Sam' && d.profile.proteinTarget === 160 && d.profile.calorieTarget === null, 'profile kept; new targets unset');
   ok(JSON.stringify(d.history) === JSON.stringify(v5.history), 'workout history untouched');
   ok(d.nutrition.entries.length === 2 && d.nutrition.entries[0].meal === 'breakfast' && d.nutrition.entries[1].meal === 'dinner', 'old entries get a meal from the time they were logged');
@@ -319,7 +319,7 @@ section('Analytics: strength, cardio, consistency');
   ok(c.groups.legs.sets < WT.consistency({ start: r.prevStart, end: r.prevEnd, prevStart: r.prevStart, prevEnd: r.prevStart, days: 30 }).groups.legs.sets, 'lower-body sets dropped');
   ok(c.streak >= 3, 'weekly streak counted (' + c.streak + ')');
   const saved = WT.db.history[WT.db.history.length - 1];
-  ok(saved.recorded && saved.type === 'cardio' && saved.exercises[0].sets[0].done && saved.durationSec > 0, 'a recorded run is a normal history session');
+  ok(saved.type === 'cardio' && saved.exercises[0].sets[0].done && saved.durationSec > 0, 'a recorded run is a normal history session');
 }
 
 section('Insights are grounded in the data');

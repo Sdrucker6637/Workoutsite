@@ -1,0 +1,277 @@
+[
+[
+"push ups hurt my wrists",
+null,
+"pain:family:push-up pain:joint:wrist"
+],
+[
+"my wrist was aching during pushups",
+null,
+"pain:family:push-up pain:joint:wrist"
+],
+[
+"Wrist pain on push-ups",
+null,
+"pain:family:push-up pain:joint:wrist"
+],
+[
+"pushups bothered my wrist a little today",
+null,
+"pain:joint:wrist:temporary"
+],
+[
+"I have a bad wrist",
+null,
+"pain:joint:wrist:ongoing"
+],
+[
+"careful with my knees",
+null,
+"pain:joint:knee"
+],
+[
+"my knees are dodgy",
+null,
+"pain:joint:knee"
+],
+[
+"left knee clicks on lunges",
+null,
+"pain:family:lunge pain:joint:knee"
+],
+[
+"can't do pistols yet",
+null,
+"tooHard:exercise:pistol-squat"
+],
+[
+"pistols were too much",
+null,
+"tooHard:exercise:pistol-squat"
+],
+[
+"felt really hard",
+"pistol-squat",
+"tooHard:exercise:pistol-squat"
+],
+[
+"tired today, felt tough",
+"pushup",
+"tooHard:exercise:pushup:temporary"
+],
+[
+"these are getting easy",
+"air-squat",
+"tooEasy:exercise:air-squat"
+],
+[
+"way too easy",
+"air-squat",
+"tooEasy:exercise:air-squat"
+],
+[
+"not challenging enough",
+"air-squat",
+"tooEasy:exercise:air-squat"
+],
+[
+"I'm a big fan of burpees",
+null,
+"like:family:burpee"
+],
+[
+"burpees suck",
+null,
+"dislike:family:burpee"
+],
+[
+"no more lunges please",
+null,
+"dislike:family:lunge"
+],
+[
+"avoid lunges",
+null,
+"dislike:family:lunge"
+],
+[
+"don't give me lunges",
+null,
+"dislike:family:lunge"
+],
+[
+"actually I like lunges now",
+null,
+"like:family:lunge"
+],
+[
+"wrist is much better",
+null,
+"resolved:joint:wrist"
+],
+[
+"knee feels fine again",
+null,
+"resolved:joint:knee"
+],
+[
+"not sore anymore",
+"pushup",
+"resolved:exercise:pushup"
+],
+[
+"no pain at all",
+"pushup",
+"resolved:exercise:pushup"
+],
+[
+"want more pull-ups",
+null,
+"like:family:pull-up"
+],
+[
+"always include pistols",
+null,
+"like:exercise:pistol-squat"
+],
+[
+"I prefer bodyweight",
+null,
+"like:equipment:bw"
+],
+[
+"prefer dumbbells over cables",
+null,
+"like:equipment:db dislike:equipment:cable"
+],
+[
+"Knuckle push-ups felt fine on my wrists",
+null,
+"resolved:variation:knuckles"
+],
+[
+"knuckle pushups still hurt my wrists",
+null,
+"pain:variation:knuckles"
+],
+[
+"on my fists it hurts my knuckles",
+"pushup",
+"pain:variation:knuckles"
+],
+[
+"forearm version was fine",
+"mountain-climber",
+"resolved:variation:forearms"
+],
+[
+"Used 25s, good form",
+"db-curl",
+""
+],
+[
+"felt strong",
+"db-curl",
+"like:exercise:db-curl"
+],
+[
+"sore from yesterday's run",
+null,
+""
+],
+[
+"Hard on my elbows",
+"diamond-pushup",
+"pain:exercise:diamond-pushup pain:joint:elbow"
+],
+[
+"shoulder pinch on dips every time",
+null,
+"pain:family:dip:ongoing pain:joint:shoulder:ongoing"
+],
+[
+"lower back tweaked during supermans",
+null,
+"pain:exercise:superman-raise pain:joint:back"
+],
+[
+"Nothing hurt, all good",
+"pushup",
+"resolved:exercise:pushup"
+],
+[
+"Not a fan of jumping, my knees hate it",
+null,
+"dislike:family:jump pain:joint:knee"
+],
+[
+"Not too hard",
+"pushup",
+""
+],
+[
+"didn't really hurt",
+"pushup",
+"resolved:exercise:pushup"
+],
+[
+"no wrist pain today",
+"pushup",
+"resolved"
+],
+[
+"my knees hate lunges",
+null,
+"pain:family:lunge pain:joint:knee"
+],
+[
+"Push-ups are tough on my wrists",
+null,
+"pain:family:push-up pain:joint:wrist"
+],
+[
+"Too easy, need something harder",
+"air-squat",
+"tooEasy:exercise:air-squat"
+],
+[
+"Hindu push-ups are fun but the archer ones are too hard",
+null,
+"like:exercise:hindu-pushup tooHard:exercise:archer-pushup"
+],
+[
+"knee push ups are too easy now",
+null,
+"tooEasy:variation:knees@family:push-up"
+],
+[
+"Diamond push ups killed my elbows",
+null,
+"pain:exercise:diamond-pushup pain:joint:elbow"
+],
+[
+"I really like cable work",
+null,
+"like:equipment:cable"
+],
+[
+"This was boring",
+"plank",
+"dislike:exercise:plank"
+],
+[
+"Hate lunges",
+null,
+"dislike:family:lunge"
+],
+[
+"My knees are always cranky",
+null,
+"pain:joint:knee:ongoing"
+],
+[
+"wrists are a bit sensitive today",
+null,
+"pain:joint:wrist:temporary"
+]
+]

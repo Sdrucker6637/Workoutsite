@@ -1,17 +1,20 @@
 /* Service worker: caches the app shell so Forge works fully offline. Bump VERSION on each deploy. */
-const VERSION = 'forge-v14';
+const VERSION = 'forge-v16';
 // Exercise illustrations live in their own cache: it survives app updates, so a demo is
 // downloaded once and then always served locally. Bump only if the media files change.
 const MEDIA = 'forge-media-v1';
 const ASSETS = [
   './', './index.html', './manifest.webmanifest', './css/app.css',
-  './js/exercises.js', './js/core.js', './js/foods.js', './js/fooddb.js', './js/products.js', './js/restaurants.js', './js/brands.js', './js/nutrition.js', './js/lookup.js', './js/engine.js', './js/analytics.js', './js/media.js', './js/icons.js', './js/charts.js',
-  './js/ui.js', './js/views-train.js', './js/views-data.js', './js/views-food.js', './js/views-progress.js', './js/scan.js', './js/vendor/zxing.min.js', './js/data/usda.json',
+  './js/exercises.js', './js/core.js', './js/foods.js', './js/fooddb.js', './js/products.js', './js/restaurants.js', './js/brands.js', './js/nutrition.js', './js/lookup.js', './js/feedback.js',
+  './js/engine.js', './js/analytics.js', './js/ingredients.js', './js/meals.js', './js/achievements.js', './js/media.js', './js/icons.js', './js/charts.js',
+  './js/ui.js', './js/views-train.js', './js/views-data.js', './js/views-food.js', './js/views-meals.js', './js/views-progress.js', './js/scan.js', './js/vendor/zxing.min.js', './js/data/usda.json',
   './fonts/inter-latin-opsz-normal.woff2',
   './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png',
 ];
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(VERSION).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));
+  // cache: 'reload' bypasses the browser's HTTP cache, so a new version never caches a stale file from the
+  // previous deploy (hosts like GitHub Pages send max-age=600) next to new ones.
+  e.waitUntil(caches.open(VERSION).then((c) => c.addAll(ASSETS.map((u) => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', (e) => {
   e.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== VERSION && k !== MEDIA).map((k) => caches.delete(k)))).then(() => self.clients.claim()));

@@ -32,6 +32,24 @@ Each Forge exercise below was compared by eye against all three frames. A drawin
 
 | Forge exercise | Forge id | Workout Guide slug | Frames |
 |---|---|---|---|
+| Bodyweight Squat | `air-squat` | `bodyweight-squat` | 3 |
+| Forward Lunge | `forward-lunge` | `forward-lunge` | 3 |
+| Curtsy Lunge | `curtsy-lunge` | `curtsy-lunge` | 3 |
+| Pistol Squat | `pistol-squat` | `pistol-squat` | 3 |
+| Frog Pump | `frog-pump` | `frog-pump` | 3 |
+| Donkey Kick | `donkey-kick` | `donkey-kick` | 3 |
+| Side-Lying Hip Abduction | `side-lying-abduction` | `side-lying-hip-abduction` | 3 |
+| Hollow Rock | `hollow-rock` | `hollow-rock` | 3 |
+| Side Plank Hip Dip | `side-plank-hip-dip` | `side-plank-hip-dip` | 3 |
+| Plank Shoulder Tap | `shoulder-tap` | `plank-shoulder-tap` | 3 |
+| Superman Raise | `superman-raise` | `superman` | 3 |
+| Medicine Ball Russian Twist | `mb-russian-twist` | `russian-twist` | 3 |
+| Hindu Push-Up | `hindu-pushup` | `hindu-push-up` | 3 |
+| Typewriter Push-Up | `typewriter-pushup` | `typewriter-push-up` | 3 |
+| Plank Jack | `plank-jack` | `plank-jack` | 3 |
+| Crab Walk | `crab-walk` | `crab-walk` | 3 |
+| Clap Push-Up | `clap-pushup` | `explosive-push-up` (frame 3 shows the clap) | 3 |
+| Push-Up · From the knees (variation) | `pushup` + `knees` | `knee-push-up` | 3 |
 | Archer Push-Up | `archer-pushup` | `archer-push-up` | 3 |
 | Barbell Row | `bb-row` | `barbell-row` | 3 |
 | Bear Crawl | `bear-crawl` | `bear-crawl` | 3 |

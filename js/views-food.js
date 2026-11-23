@@ -210,6 +210,7 @@
         <div id="foodPreview" class="mt12" aria-live="polite">${previewHtml(items)}</div>
       </section>
       ${quickAdd(day)}
+      <div class="list inset mt24">${H.li({ href: '#/meals', lead: `<span class="ach-ic" aria-hidden="true">${I('sparkles', 16)}</span>`, title: 'Meal ideas', sub: 'Pick ingredients you have and get protein-forward recipes', chev: true })}</div>
       ${N.MEALS.map(([k]) => mealSection(day, k)).join('')}
       <p class="footnote t3 mt16">Tags show where values come from: <b>Verified</b> (manufacturer), <b>Reference data</b> (USDA or the restaurant’s published values), <b>Confirmed by you</b>, or <b>Estimate</b>. Tap any item to correct it.</p>
     </div>`;
