@@ -72,8 +72,8 @@ section('Examples from the brief');
 
   r = parse('One serving of Barilla Protein+ pasta with half a jar of Rao’s sauce');
   ok(r.length === 2 && r[0].foodId === 'p:barilla-protein-plus' && r[0].qty === 1, 'Barilla Protein+ serving');
-  ok(T(r[0]).p === 17 && r[0].estMacros.includes('cal') && /estimated/.test(r[0].note), 'verified protein; missing calories estimated AND flagged');
-  ok(r[1].ambiguous && r[1].qty === 0.5 && ['p:raos-marinara', 'p:raos-arrabbiata'].every((id) => r[1].candidates.some((c) => c.id === id)) && r[1].candidates.some((c) => c.nodata && /Vodka/.test(c.name)), '“Rao’s sauce”: Rao’s makes many sauces → asks, keeping “half a jar”');
+  ok(T(r[0]).p === 10 && T(r[0]).cal === 190 && !r[0].estMacros.length, 'label serving (2 oz dry): 190 cal, 10 g protein, nothing estimated');
+  ok(r[1].ambiguous && r[1].qty === 0.5 && ['p:raos-marinara', 'p:raos-arrabbiata', 'p:raos-vodka', 'p:raos-tomato-basil'].every((id) => r[1].candidates.some((c) => c.id === id)) && r[1].candidates.some((c) => c.nodata && /Puttanesca/.test(c.name)), '“Rao’s sauce”: Rao’s makes many sauces → asks, keeping “half a jar”');
   const rm = parse('half a jar of Rao’s marinara')[0];
   ok(rm.foodId === 'p:raos-marinara' && rm.unit === 'jar (24 oz)' && rm.qty === 0.5 && near(T(rm).cal, 272, 1) && rm.assumed && /assumed a 24 oz jar/.test(rm.note), 'half a jar of Rao’s marinara: the usual 24 oz jar, said to be assumed');
   const rm32 = parse('half a 32 oz jar of Rao’s marinara')[0];

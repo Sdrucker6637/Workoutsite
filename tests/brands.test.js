@@ -162,7 +162,9 @@ section('The examples');
   r = one('Oikos Pro Drink');
   ok(r.ambiguous && r.candidates.every((c) => c.id !== 'p:oikos-pro-yogurt') && r.candidates.some((c) => c.nodata && /Pro Drink/.test(c.name)), 'Oikos Pro Drink is not Oikos Pro yogurt');
   r = one('Oikos Triple Zero mixed berry');
-  ok(r.ambiguous && r.variant === 'Mixed Berry', 'Triple Zero Mixed Berry: only Vanilla has data → asks');
+  ok(r.foodId === 'p:oikos-tz-mixed-berry' && r.per.cal === 90 && r.per.p === 15, 'Triple Zero Mixed Berry: its own label (90 cal), not Vanilla’s');
+  r = one('Oikos Triple Zero black cherry');
+  ok(r.ambiguous && r.variant === 'Black Cherry', 'Triple Zero Black Cherry: no label for that flavor → asks');
   r = one('a 32 oz tub of Oikos Triple Zero');
   ok(r.unit === 'tub (32 oz)' && Math.round(T(r).p) === 91, '32 oz tub = 907 g ≈ 6 cups ≈ 91 g protein');
   r = one('Fage triple zero');
@@ -170,32 +172,39 @@ section('The examples');
 
   ok(one('a serving of Barilla Protein+').foodId === 'p:barilla-protein-plus' && one('barilla protein plus rotini').foodId === 'p:barilla-protein-plus', 'Barilla Protein+ (also “protein plus rotini”, one item)');
   ok(N.parse('barilla protein plus rotini').length === 1, '“protein plus” is a name, not a list');
-  for (const [t, line] of [['Barilla chickpea pasta', 'Chickpea Pasta'], ['Barilla red lentil penne', 'Red Lentil Pasta'], ['Barilla spaghetti', 'Classic Blue Box'], ['Barilla whole grain penne', 'Whole Grain']]) {
+  for (const [t, id] of [['Barilla chickpea pasta', 'barilla-chickpea'], ['Barilla chickpea rotini', 'barilla-chickpea'], ['Barilla red lentil penne', 'barilla-red-lentil'], ['Barilla spaghetti', 'barilla-classic']])
+    ok(one(t).foodId === 'p:' + id, `“${t}” → ${id}, never Protein+ (${describeRes(one(t))})`);
+  for (const [t, line] of [['Barilla whole grain penne', 'Whole Grain'], ['Barilla gluten free spaghetti', 'Gluten Free']]) {
     r = one(t);
-    ok(r.ambiguous && !r.candidates.some((c) => c.id === 'p:barilla-protein-plus') && r.candidates.some((c) => c.nodata && c.line === line), `“${t}” → ${line} (no label yet), never Protein+`);
+    ok(r.ambiguous && !r.candidates.some((c) => c.id.startsWith('p:')) && r.candidates.some((c) => c.nodata && c.line === line), `“${t}” → ${line} (no label yet), never another Barilla pasta (${describeRes(r)})`);
   }
 
   ok(one('2 slices of Dave’s Killer Bread 21 whole grains').foodId === 'p:daves-21-whole-grains', 'Dave’s 21 Whole Grains');
-  for (const [t, line, variant] of [['Dave’s Killer Bread white bread', 'White Bread Done Right', ''], ['dave’s killer bread good seed', 'Good Seed', ''], ['Dave’s Killer Bread powerseed', 'Powerseed', ''], ['2 slices of Dave’s Killer Bread thin sliced 21 whole grains', '21 Whole Grains and Seeds', 'Thin-Sliced'], ['dkb epic everything bagel', 'Epic Everything Bagels', '']]) {
+  for (const [t, id] of [['Dave’s Killer Bread white bread', 'dkb-white-done-right'], ['dave’s killer bread good seed', 'dkb-good-seed'], ['Dave’s Killer Bread powerseed', 'dkb-powerseed'], ['2 slices of Dave’s Killer Bread thin sliced 21 whole grains', 'dkb-21-thin'], ['dkb epic everything bagel', 'dkb-epic-everything'], ['dkb good seed thin sliced', 'dkb-good-seed-thin']])
+    ok(one(t).foodId === 'p:' + id, `“${t}” → ${id}, never 21 Whole Grains (${describeRes(one(t))})`);
+  for (const [t, line, variant] of [['Dave’s Killer Bread rockin grains', "Rockin' Grains", ''], ['Dave’s Killer Bread 100% whole wheat thin sliced', '100% Whole Wheat', 'Thin-Sliced']]) {
     r = one(t);
-    ok(r.ambiguous && !r.candidates.some((c) => c.id === 'p:daves-21-whole-grains') && r.candidates.some((c) => c.nodata && c.line === line && c.variant === variant), `“${t}” → ${line}${variant ? ' ' + variant : ''}, never 21 Whole Grains (${describeRes(r)})`);
+    ok(r.ambiguous && !r.candidates.some((c) => c.id.startsWith('p:')) && r.candidates.some((c) => c.nodata && c.line === line && c.variant === variant), `“${t}” → ${line}${variant ? ' ' + variant : ''} (no label yet), never another bread (${describeRes(r)})`);
   }
   r = one('Dave’s Killer Bread');
   ok(r.ambiguous && r.candidates.length >= 8, 'Dave’s Killer Bread alone lists its breads');
 
   for (const [t, id] of [['Oscar Mayer oven roasted turkey', 'oscar-mayer-turkey'], ['Oscar Mayer honey ham', 'oscar-mayer-ham'], ['3 Oscar Mayer beef franks', 'oscar-mayer-beef-franks'], ['Oscar Mayer wieners', 'oscar-mayer-wieners'], ['2 slices Oscar Mayer bologna', 'oscar-mayer-bologna']])
     ok(one(t).foodId === 'p:' + id, `“${t}” → ${id}`);
-  for (const [t, lines] of [['Oscar Mayer turkey', ['Deli Fresh Smoked Turkey Breast', 'Deli Fresh Honey Smoked Turkey Breast']], ['Oscar Mayer ham', ['Deli Fresh Black Forest Ham', 'Deli Fresh Smoked Ham']], ['Oscar Mayer hot dogs', []]]) {
+  for (const [t, ids] of [['Oscar Mayer turkey', ['p:oscar-mayer-turkey', 'p:om-smoked-turkey', 'p:om-honey-smoked-turkey', 'c:oscar-mayer:deli-fresh-mesquite-turkey-breast']], ['Oscar Mayer ham', ['p:oscar-mayer-ham', 'p:om-black-forest-ham', 'c:oscar-mayer:deli-fresh-smoked-ham']], ['Oscar Mayer hot dogs', ['p:oscar-mayer-beef-franks', 'p:oscar-mayer-wieners']]]) {
     r = one(t);
-    ok(r.ambiguous && lines.every((ln) => r.candidates.some((c) => c.line === ln)), `“${t}” → asks among ${lines.join(', ') || 'beef franks / wieners'} (${describeRes(r)})`);
+    ok(r.ambiguous && ids.every((id) => r.candidates.some((c) => c.id === id)), `“${t}” → asks among ${ids.join(', ')} (${describeRes(r)})`);
   }
-  for (const [t, line] of [['Oscar Mayer turkey bacon', 'Turkey Bacon'], ['Oscar Mayer smoked turkey', 'Deli Fresh Smoked Turkey Breast'], ['Oscar Mayer black forest ham', 'Deli Fresh Black Forest Ham'], ['Oscar Mayer salami', 'Hard Salami'], ['Oscar Mayer turkey franks', 'Turkey Franks']]) {
+  for (const [t, id] of [['Oscar Mayer turkey bacon', 'om-turkey-bacon'], ['Oscar Mayer smoked turkey', 'om-smoked-turkey'], ['Oscar Mayer honey smoked turkey', 'om-honey-smoked-turkey'], ['Oscar Mayer black forest ham', 'om-black-forest-ham'], ['Oscar Mayer rotisserie chicken', 'om-rotisserie-chicken']])
+    ok(one(t).foodId === 'p:' + id, `“${t}” → ${id}, never another deli meat (${describeRes(one(t))})`);
+  for (const [t, line] of [['Oscar Mayer salami', 'Hard Salami'], ['Oscar Mayer turkey franks', 'Turkey Franks'], ['Oscar Mayer mesquite turkey', 'Deli Fresh Mesquite Turkey Breast']]) {
     r = one(t);
     ok(r.ambiguous && !r.candidates.some((c) => c.id.startsWith('p:')) && r.candidates.some((c) => c.line === line), `“${t}” → ${line} (no label yet), never another deli meat (${describeRes(r)})`);
   }
 
   ok(one('Rao’s marinara').foodId === 'p:raos-marinara' && one('Rao’s arrabbiata').foodId === 'p:raos-arrabbiata', 'Rao’s Marinara and Arrabbiata');
-  for (const [t, line] of [['Rao’s vodka sauce', 'Vodka Sauce'], ['Rao’s tomato basil', 'Tomato Basil'], ['Rao’s roasted garlic', 'Roasted Garlic'], ['Rao’s alfredo', 'Alfredo']]) {
+  ok(one('Rao’s vodka sauce').foodId === 'p:raos-vodka' && one('Rao’s tomato basil').foodId === 'p:raos-tomato-basil', 'Rao’s Vodka and Tomato Basil: their own labels, never Marinara');
+  for (const [t, line] of [['Rao’s roasted garlic', 'Roasted Garlic'], ['Rao’s alfredo', 'Alfredo'], ['Rao’s puttanesca', 'Puttanesca']]) {
     r = one(t);
     ok(r.ambiguous && !r.candidates.some((c) => c.id.startsWith('p:')) && r.candidates.some((c) => c.line === line), `“${t}” → ${line}, never Marinara`);
   }
@@ -208,7 +217,7 @@ section('The examples');
   ok(r.ambiguous && /which flavor/.test(r.askWhy) && r.candidates.some((c) => c.id === 'p:quest-bar-cccd') && r.candidates.some((c) => c.nodata), '“Quest bar”: flavors have different labels → asks which flavor');
   r = one('Oikos Triple Zero');
   ok(r.foodId === 'p:oikos-triple-zero' && r.flavorAssumed === 'Vanilla' && /Flavor not given/.test(r.note) && N.confidence(r).level !== 'high', '“Oikos Triple Zero” (flavors share protein): Vanilla values, said so, never “exact”');
-  for (const t of ['Chobani greek yogurt', 'Fage total 0%', 'a Ball Park hot dog', 'Kraft cheese', 'Jif peanut butter', 'fairlife milk', 'Kirkland protein bar', 'Starbucks egg bites'])
+  for (const t of ['Chobani greek yogurt', 'Fage total 5%', 'a Ball Park hot dog', 'Kraft cheese', 'Jif peanut butter', 'fairlife milk', 'Kirkland protein bar', 'Starbucks egg bites'])
     ok(one(t).ambiguous && !one(t).per, `“${t}”: brand known, product not → asks`);
   r = one('Kirkland protein bar');
   ok(r.candidates.length === 1 && r.candidates[0].nodata && r.fallback, 'a brand with no catalog entry: search / label / labelled generic estimate');
@@ -229,7 +238,7 @@ section('Custom branded products');
   r = one('half a loaf of Dave’s Killer Bread white bread');
   ok(r.unit === 'loaf' && Math.round(T(r).cal) === 900, 'your package size: half a loaf = 9 slices');
   r = one('Dave’s Killer Bread good seed');
-  ok(r.ambiguous && !r.candidates.some((c) => c.id === 'my:' + saved.id), 'another line is never replaced by your saved bread');
+  ok(r.foodId === 'p:dkb-good-seed', 'another line is never replaced by your saved bread');
   ok(one('Dave’s Killer Bread 21 whole grains').foodId === 'p:daves-21-whole-grains', 'bundled lines still resolve');
   r = one('Dave’s Killer Bread');
   ok(r.ambiguous && r.candidates[0].id === 'my:' + saved.id && r.candidates[0].mine, 'brand alone: your product listed first, still asks (two breads known)');

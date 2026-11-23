@@ -90,7 +90,7 @@
     B('muscle-milk', 'Muscle Milk', ['muscle milk'], 'shake', 'bottle', [['Genuine Protein Shake', ['genuine'], {}], ['Pro Series', ['pro series', 'pro'], {}], ['Protein Powder', ['powder'], { cat: 'powder', unit: 'scoop' }]]),
     B('orgain', 'Orgain', ['orgain'], 'shake', 'bottle', [['Organic Protein Shake', ['shake'], {}], ['Organic Protein Powder', ['powder'], { cat: 'powder', unit: 'scoop' }]]),
     B('owyn', 'OWYN', ['owyn'], 'shake', 'bottle', [['Protein Shake', ['shake'], {}], ['Pro Elite', ['elite'], {}]]),
-    B('ensure', 'Ensure', ['ensure'], 'shake', 'bottle', [['Max Protein', ['max', 'max protein'], {}], ['Original', ['original'], {}], ['Plus', ['plus'], {}]]),
+    B('ensure', 'Ensure', ['ensure'], 'shake', 'bottle', [['Max Protein', ['max', 'max protein'], {}], ['Original', ['original'], {}], ['Plus', ['plus', 'ensure plus'], {}]]),
     B('optimum', 'Optimum Nutrition', ['optimum nutrition', 'on gold standard', 'gold standard'], 'powder', 'scoop', [['Gold Standard 100% Whey', ['gold standard', 'whey'], {}], ['Gold Standard Casein', ['casein'], {}], ['Protein Shake (ready to drink)', ['shake', 'rtd'], { cat: 'shake', unit: 'bottle' }]]),
     B('dymatize', 'Dymatize', ['dymatize'], 'powder', 'scoop', [['ISO100', ['iso100', 'iso 100', 'iso'], {}], ['Elite 100% Whey', ['elite'], {}]]),
     B('ghost', 'Ghost', ['ghost protein', 'ghost whey', 'ghost'], 'powder', 'scoop', [['Whey Protein', ['whey', 'protein'], {}], ['Energy', ['energy'], { cat: 'drink', unit: 'can' }]]),
@@ -128,9 +128,9 @@
 
     /* ── Pasta & sauce ── */
     B('barilla', 'Barilla', ['barilla'], 'pasta', 'serving', [
-      ['Protein+', ['protein plus', 'protein', 'plus'], { p: ['barilla-protein-plus'], pack: { unit: 'box', sizes: [['14.5 oz', 411]] } }],
-      ['Chickpea Pasta', ['chickpea'], {}],
-      ['Red Lentil Pasta', ['red lentil', 'lentil'], {}],
+      ['Protein+', ['protein plus', 'protein', 'plus', ...SHAPES.map((x) => 'protein ' + x), ...SHAPES.map((x) => 'protein plus ' + x)], { p: ['barilla-protein-plus'], pack: { unit: 'box', sizes: [['14.5 oz', 411]] } }],
+      ['Chickpea Pasta', ['chickpea', 'chickpea pasta', ...SHAPES.map((x) => 'chickpea ' + x)], {}],
+      ['Red Lentil Pasta', ['red lentil', 'lentil', ...SHAPES.map((x) => 'red lentil ' + x)], {}],
       ['Whole Grain', ['whole grain', 'whole wheat'], {}],
       ['Gluten Free', ['gluten free'], {}],
       ['Classic Blue Box', SHAPES.concat(['classic', 'blue box', 'regular']), { pack: { unit: 'box', sizes: [['16 oz', 454]] } }],
@@ -198,7 +198,45 @@
     ]),
     B('skippy', 'Skippy', ['skippy'], 'spread', 'serving', [['Creamy Peanut Butter', ['creamy'], {}], ['Super Chunk', ['chunk', 'crunchy'], {}], ['Natural', ['natural'], {}]]),
     B('smuckers', "Smucker's", ['smuckers'], 'spread', 'tbsp', [['Strawberry Jam', ['strawberry'], {}], ['Grape Jelly', ['grape'], {}], ['Uncrustables', ['uncrustables', 'uncrustable'], { cat: 'sandwich', unit: 'sandwich' }]]),
+
+    /* ── Frozen meals ── (recognized; labels not bundled yet — Forge asks, then search online or enter the label) */
+    B('healthy-choice', 'Healthy Choice', ['healthy choice'], 'meal', 'meal', [['Power Bowls', ['power bowl', 'power bowls', 'bowl'], {}], ['Café Steamers', ['cafe steamers', 'steamers', 'steamer'], {}], ['Simply Steamers', ['simply steamers'], {}]]),
+    B('lean-cuisine', 'Lean Cuisine', ['lean cuisine'], 'meal', 'meal', [['Favorites', ['favorites'], {}], ['Protein Kick', ['protein kick'], {}], ['Bowls', ['bowl', 'bowls'], {}]]),
+    B('amys', "Amy's", ['amys', 'amys kitchen'], 'meal', 'meal', [['Bowls', ['bowl', 'bowls'], {}], ['Burritos', ['burrito', 'burritos'], { unit: 'burrito' }], ['Frozen Pizza', ['pizza'], { unit: 'slice' }], ['Soups', ['soup'], { unit: 'cup' }]]),
+    B('stouffers', "Stouffer's", ['stouffers', 'stouffer'], 'meal', 'meal', [['Lasagna with Meat & Sauce', ['lasagna', 'lasagne'], {}], ['Macaroni & Cheese', ['mac and cheese', 'macaroni and cheese', 'mac'], {}]]),
+
+    /* ── Condiments ── */
+    B('heinz', 'Heinz', ['heinz'], 'condiment', 'tbsp', [['Tomato Ketchup', ['ketchup', 'catsup'], {}], ['No Sugar Added Ketchup', ['no sugar added', 'no sugar'], {}], ['Yellow Mustard', ['mustard'], { unit: 'tsp' }]]),
+    B('hellmanns', "Hellmann's", ['hellmanns', 'hellman', 'hellmans', 'best foods'], 'condiment', 'tbsp', [['Real Mayonnaise', ['real', 'mayo', 'mayonnaise'], {}], ['Light Mayonnaise', ['light'], {}]]),
+    B('frenchs', "French's", ['frenchs'], 'condiment', 'tsp', [['Classic Yellow Mustard', ['mustard', 'yellow'], {}], ['Crispy Fried Onions', ['crispy onions', 'fried onions'], { unit: 'tbsp' }]]),
+    B('franks-redhot', "Frank's RedHot", ['franks redhot', 'franks red hot', 'frank s redhot'], 'condiment', 'tsp', [['Original Hot Sauce', ['original', 'hot sauce'], {}], ['Buffalo Wings Sauce', ['buffalo', 'wings sauce'], { unit: 'tbsp' }]]),
+
+    /* ── Snacks & cereal ── */
+    B('lays', "Lay's", ['lays'], 'chips', 'bag', [['Classic Potato Chips', ['classic', 'potato chips', 'chips'], {}], ['Baked', ['baked'], {}]]),
+    B('goldfish', 'Goldfish', ['goldfish crackers', 'goldfish'], 'snack', 'serving', [['Cheddar', ['cheddar'], {}], ['Flavor Blasted', ['flavor blasted', 'blasted'], {}]]),
+    B('cheerios', 'Cheerios', ['cheerios'], 'cereal', 'cup', [['Original', ['original', 'plain'], {}], ['Honey Nut', ['honey nut'], {}], ['Protein', ['protein'], {}]]),
   ];
+
+  /* ───────── Products → lines ─────────
+   * A product in js/products.js can name its line with `cl: 'brand:line[:variant]'` (ids are slugs of the names)
+   * instead of being listed here. A line's first product is its default when you don't name a flavor (unless the
+   * line's flavors have materially different labels — `flavorMatters` — then Forge asks). */
+  WT.catalogLink = function () {
+    (WT.PRODUCTS || []).forEach((x) => {
+      if (!x.cl) return;
+      const [bid, lid, vid] = x.cl.split(':');
+      const b = WT.BRAND_CATALOG.find((bb) => bb.id === bid);
+      const l = b && b.lines.find((ll) => ll.id === lid);
+      if (!l) throw new Error(`Product ${x.id}: no catalog line ${x.cl}`);
+      if (!vid) return l.p.includes(x.id) || l.p.push(x.id);
+      const v = l.variants.find((vv) => slug(vv[0]) === vid);
+      if (!v) throw new Error(`Product ${x.id}: no catalog variant ${x.cl}`);
+      if (!v[2]) v[2] = {};
+      v[2].p = v[2].p || [];
+      if (!v[2].p.includes(x.id)) v[2].p.push(x.id);
+    });
+  };
+  WT.catalogLink();
 
   /* ───────── Index ───────── */
   WT.catalogBrand = (id) => WT.BRAND_CATALOG.find((b) => b.id === id);

@@ -118,7 +118,7 @@
       const rec = it.foodId && it.foodId.startsWith('x:') ? L().cached(it.foodId.slice(2)) : null;
       const p100 = rec && rec.per100;
       return `<div class="scan-found">
-        <div class="footnote t3 tnum">Barcode ${esc(st.code)}${st.from === 'library' ? ' · in your foods' : st.from === 'cache' ? ' · found earlier' : st.from === 'off' ? ' · Open Food Facts' : st.from === 'fdc' ? ' · USDA FoodData Central' : ''}</div>
+        <div class="footnote t3 tnum">Barcode ${esc(st.code)}${st.from === 'library' ? ' · in your foods' : st.from === 'bundled' ? ' · in Forge’s product list' : st.from === 'cache' ? ' · found earlier' : st.from === 'off' ? ' · Open Food Facts' : st.from === 'fdc' ? ' · USDA FoodData Central' : ''}</div>
         <h3 class="mt4">${esc(it.name)}</h3>
         <div class="rv-meta">${WT.foodConfTag(it.conf)}${it.brand ? `<span class="t2">${esc(it.brand)}</span>` : ''}</div>
         <div class="scan-macros tnum mt12"><div><b>${t.cal == null || it.per.cal == null ? '—' : N.rcal(t.cal)}</b><span>cal</span></div><div><b>${it.per.p == null ? '—' : N.rp(t.p)}</b><span>protein</span></div><div><b>${it.per.c == null ? '—' : N.rg(t.c)}</b><span>carbs</span></div><div><b>${it.per.f == null ? '—' : N.rg(t.f)}</b><span>fat</span></div></div>
@@ -211,12 +211,17 @@
       let r = null;
       for (const c of tries) {
         r = await L().barcode(c);
-        if (r.libId || r.rec || (r.errors && r.errors.length)) break;
+        if (r.libId || r.ref || r.rec || (r.errors && r.errors.length)) break;
       }
       st.errors = (r && r.errors) || [];
       st.from = r && r.from;
-      if (r && (r.libId || r.rec)) {
-        st.result = N.resolveAs({ id: WT.uid(), text: '', qty: 1, phrase: '' }, r.libId ? 'my:' + r.libId : 'x:' + r.rec.id);
+      if (r && (r.libId || r.ref || r.rec)) {
+        st.result = N.resolveAs({ id: WT.uid(), text: '', qty: 1, phrase: '' }, r.libId ? 'my:' + r.libId : r.ref || 'x:' + r.rec.id);
+        if (r.ref && r.flavor) {
+          // the barcode is one flavor of a product whose flavors share a label
+          st.result.flavor = r.flavor;
+          st.result.name = N.productName(N.productById(r.ref.slice(2)), r.flavor);
+        }
         st.result.match = 'exact';
         st.result.key = 'scan:' + code;
         st.phase = 'found';

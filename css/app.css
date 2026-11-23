@@ -3644,3 +3644,25 @@ button.demo:active {
 .chip.cand.nodata .cs {
   color: var(--text-3);
 }
+
+/* Online result fit: brand / line / flavor / package agreement with what you searched */
+.sr-fit {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+.sr-fit .tag {
+  margin-left: 0;
+}
+.tag.good {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.tag.warn {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+.sr-manual {
+  padding: 0 4px;
+}

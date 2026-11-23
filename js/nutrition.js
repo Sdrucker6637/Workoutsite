@@ -126,7 +126,7 @@
     t = t.replace(/\bw\/(?=\s)/g, 'with').replace(/\bw\/o\b/g, 'without');
     t = t.replace(/\b(?:without|no|minus)\s+(?:the\s+)?skin\b|\bskin\s*(?:off|removed)\b|\bremoved\s+(?:the\s+)?skin\b/g, ' skinless ');
     t = t.replace(/\bwith\s+(?:the\s+)?skin(?:\s+on)?\b|\bskin[\s-]+on\b/g, ' skin_on ');
-    t = t.replace(/\bprotein\s+plus\b/g, 'protein_plus');
+    t = t.replace(/\bprotein\s+plus\b/g, 'protein_plus').replace(/\bensure\s+plus\b/g, 'ensure_plus');
     t = t.replace(/\bpb\s*(and|&)\s*j\b/g, 'pbj').replace(/([a-z0-9])\+/g, '$1_plus'); // "Protein+" is a name, not a list
     // brand names with number words ("Two Good", "ONE bar") are names, not amounts
     t = t.replace(NUMBER_BRANDS(), (m) => m.replace(/\s+/g, '_'));
@@ -250,6 +250,18 @@
   }
   const flavSet = () => (generic(), FLAV);
   N.productById = (id) => (WT.PRODUCTS || []).find((x) => x.id === id);
+  /** The barcode printed for this product (and flavor, when barcodes differ by flavor). */
+  N.productCode = (x, flavor) => {
+    const list = (x && x.upc) || [];
+    const hit = list.find((u) => u.flavor && flavor && u.flavor.toLowerCase() === flavor.toLowerCase()) || list.find((u) => !u.flavor);
+    return hit ? hit.code : '';
+  };
+  /** A bundled product by barcode → { x, flavor } (UPC-A and EAN-13 forms compare equal). */
+  N.productByCode = (c) => {
+    const same = (a, b) => { const x = String(a).replace(/\D/g, '').replace(/^0+/, ''), y = String(b).replace(/\D/g, '').replace(/^0+/, ''); return !!x && x === y; };
+    for (const x of WT.PRODUCTS || []) for (const u of x.upc || []) if (same(u.code, c)) return { x, flavor: u.flavor || null, from: u.from };
+    return null;
+  };
   /** Display name: brand, product, and the flavor when there is one. */
   N.productName = (x, flavor) => {
     const f = flavor || x.flavor;
@@ -345,9 +357,23 @@
     if (!cands.length) return null;
     const conf = cands.filter((c) => c.confident);
     if (conf.length) {
-      const top = conf[0];
+      let top = conf[0];
+      // a label you saved for this same product (line, variant, flavor) comes before the bundled one
+      if (!top.d.lib) {
+        const tl = lineOf(top.d.x, false);
+        const mine = tl && conf.find((c) => {
+          if (!c.d.lib) return false;
+          const ml = lineOf(c.d.x, true);
+          return ml && ml.l === tl.l && ml.variant === tl.variant && (!c.d.x.flavor || !top.d.x.flavor || c.d.x.flavor.toLowerCase() === top.d.x.flavor.toLowerCase());
+        });
+        if (mine) return { pick: mine };
+      }
       const rivals = conf.slice(1).filter((c) => top.s - c.s < 15);
       if (!rivals.length || (top.d.lib && rivals.every((r) => !r.d.lib))) return { pick: top };
+      // several flavors of one product line and no flavor named: the line's default (then checkPick / flavorAssumed
+      // decide whether to ask or label the flavor as assumed)
+      const def = lineDefault([top].concat(rivals));
+      if (def) return { pick: def };
       return { ambiguous: conf.slice(0, 4), unexplained: [] };
     }
     const fit = cands.filter((c) => !c.catConflict);
@@ -380,9 +406,23 @@
       const count = new Map();
       lines.forEach((li) => new Set(li.al.map((a) => a.join(' '))).forEach((k) => count.set(k, (count.get(k) || 0) + 1)));
       lines.forEach((li) => (li.shared = new Set(li.al.map((a) => a.join(' ')).filter((k) => count.get(k) > 1))));
-      return { b, names: b.a.map(ptoks).filter((t) => t.length), lines };
+      const names = b.a.map(ptoks).filter((t) => t.length);
+      const primary = new Set(ptoks(b.name));
+      const lineWords = new Set(lines.flatMap((li) => li.al.flat()).filter((t) => !primary.has(t)));
+      return { b, names, lines, primary, lineWords };
     });
     return CATI;
+  }
+  /** The words after the brand. Brand-alias words are dropped — unless that leaves no line, and one of them is also a
+   * line word ("keto" in the alias "ratio keto" names the Keto line). */
+  function brandRest(c, C) {
+    const W0 = new Set([...C].filter((t) => !c.names.some((n) => n.includes(t))));
+    if (matchLine(c, W0)) return W0;
+    const W1 = new Set([...C].filter((t) => !c.primary.has(t) && (c.lineWords.has(t) || !c.names.some((n) => n.includes(t)))));
+    if (matchLine(c, W1)) return W1;
+    // the brand name you typed is itself a line's name ("Clif Bar")
+    const mc = matchLine(c, C);
+    return mc && mc.unique ? new Set(C) : W0;
   }
   /** Catalog brands named in these tokens (contiguous). → [{ c, idx:Set }] */
   function catalogBrandsIn(toks) {
@@ -427,6 +467,9 @@
       } else if (len === bestLen) best.push({ li, key });
     });
     if (!best.length) return null;
+    // a word only one line uses ("mesquite") outranks a word several share ("turkey") of the same length
+    const own = best.filter((x) => !x.li.shared.has(x.key));
+    if (best.length > 1 && own.length === 1) best = own;
     const unique = best.length === 1 && !best[0].li.shared.has(best[0].key);
     return { lines: best.map((x) => x.li), unique, len: bestLen };
   }
@@ -500,6 +543,13 @@
     const fl = useB ? flB : flA;
     return { ml: useB ? mlB : mlA, flavor: fl ? fl.name : '', fset: new Set(fl ? fl.t : []) };
   }
+  function lineDefault(grp) {
+    if (grp.some((r) => r.d.lib || r.typedFlavor)) return null;
+    const lns = grp.map((r) => lineOf(r.d.x, false));
+    if (!lns[0] || lns.some((ln) => !ln || ln.l !== lns[0].l || ln.variant !== lns[0].variant)) return null;
+    const pids = lns[0].variant ? lns[0].variant.p : lns[0].l.p;
+    return pids.map((id) => grp.find((r) => r.d.x.id === id)).find(Boolean) || null;
+  }
   /** Should this product pick stand? → null (yes) or { c, why, lines } (ask instead). */
   function checkPick(pick, C, brandsTyped, toks, rawToks) {
     const x = pick.d.x, lib = pick.d.lib;
@@ -512,7 +562,7 @@
     const brandIdx = brandsTyped.find((bt) => bt.c === c);
     // words that are this product's own flavor ("chocolate chip cookie dough") are not product-line words
     const flavorWords = new Set(lib ? [] : pick.typedFlavor ? ptoks(pick.typedFlavor) : pick.d.flav.filter((t) => flavSet().has(t)));
-    const W0 = new Set([...C].filter((t) => !c.names.some((n) => n.includes(t))));
+    const W0 = brandRest(c, C);
     const W = new Set([...W0].filter((t) => !(flavorWords.has(t) && (pick.typedFlavor || pick.keyHit))));
     const rw = readBrandWords(c, W0, toks, rawToks);
     const ml = matchLine(c, W);
@@ -568,17 +618,19 @@
   function brandAsk(c, C, base, rawToks, toks, opts) {
     const b = c.b;
     // the line, and the flavor named the way the brand names it ("cookies and cream" → "Cookies & Cream")
-    const W0 = new Set([...C].filter((t) => !c.names.some((n) => n.includes(t))));
+    const W0 = brandRest(c, C);
     const rw = readBrandWords(c, W0, toks, rawToks);
     const flavor = rw.flavor;
     const W = new Set([...W0].filter((t) => !rw.fset.has(t)));
     const ml = rw.ml;
     const typedCat = [...W].map((t) => (WT.PRODUCT_CATS || {})[t]).filter(Boolean)[0] || null;
     let lines = (opts && opts.lines) || (ml ? ml.lines : c.lines);
+    let catNarrowed = false; // "Two Good vanilla yogurt": the category word leaves one line
     if (!opts || !opts.lines) {
       if (!ml && typedCat) {
         const sameCat = c.lines.filter((li) => (li.l.cat || b.cat) === typedCat);
         if (sameCat.length) lines = sameCat;
+        catNarrowed = sameCat.length === 1;
       }
     }
     const vt = opts && opts.variant ? opts.variant : lines.length === 1 ? variantTyped(lines[0], W) : null;
@@ -610,7 +662,9 @@
       }
     });
     // one line, one product with a label, nothing contradicting it: that's the product
-    if (!opts && ml && ml.unique && lines.length === 1) {
+    // (also when a pick was turned down for pointing at another line / variant / flavor: that line's own product)
+    const AUTO = new Set(['line', 'variant', 'variant-missing', 'flavor']);
+    if (lines.length === 1 && (opts ? AUTO.has(opts.why) && !(opts.why !== 'line' && !opts.lines) : (ml && ml.unique) || (catNarrowed && flavor))) {
       const li = lines[0];
       // a product of yours saved for this line (from its label) is the one you mean
       const mineHere = LIB().filter((f) => { const ln = lineOf(f, true); return ln && ln.l === li.l && (!vt || ln.variant === vt) && (!flavor || !f.flavor || f.flavor.toLowerCase() === flavor.toLowerCase()); });
@@ -621,8 +675,10 @@
       const pids = vt ? vt.p : li.l.p;
       const xs = pids.map((pid) => N.productById(pid)).filter(Boolean);
       const fits = xs.filter((x) => !flavor || [x.flavor].concat(x.flavors || []).some((fv) => fv && fv.toLowerCase() === flavor.toLowerCase()));
-      if (xs.length === 1 && fits.length === 1 && !(vt && !vt.p.length) && !(li.l.flavorMatters && !flavor)) {
-        const x = fits[0];
+      // one product, or several flavors with none named (the line's first is its default; flavorAssumed labels it)
+      const one = fits.length === 1 && (xs.length === 1 || flavor) ? fits[0] : !flavor && xs.length > 1 && !li.l.flavorMatters ? xs[0] : null;
+      if (one && !(vt && !vt.p.length) && !(li.l.flavorMatters && !flavor)) {
+        const x = one;
         const libCopy = LIB().find((f) => f.productId === x.id);
         const d = libCopy ? describe(libCopy, true) : describe(x, false);
         const typedFlavor = flavor ? [x.flavor].concat(x.flavors || []).find((fv) => fv && fv.toLowerCase() === flavor.toLowerCase()) : null;
@@ -649,6 +705,8 @@
   const COUNT_SYN = {
     shake: ['shake', 'bottle', 'drink', 'carton', 'can', 'serving'], bar: ['bar', 'piece', 'serving'], yogurt: ['cup', 'container', 'tub', 'serving'],
     hotdog: ['link', 'frank', 'wiener', 'piece', 'serving'], cheese: ['slice', 'single', 'serving'], spread: ['serving'], pasta: ['serving'], milk: ['cup', 'glass', 'serving'], pancake: ['serving'],
+    bread: ['slice', 'piece', 'serving'], bagel: ['bagel', 'piece', 'serving'], muffin: ['muffin', 'piece', 'serving'], cottage: ['cup', 'container', 'tub', 'serving'], deli: ['serving'],
+    sauce: ['serving'], powder: ['scoop', 'serving'], jerky: ['serving'], bacon: ['slice', 'strip', 'serving'], oatmeal: ['serving'],
   };
   const DENSITY = { yogurt: { tbsp: 15, tsp: 5, spoon: 15, spoonful: 15 }, spread: { tbsp: 16.5, tsp: 5.5, spoon: 16.5, spoonful: 16.5 }, milk: { tbsp: 15, splash: 24 } };
   const MACROS = ['p', 'cal', 'c', 'f'];
@@ -686,7 +744,10 @@
       const sz = defaultPack(x, unitWord, d.lib);
       m = units[`${unitWord} (${sz})`];
       unit = `${unitWord} (${sz})`;
-      packNote = `assumed a ${sz} ${unitWord} — pick another size in the review if yours differs`;
+      const own = x.pkg && x.pkg.size === sz;
+      packNote = own
+        ? `assumed a ${sz} ${unitWord}${x.pkg.servings ? ` — about ${N.fmtQty(x.pkg.servings)} servings on its label` : ''}; pick another size in the review if yours differs`
+        : `assumed a ${sz} ${unitWord} — pick another size in the review if yours differs`;
     } else if (unitWord && unitWord !== sUnit) {
       const syn = COUNT_SYN[d.cat] || ['serving'];
       if (units[unitWord] != null) {
@@ -714,19 +775,33 @@
   /* Package sizes from the brand catalog ("jar (24 oz)", "tub (32 oz)") as serving multipliers. */
   const PACK_WORDS = new Set(['jar', 'tub', 'box', 'bag', 'package', 'bottle', 'container', 'can', 'carton', 'pouch', 'loaf', 'pack']);
   const PKG_W = { oz: 28.35, g: 1, lb: 453.6, kg: 1000, ml: 1, l: 1000, floz: 29.57 };
+  /** Net weight written on a package ("24 oz", "1 lb 4 oz", "680 g", "52 fl oz") → grams, or null. */
+  N.netGrams = function (txt) {
+    // "32 oz (907 g)": the parenthesized form repeats the same weight
+    const t = String(txt || '').toLowerCase().replace(/\([^)]*\)/g, ' ').replace(/fl\.?\s*oz/g, 'floz').replace(/ounces?/g, 'oz').replace(/pounds?|lbs/g, 'lb').replace(/grams?/g, 'g');
+    let g = 0, any = false;
+    t.replace(/(\d+(?:\.\d+)?)\s*(floz|oz|lb|kg|g|ml|l)\b/g, (_, n, u) => { g += +n * PKG_W[u]; any = true; return ''; });
+    return any ? WT.round(g, 0) : null;
+  };
   function pkgGrams(pkg) {
     const k = PKG_W[pkg.unit];
     return k ? { g: pkg.amount * k, approx: pkg.unit === 'floz' || pkg.unit === 'ml' || pkg.unit === 'l' } : null;
   }
+  /** Package sizes: the product's own package (net weight + label servings) first, then the line's other sizes. */
   function packsFor(x, lib) {
     const ln = lineOf(x, lib);
-    return ln && ln.l.pack ? ln.l.pack : null;
+    const lp = ln && ln.l.pack ? ln.l.pack : null;
+    const own = x.pkg && x.pkg.unit && x.pkg.g ? x.pkg : null;
+    if (!own) return lp;
+    const sizes = [[own.size, own.g]].concat(lp && lp.unit === own.unit ? lp.sizes.filter(([sz]) => sz !== own.size) : []);
+    return { unit: own.unit, sizes, def: own.size };
   }
   function packUnits(x, lib) {
     const pk = packsFor(x, lib);
     if (!pk || !x.g) return {};
     const out = {};
-    pk.sizes.forEach(([sz, g]) => (out[`${pk.unit} (${sz})`] = WT.round(g / x.g, 3)));
+    // the label's servings per package for the product's own package; net weight ÷ serving weight for other sizes
+    pk.sizes.forEach(([sz, g]) => (out[`${pk.unit} (${sz})`] = x.pkg && x.pkg.size === sz && x.pkg.servings ? x.pkg.servings : WT.round(g / x.g, 3)));
     return out;
   }
   function defaultPack(x, unitWord, lib) {
@@ -752,7 +827,7 @@
     if (pp.estK.length) notes.push(`${pp.estK.map((k) => MACRO_NAME[k]).join(', ')} estimated (not on the label checked)`);
     if (pp.packNote) notes.push(pp.packNote);
     if (pp.flavorGap.length) notes.push(`${pp.flavorGap.map((k) => MACRO_NAME[k]).join(', ')} not on the label source for ${r.typedFlavor} — left blank`);
-    if (base.sizeWord && base.sizeWord !== 'medium') notes.push(`“${base.sizeWord}” ignored — one ${x.unit || 'serving'} is a fixed size`);
+    if (base.sizeWord && base.sizeWord !== 'medium' && !ptoks(name).includes(base.sizeWord)) notes.push(`“${base.sizeWord}” ignored — one ${x.unit || 'serving'} is a fixed size`);
     return Object.assign({
       id: WT.uid(), text: base.text, name, qty: base.qty, unit: pp.unit, per: pp.per,
       foodId: (d.lib ? 'my:' : d.x.remote ? 'x:' : 'p:') + x.id, src: d.lib ? 'my' : d.x.remote ? 'online' : 'product', conf: pp.rough ? 'estimated' : status, brand: x.brand || '',
@@ -1657,7 +1732,7 @@
     if (!name) return null;
     const existing = (src.id && S().foods.find((f) => f.id === src.id)) || S().foods.find((f) => f.name.toLowerCase() === name.toLowerCase());
     const data = { name, qty: WT.round(+src.qty || 1, 2), unit: src.unit || 'serving', per: Object.assign({ p: 0, cal: null, c: null, f: null }, src.per), fav: fav === undefined && existing ? existing.fav : fav !== false };
-    ['brand', 'flavor', 'serving', 'cat', 'g', 'units', 'approx', 'key', 'productId', 'basedOn', 'source', 'checked', 'code', 'remoteId', 'catLine', 'line'].forEach((k) => src[k] !== undefined && (data[k] = src[k]));
+    ['brand', 'flavor', 'serving', 'cat', 'g', 'units', 'approx', 'key', 'productId', 'basedOn', 'source', 'checked', 'code', 'remoteId', 'catLine', 'line', 'pkg'].forEach((k) => src[k] !== undefined && (data[k] = src[k]));
     ['brand', 'flavor', 'serving', 'cat'].forEach((k) => (data[k] = data[k] == null ? (existing && existing[k]) || '' : String(data[k])));
     data.status = src.status || (existing && existing.status) || 'user';
     data.aliases = [...new Set(((existing && existing.aliases) || []).concat(src.aliases || []).map((a) => String(a).trim().toLowerCase()).filter(Boolean))];
@@ -1673,6 +1748,8 @@
       key: variant ? [] : x.key, per: { p: x.p, cal: x.cal, c: x.c, f: x.f }, qty: 1,
       productId: variant ? null : x.id, basedOn: variant ? x.id : undefined, status: variant ? 'estimated' : x.status,
       source: variant ? { name: `${N.productName(x)} values (estimate)`, url: x.src.url } : x.src, checked: variant ? undefined : x.checked,
+      line: x.line, pkg: x.pkg || undefined, code: variant ? undefined : N.productCode(x, null) || undefined,
+      catLine: (() => { const ln = lineOf(x, false); return ln ? `${ln.c.b.id}:${ln.l.id}${ln.variant ? ':' + slugify(ln.variant.name) : ''}` : undefined; })(),
     };
   }
   /**
@@ -1862,6 +1939,129 @@
    * plus bonuses for an exact name, a named brand or restaurant, and your own foods.
    * Naming a brand or a restaurant puts its products first ("oikos" → Oikos's yogurts, not generic yogurt).
    */
+  /** How well an online record fits what you searched for — exact barcode, brand, product line, flavor, package size —
+   * and which of its macros are missing (null) rather than zero. Results that name another brand, line or flavor are
+   * flagged, never silently treated as the product you meant. → { s, tags: [{ t, kind: 'good'|'warn'|'info' }], missing } */
+  N.onlineFit = function (q, rec) {
+    const tags = [];
+    let s = 0;
+    const qt = ptoks(q);
+    const nameT = new Set(ptoks(`${rec.brand || ''} ${rec.name || ''}`));
+    const digits = String(q || '').replace(/[^\d ]/g, ' ').split(/\s+/).find((d) => d.length >= 8 && d.length <= 14);
+    if (digits && rec.code && WT.lookup && WT.lookup.sameCode(digits, rec.code)) {
+      s += 100;
+      tags.push({ t: 'Barcode match', kind: 'good' });
+    }
+    const named = catalogBrandsIn(qt);
+    if (named.length) {
+      const c = named[0].c;
+      const recBrand = rec.brand ? WT.catalogFor(rec.brand) : null;
+      const sameBrand = recBrand === c.b || c.names.some((n) => n.every((t) => nameT.has(t)));
+      if (sameBrand) {
+        s += 30;
+        tags.push({ t: 'Brand matches', kind: 'good' });
+        const qW = new Set(qt.filter((t, i) => !named[0].idx.has(i)));
+        const mq = matchLine(c, qW), mr = matchLine(c, nameT);
+        if (mq && mq.unique && mr && mr.unique) {
+          if (mq.lines[0] === mr.lines[0]) {
+            s += 20;
+            tags.push({ t: 'Same product line', kind: 'good' });
+          } else {
+            s -= 25;
+            tags.push({ t: `Different product: ${mr.lines[0].l.name}`, kind: 'warn' });
+          }
+        }
+      } else if (rec.brand) {
+        s -= 40;
+        tags.push({ t: `Different brand: ${rec.brand}`, kind: 'warn' });
+      } else {
+        s -= 10;
+        tags.push({ t: 'Brand not listed', kind: 'warn' });
+      }
+    }
+    const FL = flavSet();
+    const qf = qt.filter((t) => FL.has(t));
+    if (qf.length) {
+      if (qf.every((t) => nameT.has(t))) {
+        s += 10;
+        tags.push({ t: 'Flavor matches', kind: 'good' });
+      } else {
+        s -= 20;
+        const rf = [...nameT].filter((t) => FL.has(t));
+        tags.push({ t: rf.length ? `Different flavor: ${rf.join(' ')}` : 'Flavor not stated', kind: 'warn' });
+      }
+    }
+    const qg = N.netGrams(q), rg = N.netGrams(rec.quantity);
+    if (qg && rg) {
+      if (Math.abs(qg - rg) / qg < 0.03) {
+        s += 10;
+        tags.push({ t: `Package ${rec.quantity}`, kind: 'good' });
+      } else {
+        s -= 5;
+        tags.push({ t: `Package ${rec.quantity}`, kind: 'warn' });
+      }
+    } else if (rec.quantity) tags.push({ t: `Package ${rec.quantity}`, kind: 'info' });
+    const sv = WT.lookup ? WT.lookup.servingOf(rec) : null;
+    const missing = sv ? MACROS.filter((k) => sv.per == null || sv.per[k] == null) : [];
+    s -= missing.length * 3;
+    return { s, tags, missing: missing.map((k) => MACRO_NAME[k]) };
+  };
+  /* ───────── Nutrition-data coverage ─────────
+   * Every catalog line and variant is one branded product you might name. For each: does Forge hold its label?
+   *   complete — a linked product has protein, calories, carbs and fat, a serving size and a named source
+   *   partial  — a linked product is missing at least one of those values (left blank, never guessed)
+   *   none     — recognized, but no label on this device (Forge asks; search online or enter the label)
+   * Your own saved products fill gaps: a line with only your label counts as "your label". */
+  const COVER_GROUPS = [
+    ['Protein shakes & bars', ['shake', 'bar', 'powder']], ['Yogurt', ['yogurt']], ['Bread & bagels', ['bread', 'bagel', 'muffin', 'bun']],
+    ['Deli & meat', ['deli', 'hotdog', 'bacon', 'sausage', 'chicken', 'jerky', 'patty', 'tuna']], ['Pasta', ['pasta']], ['Pasta sauce', ['sauce']],
+    ['Frozen meals', ['meal']], ['Breakfast', ['pancake', 'oatmeal', 'cereal']], ['Snacks', ['chips', 'snack', 'cookie']],
+    ['Dairy', ['milk', 'cheese', 'cottage', 'dessert']], ['Condiments & spreads', ['condiment', 'spread', 'sandwich']],
+  ];
+  N.coverGroup = (cat) => (COVER_GROUPS.find(([, cs]) => cs.includes(cat)) || ['Other'])[0];
+  const fullLabel = (x) => MACROS.every((k) => x[k] != null) && !!x.serv && !!(x.src && x.src.url);
+  N.coverage = function () {
+    const lib = LIB();
+    const rows = [];
+    catIdx().forEach((c) => c.lines.forEach((li) => {
+      const entry = (name, pids, vName) => {
+        const xs = pids.map((id) => N.productById(id)).filter(Boolean);
+        const mine = lib.filter((f) => { const ln = lineOf(f, true); return ln && ln.l === li.l && (vName ? ln.variant && ln.variant.name === vName : !ln.variant); });
+        const cat = li.l.cat || c.b.cat;
+        const state = xs.some(fullLabel) ? 'complete' : xs.length ? 'partial' : mine.length ? 'user' : 'none';
+        const best = xs.find(fullLabel) || xs[0] || null;
+        rows.push({
+          brand: c.b.name, line: name, cat, group: N.coverGroup(cat), state, products: xs.length, mine: mine.length,
+          status: best ? best.status : mine.length ? 'user' : null, upc: xs.filter((x) => (x.upc || []).length).length,
+          flavors: xs.map((x) => x.flavor).filter(Boolean), missing: best ? MACROS.filter((k) => best[k] == null).map((k) => MACRO_NAME[k]) : [], src: best ? best.src : null,
+        });
+      };
+      entry(li.l.name, li.l.p);
+      li.vars.forEach((v) => entry(`${li.l.name} · ${v.name}`, v.p, v.name));
+    }));
+    const P = WT.PRODUCTS || [];
+    const valid = (cd) => (WT.lookup ? WT.lookup.validCode(cd) : /^\d{8,14}$/.test(cd));
+    const codes = P.flatMap((x) => (x.upc || []).map((u) => u.code));
+    const count = (st) => rows.filter((r) => r.state === st).length;
+    const byStatus = {};
+    P.forEach((x) => (byStatus[x.status] = (byStatus[x.status] || 0) + 1));
+    // most important gaps: the priority grocery groups first (in the order above), then lines of brands people log most
+    const order = COVER_GROUPS.map(([g]) => g);
+    const missing = rows.filter((r) => r.state === 'none' || r.state === 'partial')
+      .sort((a, b) => (order.indexOf(a.group) + 1 || 99) - (order.indexOf(b.group) + 1 || 99));
+    return {
+      lines: rows.length, complete: count('complete'), partial: count('partial'), none: count('none'), userOnly: count('user'),
+      products: P.length, byStatus, flavorLabels: P.filter((x) => x.flavor).length,
+      barcodes: codes.length, barcodesValid: codes.filter(valid).length, productsWithBarcode: P.filter((x) => (x.upc || []).length).length,
+      userLabels: lib.filter((f) => f.brand && (f.status === 'user' || !f.productId)).length,
+      groups: order.concat(['Other']).map((g) => {
+        const rs = rows.filter((r) => r.group === g);
+        return { group: g, lines: rs.length, complete: rs.filter((r) => r.state === 'complete').length, partial: rs.filter((r) => r.state === 'partial').length, none: rs.filter((r) => r.state === 'none').length, user: rs.filter((r) => r.state === 'user').length };
+      }).filter((g) => g.lines),
+      rows, missing,
+    };
+  };
+
   N.searchAll = function (q, limit) {
     const C = tokenize(normalize(q).replace(/_/g, ' ')).map(sing).filter((t) => !STOP.has(t) || flavSet().has(t));
     if (!C.length) return [];
@@ -1896,7 +2096,7 @@
     LIB().forEach((x) => {
       const words = [x.name, x.brand, x.flavor].concat(x.aliases || []).filter(Boolean).flatMap(ptoks);
       const named = x.brand && brandsNamed.has(String(x.brand).toLowerCase());
-      push(Object.assign(N.candidateLabel(describe(x, true)), { kind: 'Your foods', brand: x.brand || '', lib: true, cal: x.per.cal }), words, 0.6 + (named ? 1 : 0));
+      push(Object.assign(N.candidateLabel(describe(x, true)), { kind: 'Your foods', brand: x.brand || '', lib: true, cal: x.per.cal }), words, 0.6 + (named ? 1.3 : 0) + (x.status === 'user' || x.productId ? 0.1 : 0));
     });
     const shadow = new Set(LIB().map((f) => f.productId).filter(Boolean));
     (WT.PRODUCTS || []).filter((x) => !shadow.has(x.id)).forEach((x) => {

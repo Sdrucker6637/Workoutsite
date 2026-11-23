@@ -301,12 +301,15 @@
     return { results, errors, cached: false };
   };
 
-  /** Look up a barcode: your saved foods → cache → Open Food Facts → USDA Branded. Never throws.
-   * → { rec, from: 'library'|'cache'|'off'|'fdc', libId } | { rec: null, errors } */
+  /** Look up a barcode: your saved foods → Forge's bundled products → cache → Open Food Facts → USDA Branded. Never throws.
+   * → { rec, from: 'library'|'bundled'|'cache'|'off'|'fdc', libId, ref } | { rec: null, errors } */
   L.barcode = async function (code) {
     code = L.normCode(code);
     const lib = ((WT.db && WT.db.nutrition && WT.db.nutrition.foods) || []).find((f) => f.code && L.sameCode(f.code, code));
     if (lib) return { rec: null, libId: lib.id, from: 'library' };
+    // a product bundled with Forge whose barcode is printed in a retailer / Open Food Facts listing
+    const bp = WT.nut && WT.nut.productByCode && WT.nut.productByCode(code);
+    if (bp) return { rec: null, ref: 'p:' + bp.x.id, flavor: bp.flavor, from: 'bundled' };
     const c = C();
     const known = Object.values(c.items).find((r) => r.code && L.sameCode(r.code, code));
     if (known) return { rec: remember(known), from: 'cache' };

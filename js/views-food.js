@@ -781,23 +781,32 @@
     const L = WT.lookup;
     const st = { q: opts.q || '', res: [], online: null, busy: false, errors: [], seq: 0, asked: '' };
     const srcTag = (r) => (r.remote ? (r.remote.src === 'fdc' ? 'USDA' : 'Open Food Facts') : '');
-    const row = (r, j) => `<button class="li food-main sr" data-act="srPick" data-j="${j}"><div class="grow"><div class="ti">${esc(r.name)} ${confTag(r.status || 'estimated')}${srcTag(r) ? `<span class="tag src">${srcTag(r)}</span>` : ''}</div><div class="su tnum">${esc(r.serving || '')}${r.cal != null ? ` · ${cal(r.cal)} cal` : ''} · ${r.p == null ? '—' : N.rp(r.p)} g protein</div></div></button>`;
+    // a macro the source didn't list reads "not listed" — never 0
+    const mac = (v, unit) => (v == null ? `<span class="t3">not listed</span>` : `${unit === 'cal' ? cal(v) : N.rp(v)}${unit === 'cal' ? ' cal' : ' g'}`);
+    const fitTags = (r) => (r.fit ? r.fit.tags.map((t) => `<span class="tag ${t.kind === 'warn' ? 'warn' : t.kind === 'good' ? 'good' : ''}">${esc(t.t)}</span>`).join('') : '');
+    const row = (r, j) => `<button class="li food-main sr" data-act="srPick" data-j="${j}"><div class="grow"><div class="ti">${esc(r.name)} ${confTag(r.status || 'estimated')}${srcTag(r) ? `<span class="tag src">${srcTag(r)}</span>` : ''}</div>`
+      + (r.remote && r.per
+        ? `<div class="su tnum">Per ${esc(r.serving || 'serving')}: ${mac(r.per.cal, 'cal')} · P ${mac(r.per.p)} · C ${mac(r.per.c)} · F ${mac(r.per.f)}</div>${r.fit && r.fit.tags.length ? `<div class="sr-fit">${fitTags(r)}</div>` : ''}`
+        : `<div class="su tnum">${esc(r.serving || '')}${r.cal != null ? ` · ${cal(r.cal)} cal` : ''} · ${r.p == null ? 'protein not listed' : N.rp(r.p) + ' g protein'}</div>`)
+      + `</div></button>`;
     const localHtml = () => {
       const fresh = new Set((st.online || []).map((r) => 'x:' + r.id));
       const local = N.searchAll(st.q, 24).filter((x) => !fresh.has(x.id)); // this search's online results get their own sections
       const online = (st.online || []).map((rec) => {
         const sv = L.servingOf(rec);
-        return { id: 'x:' + rec.id, kind: rec.src === 'fdc' ? 'Online · USDA FoodData Central' : 'Online · Open Food Facts', name: `${rec.brand ? rec.brand + ' ' : ''}${rec.name}`, brand: rec.brand, serving: sv.text, p: sv.per.p, cal: sv.per.cal, status: rec.status, remote: rec };
+        return { id: 'x:' + rec.id, kind: rec.src === 'fdc' ? 'Online · USDA FoodData Central' : 'Online · Open Food Facts', name: `${rec.brand ? rec.brand + ' ' : ''}${rec.name}`, brand: rec.brand, serving: sv.text, p: sv.per.p, cal: sv.per.cal, per: sv.per, status: rec.status, remote: rec, fit: N.onlineFit(st.q, rec) };
       });
-      online.sort((a, b) => (a.kind === b.kind ? 0 : a.kind.includes('USDA') ? 1 : -1)); // branded grocery first
+      // best fit first (exact barcode, same brand / line / flavor / package); each source keeps its own section
+      online.sort((a, b) => (a.kind === b.kind ? b.fit.s - a.fit.s : a.kind.includes('USDA') ? 1 : -1));
       st.res = local.concat(online);
       if (!st.res.length) return `<p class="footnote t3 sr-none">${st.q.trim().length < 2 ? 'Type a food, brand or restaurant item.' : 'Nothing on this device matches. Try fewer words, search online, or enter it from the label.'}</p>`;
       let last = '';
+      const noExact = st.online && !online.some((r) => r.fit.s >= 50);
       return `<div class="list inset sr-list">${st.res.map((r, j) => {
         const h = r.kind !== last ? `<div class="label sr-kind">${esc(r.kind)}</div>` : '';
         last = r.kind;
         return h + row(r, j);
-      }).join('')}</div>`;
+      }).join('')}</div>${st.online ? `<div class="sr-manual mt8"><p class="footnote t3">${noExact ? 'None of these is clearly your exact product.' : 'Not your exact product, flavor or size?'} Enter it from the label — Forge won’t use another product’s numbers.</p><button class="btn btn-secondary btn-sm" data-act="productAdd">${I('edit', 14)}Enter from the label</button></div>` : ''}`;
     };
     const onlineBar = () => {
       if (!L) return '';
@@ -1108,7 +1117,8 @@
       brand: src.brand || '', line: lineOf(src), flavor: src.flavor || '', unit: src.unit || 'serving', serving: src.serving || '', g: src.g || '',
       p: v(per.p), cal: v(per.cal), c: v(per.c), f: v(per.f), aliases: (src.aliases || []).join(', '), qty: src.qty || 1, fav: f ? !!f.fav : !!opts.fav, code: src.code || '',
       // package: "a jar is 5.5 servings" — so "half a jar" works for your own products too
-      pkgUnit: src.pkgUnit || '', pkgServings: src.pkgServings || '',
+      pkgUnit: src.pkgUnit || (src.pkg && src.pkg.unit) || '', pkgServings: src.pkgServings || (src.pkg && src.pkg.servings) || '', pkgSize: (src.pkg && src.pkg.size) || '',
+      checked: src.checked || '',
     };
     if (!form.pkgUnit && src.units) {
       const pk = Object.keys(src.units).find((k) => /^(jar|tub|box|bag|package|bottle|container|can|carton|pouch|loaf)$/.test(k));
@@ -1131,7 +1141,9 @@
         ${P().showMacros !== false ? `<div class="fields" style="grid-template-columns:repeat(3,minmax(0,1fr))">${fld('cal', 'Calories', 'number')}${fld('c', 'Carbs (g)', 'number')}${fld('f', 'Fat (g)', 'number')}</div><p class="footnote t3">Calories, carbs and fat are optional — leave them blank if you like.</p>` : ''}
         ${fld('aliases', 'Shorthand names (optional, comma-separated)', 'text', 'placeholder="e.g. snickerdoodle shake, my shake"')}
         ${fld('code', 'Barcode (optional)', 'text', 'inputmode="numeric" placeholder="Digits under the barcode"')}
-        <div class="fields">${fld('pkgUnit', 'Package (optional)', 'text', 'placeholder="jar, tub, box, bag…"')}${fld('pkgServings', 'Servings per package', 'number', 'step="0.5"')}</div>
+        <div class="fields">${fld('pkgUnit', 'Package (optional)', 'text', 'placeholder="jar, tub, box, bag…"')}${fld('pkgSize', 'Package size (net wt)', 'text', 'placeholder="e.g. 24 oz"')}</div>
+        <div class="fields">${fld('pkgServings', 'Servings per package', 'number', 'step="0.5"')}${fld('checked', 'Last checked against the label', 'date')}</div>
+        <p class="footnote t3">Package size is the net weight on the front; the serving weight and servings per package are on the Nutrition Facts panel. Either lets “half a jar” or “the whole bag” be read correctly.</p>
         <div class="fields">${fld('qty', 'Usual amount (servings)', 'number', 'step="0.5"')}<div></div></div>
         ${H.li({ title: 'Favorite', sub: 'Show as a one-tap button', trail: H.toggle(form.fav, 'mfFav') })}
       </div>`,
@@ -1166,9 +1178,17 @@
         catLine: (f && f.catLine) || pre.catLine || undefined,
       };
       // package size → a serving multiplier ("1 jar" = 5.5 servings)
-      const pkgU = String(form.pkgUnit || '').trim().toLowerCase(), pkgN = num(form.pkgServings);
-      if (pkgU && !(pkgN > 0)) return WT.toast('Enter how many servings the package holds', 'error');
-      if (pkgU) data.units = Object.assign({}, data.units || {}, { [pkgU]: pkgN });
+      const pkgU = String(form.pkgUnit || '').trim().toLowerCase(), pkgSize = String(form.pkgSize || '').trim();
+      // servings per package: as entered, else net weight ÷ serving weight
+      const pkgG = N.netGrams(pkgSize);
+      let pkgN = num(form.pkgServings);
+      if (!(pkgN > 0) && pkgG && data.g) pkgN = WT.round(pkgG / data.g, 1);
+      if (pkgU && !(pkgN > 0)) return WT.toast('Enter how many servings the package holds (or its net weight and the serving weight)', 'error');
+      if (pkgU) {
+        data.units = Object.assign({}, data.units || {}, { [pkgU]: pkgN });
+        data.pkg = { unit: pkgU, size: pkgSize || `${pkgN} servings`, g: pkgG || (data.g ? WT.round(pkgN * data.g, 0) : undefined), servings: pkgN };
+      }
+      if (/^\d{4}-\d{2}-\d{2}$/.test(String(form.checked || '')) && form.checked <= today()) data.checked = form.checked;
       if (data.code && WT.lookup && !WT.lookup.validCode(data.code)) return WT.toast('That barcode’s check digit doesn’t add up — check the digits', 'error');
       if (f) f.aliases = []; // aliases come from the form as edited
       if (data.productId && !f && WT.db.nutrition.foods.some((x) => x.productId === data.productId)) delete data.productId;
@@ -1194,6 +1214,34 @@
       }, true);
   }
   WT.productForm = productForm;
+
+  /* ───────── Branded nutrition coverage (Settings → Nutrition) ───────── */
+  A.foodCoverage = () => {
+    const c = N.coverage();
+    const st = { tab: 'missing' };
+    const pctOf = (n) => (c.lines ? Math.round((n / c.lines) * 100) : 0);
+    const STATE = { complete: 'Complete', partial: 'Partial', none: 'No label', user: 'Your label' };
+    WT.openSheet(() => ({
+      eyebrow: 'Nutrition',
+      title: 'Branded coverage',
+      body: `<div class="fstack" style="gap:12px">
+        <p class="footnote t2">Each product line or variant Forge recognizes (${c.lines}) and whether its nutrition label is on this device. Missing values are left blank — never guessed.</p>
+        <div class="list inset">
+          ${H.li({ title: 'Complete', sub: 'Protein, calories, carbs, fat, serving size and a named source', trail: `<span class="tnum">${c.complete} · ${pctOf(c.complete)}%</span>` })}
+          ${H.li({ title: 'Partial', sub: 'Label held, some values not on any source found', trail: `<span class="tnum">${c.partial}</span>` })}
+          ${H.li({ title: 'Without nutrition', sub: 'Recognized — Forge asks, then search online or enter the label', trail: `<span class="tnum">${c.none}</span>` })}
+          ${H.li({ title: 'From your own labels', sub: `${c.userLabels} branded products saved by you`, trail: `<span class="tnum">${c.userOnly}</span>` })}
+          ${H.li({ title: 'Barcodes', sub: 'Bundled products whose barcode scans straight to their label (check digit verified)', trail: `<span class="tnum">${c.productsWithBarcode}</span>` })}
+          ${H.li({ title: 'Evidence', sub: `${c.byStatus.verified || 0} manufacturer-verified · ${c.byStatus.reference || 0} reference (retailer labels agree) · ${c.byStatus.estimated || 0} estimated` })}
+        </div>
+        <div class="label">By category</div>
+        <div class="list inset">${c.groups.map((g) => H.li({ title: esc(g.group), sub: `${g.complete} complete · ${g.partial} partial · ${g.none} without${g.user ? ` · ${g.user} yours` : ''}`, trail: `<span class="tnum t2">${g.lines}</span>` })).join('')}</div>
+        <div class="label">Most important missing</div>
+        <div class="list inset">${c.missing.slice(0, 25).map((r) => H.li({ title: esc(`${r.brand} ${r.line}`), sub: `${esc(r.group)} · ${r.state === 'partial' ? 'needs ' + esc(r.missing.join(', ')) : STATE[r.state]}` })).join('')}</div>
+        <p class="footnote t3">Add any of these from its package (My foods → Enter from a label) or by scanning its barcode; your label is used from then on.</p>
+      </div>`,
+    }), { wide: true });
+  };
   A.mfEdit = (d) => productForm({ id: d.id || null, fav: !d.id }); // a food you add by hand is usually one you want one tap away
 
   /* ───────── Find a product: your library + bundled products (offline), then an optional online lookup ───────── */

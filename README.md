@@ -105,14 +105,31 @@ Amounts Forge had to assume are marked "(assumed)". Macros missing from a produc
 
 ### Branded products: brands, lines, variants, flavors, sizes
 
-`js/brands.js` is a catalog of 55 brands and 204 product lines. It holds no nutrition. It records each line's identifying phrases, variants, flavors and package sizes, and which lines have bundled label data. The matcher uses it so a product is picked only when what you typed identifies it:
+`js/brands.js` is a catalog of 66 brands and 232 product lines. It holds no nutrition. It records each line's identifying phrases, variants, flavors and package sizes, and which lines have bundled label data. The matcher uses it so a product is picked only when what you typed identifies it:
 - “Barilla chickpea pasta” is never Protein+.
 - “Oscar Mayer turkey bacon” is never deli turkey.
 - “Fage triple zero” is never Oikos.
 - “a 32 oz jar of Rao’s” is read by net weight.
 - A flavor keeps only the values its source confirms.
 
-When a brand is recognized but the exact product isn’t, Forge asks. It lists your products, products with labels, and the brand’s other lines (*No label saved yet*), with search online, enter from the label, or a labelled generic estimate. Your saved products keep their brand, line, flavor, barcode and package size, and are found by name afterwards. See [`docs/BRANDED_MATCHING_AUDIT.md`](docs/BRANDED_MATCHING_AUDIT.md) for the audit, the rules and the before/after results; `tests/brands.test.js` checks it with 1,251 assertions generated from the catalog.
+When a brand is recognized but the exact product isn’t, Forge asks. It lists your products, products with labels, and the brand’s other lines (*No label saved yet*), with search online, enter from the label, or a labelled generic estimate. Your saved products keep their brand, line, flavor, barcode and package size, and are found by name afterwards. See [`docs/BRANDED_MATCHING_AUDIT.md`](docs/BRANDED_MATCHING_AUDIT.md) for the audit, the rules and the before/after results; `tests/brands.test.js` checks it with about 1,700 assertions generated from the catalog.
+
+### Branded grocery labels (Phase 4)
+
+`js/products.js` now holds 75 product labels: 52 added in this phase and 3 corrected (Barilla Protein+, Rao’s Marinara, Oscar Mayer Oven Roasted Turkey), covering protein shakes and bars, yogurt, bread and bagels, deli meat, pasta, pasta sauce, breakfast, dairy and spreads. Each flavor with its own label is a separate product (Oikos Triple Zero Vanilla / Mixed Berry / Strawberry / Peach; Quest Cookie Dough / Cookies & Cream / Birthday Cake / Brownie). Every product records:
+- brand, product line, flavor, serving size and serving weight, and calories, protein, carbs and fat. A value no source showed is `null` and shown as *not listed*, never 0 and never guessed;
+- the package (net weight and label servings per package), so “half a jar”, “a loaf” and “the whole bag” are read from the package;
+- the barcode printed in a retailer or Open Food Facts listing (36 products; every code passes the GS1 check digit). Scanning one opens the bundled label, offline;
+- its evidence: **Verified** only when every value is on a manufacturer page, **Reference data** when two or more retailer labels agree, **Estimate** when the sources disagree or only one was found. The note says which;
+- its source link and the date it was checked.
+
+With several flavor products in one line and no flavor named, Forge uses the line’s first product, says the flavor wasn’t given, and marks it *Close*. Lines whose flavors have materially different labels (Quest bars) ask instead.
+
+**Your product library.** Every product you confirm or enter is saved to *My foods* with brand, product, line, flavor, serving, package size (net weight and servings), nutrition, barcode, source and the date you last checked it against the label. You can edit all of these. A label you saved for a product comes before the bundled one, and your foods are listed first in search.
+
+**Online results** (USDA and Open Food Facts) are ranked by how well they fit what you searched. Tags show *Barcode match*, *Brand matches*, *Same product line* and *Flavor matches*, and warn on *Different brand*, *Different product*, *Different flavor* or a different package size. Each result shows its serving size, its source and every macro, with *not listed* for missing values. An *Enter from the label* row is always offered below the results.
+
+**Coverage report.** Settings → Nutrition → *Branded coverage* shows how many branded products have complete, partial or no labels on this device, including your own labels, the barcodes, the evidence mix, and the most important missing products. `node tools/coverage.js --write` writes the same numbers, with a before/after comparison, to [`docs/NUTRITION_COVERAGE.md`](docs/NUTRITION_COVERAGE.md). `tests/grocery.test.js` checks the named searches (Oikos Triple Zero, Pioneer Pastures, Barilla Protein+, Dave’s Killer Bread, Oscar Mayer turkey, Rao’s, Quest bars, fairlife milk) and many more against their label values and serving sizes.
 
 ### Search, online lookup and barcode scanning
 
@@ -139,7 +156,7 @@ Naming a brand or a restaurant lists its products first: “Oikos” shows Oikos
 
 **Scan barcode** opens the camera. It decodes with the browser’s `BarcodeDetector` where available (Chrome on Android); elsewhere, including iOS Safari, it uses the bundled ZXing decoder (`js/vendor/`, Apache-2.0), loaded only when you scan.
 - Only EAN-13, EAN-8, UPC-A and UPC-E codes with a valid check digit are accepted, and ZXing needs two matching reads.
-- Lookup order: your foods → cache → Open Food Facts → USDA Branded (by UPC).
+- Lookup order: your foods → Forge’s bundled products (by printed barcode) → cache → Open Food Facts → USDA Branded (by UPC).
 - The product appears with its source, status, per-serving and per-100 g values; *Add to diary* opens the review screen.
 - **Not found:** you can search by name, or *enter it from the label*. That saves it with its barcode, so the next scan finds it instantly, even offline. Forge never substitutes a generic food.
 - You can always type the barcode digits instead.
@@ -149,7 +166,7 @@ Naming a brand or a restaurant lists its products first: “Oikos” shows Oikos
 
 ### Accuracy audit
 
-`node tests/accuracy.test.js --report` checks 168 realistic descriptions and writes [`docs/FOOD_ACCURACY_REPORT.md`](docs/FOOD_ACCURACY_REPORT.md). The descriptions cover branded products, fast food, restaurant meals, homemade dishes, generic ingredients, portions, sauces, ambiguous inputs, look-alike dishes, typos, and inputs that must not be fabricated. Each case checks the food, brand, portion, calories (calculated by hand) and the confidence label that should be shown. Every item’s calories are also recomputed from the source data. Current result: 0 failures and 0 calculation errors (see the report for the breakdown). The report also lists the issues the audit found and how they were fixed.
+`node tests/accuracy.test.js --report` checks 169 realistic descriptions and writes [`docs/FOOD_ACCURACY_REPORT.md`](docs/FOOD_ACCURACY_REPORT.md). The descriptions cover branded products, fast food, restaurant meals, homemade dishes, generic ingredients, portions, sauces, ambiguous inputs, look-alike dishes, typos, and inputs that must not be fabricated. Each case checks the food, brand, portion, calories (calculated by hand) and the confidence label that should be shown. Every item’s calories are also recomputed from the source data. Current result: 0 failures and 0 calculation errors (see the report for the breakdown). The report also lists the issues the audit found and how they were fixed.
 
 ### Food database
 
@@ -158,7 +175,7 @@ Naming a brand or a restaurant lists its products first: “Oikos” shows Oikos
 | USDA FoodData Central (SR Legacy / FNDDS) | `js/fooddb.js` | ≈90 generic foods, entered per 100 g with typical portions and named sizes. They cover distinct preparations: chicken breast/thigh/drumstick (raw, cooked, with or without skin, rotisserie), ground beef 80/85/90/93/95 (cooked and raw), white/brown rice (cooked and dry), pasta (cooked, dry, whole wheat), russet/red/sweet/mashed/roasted potatoes, black/pinto/kidney/white/refried/baked beans, eggs (boiled, scrambled, fried), milk by fat level, fruit, vegetables, oils, sauces | Reference data |
 | Homemade recipes | `js/fooddb.js` | 21 dishes (Caesar wrap/salad/sandwich, stir-fries, spaghetti with meat sauce, burrito bowl, smoothie…) as component breakdowns | Estimate |
 | Restaurant menus | `js/restaurants.js` | Chipotle (every component, plus bowl/burrito/tacos/salad builds), McDonald's, Chick-fil-A, Taco Bell, Subway, Shake Shack, Panera. Sizes, nugget counts, 6-inch vs footlong, Panera cup vs bowl; `extra`, `double` and `light` portions | Chipotle, McDonald's, Chick-fil-A and Taco Bell core items: Reference data. Subway, Panera and Shake Shack: Estimate |
-| Branded products | `js/products.js` | 23 products (17 verified against manufacturers on 2026-11-02, plus Rao's, Oscar Mayer deli meats and Dave's Killer Bread as estimates until you confirm them) | Verified or Estimate |
+| Branded products | `js/products.js` | 75 labels: 14 verified against manufacturer pages, 34 reference (agreeing retailer labels), 27 estimates (sources disagree, or a single source). Checked 2026-11-02 and 2026-11-22 | Verified, Reference data or Estimate |
 | The original generic table | `js/foods.js` | ≈100 everyday foods, sandwiches and drinks | Estimate |
 | Open Food Facts (optional, online) | `js/nutrition.js` | Label lookup from *My foods → Find product* | Estimate until you confirm it |
 
@@ -269,6 +286,8 @@ node tests/lookup.test.js                           # USDA / Open Food Facts nor
 node tests/scan.test.js                             # browser: ZXing decoding, fake camera, permission denied, manual entry, not-found → label, online search (mocked)
 node tests/accuracy.test.js [--report]              # recognition accuracy audit → docs/FOOD_ACCURACY_REPORT.md
 node tests/brands.test.js                           # brand → line → variant → flavor → size matching, generated from the catalog
+node tests/grocery.test.js                          # branded grocery labels, servings & packages, barcodes, library, online fit, coverage
+node tools/coverage.js [--write]                    # branded nutrition coverage → docs/NUTRITION_COVERAGE.md
 ```
 The browser tests use Playwright. `tests/serve.js` serves the repository to the browser in-process, so no separate server is needed; set `REAL_SERVER=1` to use one on :8765 instead.
 The end-to-end test generates every workout type, swaps exercises, logs a full session, refreshes mid-workout, saves, and checks that the next session shows previous weights and an increase recommendation that is only applied on approval. It also checks the v1 → v2 data upgrade, intensity variety across repeated generations through the UI, the intensity picker, PR detection, the charts, export → wipe → import, persistence after refresh, the theme toggle and offline loading.
@@ -302,6 +321,8 @@ js/views-progress.js  Progress dashboard, record run / weight / measurement / ph
 docs/IMPLEMENTATION_PLAN.md   audit and plan for the nutrition and progress overhaul
 docs/FOOD_ACCURACY_REPORT.md  generated recognition accuracy report
 docs/BRANDED_MATCHING_AUDIT.md  branded recognition audit, rules and results
+docs/NUTRITION_COVERAGE.md      branded nutrition coverage (generated by tools/coverage.js)
+tools/coverage.js     coverage report generator
 fonts/                Inter (OFL) + license
 sw.js, manifest.webmanifest, icons/   PWA
 ```

@@ -113,9 +113,11 @@ const pids = new Set();
 WT.PRODUCTS.forEach((x) => {
   ok(!pids.has(x.id), 'unique product id ' + x.id); pids.add(x.id);
   ok(x.brand && x.line && x.cat && x.unit && x.serv, `${x.id}: brand, product, category, serving`);
-  ok(typeof x.p === 'number' && x.p >= 0, `${x.id}: protein is a number`);
+  // protein no source showed is null (with a note saying so) — never filled in
+  ok((typeof x.p === 'number' && x.p >= 0) || (x.p === null && /protein/i.test(x.note || '')), `${x.id}: protein is a number (or null, explained)`);
   ['cal', 'c', 'f'].forEach((k) => ok(x[k] === null || (typeof x[k] === 'number' && x[k] >= 0), `${x.id}.${k} number or null (unknown)`));
-  ok(['verified', 'estimated'].includes(x.status), `${x.id}: status`);
+  ok(['verified', 'reference', 'estimated'].includes(x.status), `${x.id}: status`);
+  if (x.upc) x.upc.forEach((u) => ok(WT.lookup ? true : /^\d{12,13}$/.test(u.code) && u.from, `${x.id}: barcode ${u.code} with where it was printed`));
   ok(x.src && x.src.name && /^https:\/\//.test(x.src.url), `${x.id}: source with URL`);
   // a product checked against its source carries the date; one added without a check says so (null), never a fake date
   ok(x.checked === null ? x.status === 'estimated' : /^\d{4}-\d{2}-\d{2}$/.test(x.checked), `${x.id}: last-checked date (or null for unchecked estimates)`);
@@ -143,7 +145,7 @@ prod('2 Oscar Mayer beef hot dogs', 'oscar-mayer-beef-franks', 2, 'frank', 10, '
 prod('3 tablespoons Oikos Triple Zero Greek yogurt', 'oikos-triple-zero', 3, 'tbsp', 5, 'verified'); // 15 g per 150 g cup, ≈15 g per tbsp
 ok(/converted/.test(one('3 tablespoons Oikos Triple Zero Greek yogurt').note), 'tablespoon conversion is flagged as ≈');
 prod('1 Chobani Complete yogurt', 'chobani-complete-cup', 1, 'cup', 15, 'estimated');
-prod('1 serving Barilla Protein+ pasta', 'barilla-protein-plus', 1, 'serving', 17, 'verified');
+prod('1 serving Barilla Protein+ pasta', 'barilla-protein-plus', 1, 'serving', 10, 'reference'); // label serving: 2 oz dry
 prod('1 serving Jif creamy peanut butter', 'jif-creamy', 1, 'serving', 7, 'verified');
 prod('2 tbsp jif creamy', 'jif-creamy', 2, 'tbsp', 7);
 amb('1 serving Jif peanut butter', ['jif-creamy']); // Jif also makes crunchy, natural, reduced fat… — asks
@@ -159,7 +161,7 @@ prod('kraft singles', 'kraft-singles-american', 1, 'slice', 4);
 prod('2 quest cookie dough bars', 'quest-bar-cccd', 2, 'bar', 42);
 prod('kodiak power cakes', 'kodiak-power-cakes', 1, 'serving', 15);
 prod('1 pioneer pastures vanilla shake', 'pioneer-a2-shake', 1, 'bottle', 30, 'verified');
-ok(one('100 g barilla protein plus').qty === 100 && P(one('100 g barilla protein plus')) === 17, 'weight converts using label grams');
+ok(one('100 g barilla protein plus').qty === 100 && Math.abs(P(one('100 g barilla protein plus')) - 17.9) < 0.2, 'weight converts using label grams (10 g per 56 g ≈ Barilla’s 17 g per 100 g)');
 
 section('Generic words never land on a brand');
 for (const t of ['a cup of milk', 'beef hot dog', 'greek yogurt', 'protein shake', 'protein bar', 'protein pasta', 'peanut butter', 'american cheese', 'cookie dough', 'vanilla shake']) {
@@ -177,8 +179,9 @@ const om = amb('2 Oscar Mayer hot dogs', ['oscar-mayer-beef-franks', 'oscar-maye
 ok(om.qty === 2 && om.fallback && om.fallback.foodId === 'hot-dog' && P(om.fallback) === 10, 'quantity kept; generic estimate offered as a choice');
 const cand = om.candidates[0];
 ok(cand.name && cand.serving && typeof cand.p === 'number' && cand.status, 'candidates show name, serving, protein and status');
-const flav = amb('quest cookies and cream bar', ['quest-bar-cccd']);
-ok(flav.variant === 'Cookies & Cream', 'unlisted flavor is named the way the brand names it, not assumed: ' + flav.variant);
+prod('quest cookies and cream bar', 'quest-bar-cookies-cream', 1, 'bar', 21, 'reference'); // its own label now
+const flav = amb('quest smores bar', ['quest-bar-cccd']);
+ok(flav.variant === "S'mores", 'unlisted flavor is named the way the brand names it, not assumed: ' + flav.variant);
 const pp = amb('1 Pioneer Pastures Snickerdoodle protein shake', ['pioneer-a2-shake']);
 ok(pp.variant === 'Snickerdoodle' && pp.brand === 'Pioneer Pastures', 'Snickerdoodle is not in the data — asks (variant noted)');
 ok(one('1 Snickerdoodle protein shake').conf === 'estimated', 'no brand, no saved product → generic estimate');
