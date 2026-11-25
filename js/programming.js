@@ -185,11 +185,30 @@
     return ctx.prioritize.has(m) ? 12 : 10;
   };
   /** −1 (well over weekly target) … +1 (nothing done this week). Neutral with no history. */
+  /** Was a muscle this exercise substantially loads (primary, or ≥ ½ set share) trained hard in the last day or two? */
+  P.recovering = (ex, ctx) => !!(ex && ctx && ctx.fatigue && Object.entries(WT.setShare(ex)).some(([m, f]) => f >= 0.5 && (ctx.fatigue[m] || 0) >= 6));
   P.need = function (m, ctx) {
     const t = WT.weeklyTarget(m);
     if (!t || !WT.db.history.length) return 0;
     return WT.clamp((t - (ctx.weekly[m] || 0)) / t, -1, 1);
   };
+
+  /** Body area of a muscle, for full-body balance. */
+  const AREA = { chest: 'push', 'front-delts': 'push', triceps: 'push', lats: 'pull', 'upper-back': 'pull', 'rear-delts': 'pull', biceps: 'pull', traps: 'pull', forearms: 'pull', quads: 'lower', glutes: 'lower', hamstrings: 'lower', calves: 'lower', adductors: 'lower', 'lower-back': 'lower' };
+  /** Direct (primary-muscle) sets per area — what a coach balances; indirect work would inflate pulling. */
+  P.areaSets = function (items) {
+    const out = { push: 0, pull: 0, lower: 0 };
+    items.forEach((i) => {
+      const ex = WT.ex(i.exId);
+      if (ex && AREA[ex.primary]) out[AREA[ex.primary]] += typeof i.sets === 'number' ? i.sets : 3;
+    });
+    return out;
+  };
+  /** Implement family: bodyweight variants of one pattern (pull-up / chin-up / negatives) are the same stimulus. */
+  const family = (ex) => (['bw', 'bwl', 'time'].includes(ex.load) ? 'bodyweight' : ex.load);
+  /** Functionally redundant with something already chosen: same primary muscle, same pattern, same implement family. */
+  const m2 = (ex) => (ex.moves2 || []).join();
+  P.redundantWith = (ex, chosen) => chosen.some((c) => c.primary === ex.primary && c.pattern === ex.pattern && family(c) === family(ex) && m2(c) === m2(ex));
 
   /* ═════════════════════ Blueprints ═════════════════════ */
   const slot = (id, label, role, moves, o) => Object.assign({ id, label, role, moves, cover: [] }, o || {});
@@ -232,7 +251,7 @@
         slot('rear', 'Rear delts', 'isolation', ['rear-delt'], { m: ['rear-delts'], w: 1.3 }),
         slot('core', 'Core', 'core', CORE_MOVES, { m: ['abs', 'obliques'], w: 2.1, core: true }),
         knee === 'knee'
-          ? slot('uni', 'Single-leg work', 'accessory', ['knee-uni'], { m: LEG_M, cat: 'compound', w: 1.1 })
+          ? slot('uni', 'Single-leg work', 'accessory', ['knee-uni'], { m: LEG_M, cat: 'compound', w: 1.1, preferPrimary: 'quads' })
           : slot('knee2', 'Squat pattern', 'accessory', ['knee'], { m: LEG_M, cat: 'compound', w: 0.9, repeat: true }),
         slot('hams', 'Hamstring curl', 'isolation', ['knee-flex'], { m: ['hamstrings'], w: 1.1 }),
         slot('fly', 'Chest fly', 'isolation', ['chest-iso'], { m: ['chest'], w: 1.1, tag: 'lower-chest' }),
@@ -262,10 +281,10 @@
         ? [chest1('primary'), ohp('secondary'), slot('side', 'Lateral raise', 'isolation', ['side-delt'], { m: ['side-delts'], cover: ['side-delt'] }), slot('tri', 'Triceps isolation', 'isolation', ['triceps'], { m: ['triceps'], cat: 'isolation', cover: ['triceps'] })]
         : [ohp('primary'), chest1('secondary'), slot('side', 'Lateral raise', 'isolation', ['side-delt'], { m: ['side-delts'], cover: ['side-delt'] }), slot('tri', 'Triceps isolation', 'isolation', ['triceps'], { m: ['triceps'], cat: 'isolation', cover: ['triceps'] })],
       optional: [
-        slot('press2', ANGLE_LABEL[angle2], 'accessory', ['h-push'], { m: ['chest'], cat: 'compound', prefer: ANGLE[angle2], tag: angle2 === 'lower' ? 'lower-chest' : null, w: 2.4, repeat: true }),
+        slot('press2', ANGLE_LABEL[angle2], 'accessory', ['h-push'], { m: ['chest'], cat: 'compound', prefer: ANGLE[angle2], tag: angle2 === 'lower' ? 'lower-chest' : null, w: 2.4, repeat: true, differ: 'press', skipIf: (exs) => exs.filter((ex) => ex.primary === 'triceps').length >= 2 }),
         slot('fly', 'Chest fly', 'isolation', ['chest-iso'], { m: ['chest'], w: 2.4, tag: 'lower-chest' }),
-        slot('tri2', 'Second triceps (different angle)', 'isolation', ['triceps'], { m: ['triceps'], cat: 'isolation', w: 1.8, repeat: true, differ: 'tri' }),
-        slot('dip', 'Triceps press / dip', 'accessory', ['h-push'], { m: ['triceps'], cat: 'compound', w: 0.7, repeat: true }),
+        // After three presses the triceps have had plenty of indirect work: one direct exercise is enough
+        slot('tri2', 'Second triceps (different angle)', 'isolation', ['triceps'], { m: ['triceps'], cat: 'isolation', w: 1.8, repeat: true, differ: 'tri', skipIf: (exs) => exs.filter((ex) => ['h-push', 'v-push'].includes(WT.moveOf(ex))).length >= 3 }),
         slot('side2', 'Second lateral raise', 'isolation', ['side-delt'], { m: ['side-delts'], w: 0.6, repeat: true, differ: 'side' }),
         slot('front', 'Front raise', 'isolation', ['front-delt'], { m: ['front-delts'], w: 0.25 }),
       ],
@@ -282,10 +301,11 @@
       require: ['v-pull', 'h-pull', 'rear-delt', 'biceps'],
       required: [main(lead, 'primary'), main(other(lead), 'secondary'), slot('bi', 'Biceps curl', 'isolation', ['biceps'], { m: ['biceps'], cover: ['biceps'] }), slot('rear', 'Rear delts', 'isolation', ['rear-delt'], { m: ['rear-delts'], cover: ['rear-delt'] })],
       optional: [
-        slot('row2', 'Second row (different grip / support)', 'accessory', ['h-pull'], { m: ['lats', 'upper-back'], cat: 'compound', w: 2.1, repeat: true }),
+        slot('row2', 'Second row (different grip / support)', 'accessory', ['h-pull'], { m: ['lats', 'upper-back'], cat: 'compound', w: 2.1, repeat: true, differPrimary: 'h-pull' }),
         slot('bi2', 'Second biceps (different function)', 'isolation', ['biceps'], { m: ['biceps'], w: 2.1, repeat: true, differ: 'bi' }),
-        slot('lat', 'Lat isolation', 'isolation', ['lat-iso'], { m: ['lats'], w: 1.8 }),
-        slot('vpull2', 'Second vertical pull', 'accessory', ['v-pull'], { m: ['lats'], cat: 'compound', w: 1.0, repeat: true }),
+        slot('lat', 'Lat isolation', 'isolation', ['lat-iso'], { m: ['lats'], w: 1.8, skipIf: (exs) => exs.filter((ex) => WT.moveOf(ex) === 'v-pull').length >= 2 }),
+        // Two vertical pulls plus a lat isolation would be three lat-dominant movements
+        slot('vpull2', 'Second vertical pull', 'accessory', ['v-pull'], { m: ['lats'], cat: 'compound', w: 0.35, repeat: true, differ: 'v-pull', skipIf: (exs) => exs.some((ex) => WT.moveOf(ex) === 'lat-iso') }),
         slot('traps', 'Traps', 'isolation', ['shrug'], { m: ['traps'], w: 0.9 }),
         slot('forearms', 'Forearms', 'isolation', ['forearm'], { m: ['forearms'], w: 0.5 }),
       ],
@@ -304,7 +324,7 @@
       required: [
         slot('squat', 'Squat pattern', quadLead ? 'primary' : 'secondary', ['knee'], { m: ['quads', 'glutes', 'adductors'], cat: 'compound', cover: ['knee'], heavy: true, fallback: ['knee-uni'], lead: quadLead }),
         slot('hinge', 'Hip hinge / thrust', quadLead ? 'secondary' : 'primary', ['hip'], { m: ['glutes', 'hamstrings'], cat: 'compound', cover: ['hip'], heavy: true, fallback: ['hip-ext'], lead: !quadLead }),
-        slot('uni', 'Single-leg work', 'accessory', ['knee-uni'], { m: ['quads', 'glutes', 'adductors'], cat: 'compound', fallback: ['knee'] }),
+        slot('uni', 'Single-leg work', 'accessory', ['knee-uni'], { m: ['quads', 'glutes', 'adductors'], cat: 'compound', fallback: ['knee'], preferPrimary: 'quads' }),
         slot('curl', 'Hamstring curl (knee flexion)', 'isolation', ['knee-flex'], { m: ['hamstrings'], cover: ['knee-flex'], fallback: ['hip-ext'] }),
       ],
       optional: [
@@ -331,10 +351,10 @@
         return presses.length ? `${[...new Set(presses)].join(', ')} pressing, plus fly work` : null;
       },
       require: ['chest', 'chest-iso'],
-      required: [press('press1', a1, 'primary', { heavy: true, cover: ['chest'], lead: true }), press('press2', a2, 'secondary', {}), slot('fly', 'Chest fly', 'isolation', ['chest-iso'], { m: ['chest'], cover: ['chest-iso'] })],
+      required: [press('press1', a1, 'primary', { heavy: true, cover: ['chest'], lead: true }), press('press2', a2, 'secondary', { repeat: true, differ: 'press1' }), slot('fly', 'Chest fly', 'isolation', ['chest-iso'], { m: ['chest'], cover: ['chest-iso'] })],
       optional: [
-        press('press3', a3, 'accessory', { w: 2.6, repeat: true }),
-        slot('fly2', 'Second fly (different line of pull)', 'isolation', ['chest-iso'], { m: ['chest'], w: 2.2, repeat: true, differ: 'fly', tag: 'lower-chest' }),
+        press('press3', a3, 'accessory', { w: 2.6, repeat: true, differ: 'press2' }),
+        slot('fly2', 'Second fly (different line of pull)', 'isolation', ['chest-iso'], { m: ['chest'], w: 2.2, repeat: true }), // the first fly already serves the lower-chest goal
         slot('tri', 'Supporting triceps', 'isolation', ['triceps'], { m: ['triceps'], cat: 'isolation', w: 1.2, support: true }),
         slot('side', 'Supporting lateral delts', 'isolation', ['side-delt'], { m: ['side-delts'], w: 0.8, support: true }),
       ],
@@ -388,11 +408,14 @@
     if (slot.legacy || !slot.moves) return G().slotMatch(ex, slot, level);
     if (isConditioning(ex)) return false;
     const mv = WT.moveOf(ex);
-    if (level === 0) return slot.moves.includes(mv) && (!slot.m || slot.m.includes(ex.primary)) && (!slot.cat || ex.category === slot.cat);
+    // Timed holds are only a fallback for non-core slots (a chin-up beats a chin-up hold for biceps)
+    if (level === 0) return slot.moves.includes(mv) && (!slot.m || slot.m.includes(ex.primary)) && (!slot.cat || ex.category === slot.cat) && !(ex.load === 'time' && !slot.core && slot.role !== 'core');
     if (level === 1) {
       const acc = slot.moves.concat(slot.fallback || []);
       if (!WT.movesOf(ex).some((x) => acc.includes(x))) return false;
-      return !slot.m || slot.m.includes(ex.primary) || (slot.fallback || []).includes(mv);
+      if (!slot.m || slot.m.includes(ex.primary) || (slot.fallback || []).includes(mv)) return true;
+      // A declared secondary movement for a muscle the exercise really trains (chin-up → biceps)
+      return WT.movesOf(ex).slice(1).some((x) => slot.moves.includes(x)) && ex.secondary.some((m) => slot.m.includes(m));
     }
     const groups = new Set((slot.m || []).map((m) => (WT.MUSCLES[m] || {}).group));
     return groups.has((WT.MUSCLES[ex.primary] || {}).group);
@@ -405,21 +428,49 @@
     const mv = WT.moveOf(ex);
     if (slot.preferMove && mv === slot.preferMove) s += 1.5;
     if (slot.prefer && slot.prefer.includes(ex.pattern)) s += 1.5;
-    if (slot.differ && byId[slot.differ] && byId[slot.differ].pattern === ex.pattern) s -= 2.5;
+    if (slot.differ && byId[slot.differ] && byId[slot.differ].pattern === ex.pattern) s -= 7; // decisive: outweighs goal-tag bonuses
     if (slot.role === 'primary' && ex.category === 'compound' && WT.trackType(ex) === 'weight') s += 0.5; // loadable main lifts progress best
+    const exp = WT.db.profile.experience;
     // Main and secondary lifts should be progressively loadable: an unloaded regression is a poor choice for trained users
-    if (['primary', 'secondary'].includes(slot.role) && ex.category === 'compound' && WT.db.profile.experience !== 'beginner') s -= ex.load === 'bw' ? 2 : ex.load === 'bwl' ? 0.5 : 0;
+    if (['primary', 'secondary'].includes(slot.role) && ex.category === 'compound' && exp !== 'beginner') s -= ex.load === 'bw' ? 2 : ex.load === 'bwl' ? 0.5 : 0;
+    // An easier variant of another exercise (it lists a `harder` progression) doesn't belong in a trained lifter's compound slot
+    if (ex.harder && ex.category === 'compound' && exp !== 'beginner') s -= 2.5;
+    // Timed holds are weak hypertrophy work outside core / carry slots
+    if (ex.load === 'time' && slot.role !== 'core' && !slot.core) s -= 2.5;
+    if (slot.preferPrimary && ex.primary === slot.preferPrimary) s += 1.5;
+    if (slot.differPrimary && byId[slot.differPrimary] && byId[slot.differPrimary].primary === ex.primary) s -= 2.5; // e.g. lat-biased second row after an upper-back row
+    // A second variation may repeat the pattern with a different implement (DB fly → cable fly): offset the engine's same-pattern penalty
+    if (slot.repeat && slot.role === 'isolation' && chosen.some((c) => c.primary === ex.primary && c.pattern === ex.pattern && family(c) !== family(ex))) s += 1.5;
     if (ex.tags.includes('spinal-load') && chosen.some((c) => c.tags.includes('spinal-load'))) s -= 2;
     chosen.forEach((c) => {
       if (!slot.repeat && WT.moveOf(c) === mv) s -= 1;
-      if (c.pattern === ex.pattern && c.load === ex.load && c.primary === ex.primary) s -= 3.5; // near-duplicate (e.g. two DB flat presses)
+      if (c.pattern === ex.pattern && c.load === ex.load && c.primary === ex.primary) s -= 3.5; // near-duplicate (e.g. two DB flat presses); still allowed when nothing else fits
     });
     return s;
   }
+  /** Exercises a slot may take beyond basic eligibility. */
+  function acceptable(ex, slot, chosen, type, strictFit) {
+    // Beginners don't get advanced exercises unless a required movement has no other option
+    if (strictFit && WT.db.profile.experience === 'beginner' && ex.difficulty === 'advanced') return false;
+    // Second variations and padding must not repeat a movement already in the session
+    if ((slot.repeat || slot.pad) && P.redundantWith(ex, chosen)) return false;
+    if (slot.pad && ALLOWED[type] && !ALLOWED[type].includes(ex.primary)) return false;
+    return true;
+  }
   function fillSlot(slot, ctx, used, chosen, focused, byId, maxLevel) {
     const top = maxLevel != null ? maxLevel : slot.legacy ? 2 : 1;
+    const type = ctx.settings ? ctx.settings.type : null;
+    // Coverage slots fall back to an advanced exercise rather than leave the category empty
+    const passes = slot.legacy ? [false] : (slot.cover || []).length ? [true, false] : [true];
+    for (const strictFit of passes) {
+      const r = fillAt(slot, ctx, used, chosen, focused, byId, top, (ex) => slot.legacy || acceptable(ex, slot, chosen, type, strictFit));
+      if (r) return r;
+    }
+    return null;
+  }
+  function fillAt(slot, ctx, used, chosen, focused, byId, top, accept) {
     for (let level = 0; level <= top; level++) {
-      const cands = WT.exercises.filter((ex) => G().eligible(ex, ctx, used) && matchSlot(ex, slot, level));
+      const cands = WT.exercises.filter((ex) => G().eligible(ex, ctx, used) && matchSlot(ex, slot, level) && accept(ex));
       if (!cands.length) continue;
       let best = null;
       cands.forEach((ex) => {
@@ -449,6 +500,11 @@
   /** Chest-press slots are labelled by the angle actually chosen (a preference, not a requirement). */
   const PATTERN_ANGLE = { 'h-push': 'flat', 'incline-push': 'incline', 'decline-push': 'lower', dip: 'lower' };
   function labelled(s, ex) {
+    const mv = WT.moveOf(ex);
+    const planeSlot = (s.moves || []).some((x) => PRESS_LABEL[x] || PULL_LABEL[x]);
+    if (planeSlot && !s.moves.includes(mv) && (PRESS_LABEL[mv] || PULL_LABEL[mv]) && ex.primary !== 'chest' && !(s.m || []).includes(ex.primary)) return Object.assign({}, s, { label: PRESS_LABEL[mv] || PULL_LABEL[mv] });
+    if (s.moves && !s.moves.includes(mv) && ex.primary === 'chest' && PATTERN_ANGLE[ex.pattern]) return Object.assign({}, s, { label: ANGLE_LABEL[PATTERN_ANGLE[ex.pattern]] });
+    if (s.moves && (s.fallback || []).includes(mv) && !s.moves.includes(mv)) return Object.assign({}, s, { label: PRESS_LABEL[mv] || PULL_LABEL[mv] || WT.MOVES[mv] });
     if (!s.prefer || !s.moves || !s.moves.includes('h-push') || ex.primary !== 'chest' || !PATTERN_ANGLE[ex.pattern]) return s;
     return Object.assign({}, s, { label: ANGLE_LABEL[PATTERN_ANGLE[ex.pattern]] });
   }
@@ -469,7 +525,22 @@
     if (ms.some((m) => ctx.prioritize.has(m))) w *= 1.8;
     if (s.tag && ctx.emphasis.has(s.tag)) w *= 1.25;
     if (ms.length) w *= 1 + 0.6 * (ms.reduce((a, m) => a + P.need(m, ctx), 0) / ms.length);
-    if (Math.max(0, ...ms.map((m) => ctx.fatigue[m] || 0)) >= 6) w *= 0.5;
+    // Recovery: muscles trained hard in the last day or two get little optional work
+    const fat = Math.max(0, ...ms.map((m) => ctx.fatigue[m] || 0));
+    if (fat >= 6) w *= 0.15;
+    else if (fat >= 3) w *= 0.6;
+    const exsNow = items.map((i) => WT.ex(i.exId));
+    if (bp.type === 'full' && ms.length && AREA[ms[0]]) {
+      // Full body: steer extras toward the least-trained area of this session
+      const a = P.areaSets(items);
+      const area = AREA[ms[0]];
+      // Pushing is balanced against pulling; the lower body against the average upper-body area
+      const ref = area === 'push' ? a.pull : area === 'pull' ? a.push : (a.push + a.pull) / 2;
+      const ratio = (a[area] + 2) / (ref + 2);
+      w *= ratio > 1.3 ? 0.3 : ratio > 1.1 ? 0.7 : ratio < 0.85 ? 1.5 : ratio < 0.95 ? 1.15 : 1;
+    }
+    if (!bp.focused && exsNow.length && exsNow.filter((ex) => ex.category === 'isolation').length / exsNow.length >= 0.5)
+      w *= s.cat === 'compound' ? 1.5 : s.role === 'core' ? 1 : 0.5; // keep the session from drifting into isolation work
     if (!bp.focused) {
       const sess = P.sessionSets(items);
       if (ms.length && ms.every((m) => (sess[m] || 0) + 3 > P.sessionCap(m, ctx))) w *= 0.15;
@@ -518,8 +589,9 @@
     const order = WT.shuffle(free, rnd).sort((a, b) => tier(a) - tier(b)); // main lifts get first claim on heavy
     order.forEach((i) => {
       const ex = WT.ex(i.exId);
-      const fatigued = ctx && ctx.fatigue ? (ctx.fatigue[ex.primary] || 0) >= 6 : false;
+      const fatigued = P.recovering(ex, ctx);
       const w = WT.intensityWeights(ex, { fatigued });
+      if (fatigued) w.heavy = 0; // no heavy loading for muscles trained hard in the last day or two
       const rm = ROLE_INT[P.roleOf(i, type)] || {};
       Object.keys(w).forEach((k) => rm[k] != null && (w[k] *= rm[k]));
       ['heavy', 'burnout'].forEach((k) => used[k] >= cap[k] && (w[k] = 0));
@@ -534,7 +606,7 @@
         const c = pickLast(free.filter((i) => ['isolation', 'accessory'].includes(P.roleOf(i, type)) && WT.canStage(WT.ex(i.exId)) && WT.ex(i.exId).category === 'isolation' && i.intensity !== 'heavy'));
         if (c) c.intensity = 'drop';
       } else if ((+odds.heavy || 0) > 0 && rnd() < 0.05) {
-        const c = free.find((i) => ['primary', 'secondary'].includes(P.roleOf(i, type)) && WT.canStage(WT.ex(i.exId)) && WT.ex(i.exId).category === 'compound' && i.intensity !== 'burnout');
+        const c = free.find((i) => ['primary', 'secondary'].includes(P.roleOf(i, type)) && WT.canStage(WT.ex(i.exId)) && WT.ex(i.exId).category === 'compound' && i.intensity !== 'burnout' && !P.recovering(WT.ex(i.exId), ctx));
         if (c) c.intensity = 'buildup';
       }
     }
@@ -611,6 +683,9 @@
     if (!ea || !eb || ea.primary === eb.primary) return no;
     if (ea.category === 'compound' && eb.category === 'compound') return no; // compounds stand alone
     if (['lat', 'row'].some((q) => ea.equipment.includes(q) && eb.equipment.includes(q))) return no;
+    // One cable station / one bench: alternating between two setups every round isn't practical
+    if (ea.equipment.includes('cable') && eb.equipment.includes('cable')) return no;
+    if (ea.equipment.includes('bench') && eb.equipment.includes('bench')) return no;
     if (P.conflict(a, b) >= 0.5) return no; // competing for the same muscles
     const has = (m) => ea.primary === m || eb.primary === m;
     const anyOf = (ms) => ms.includes(ea.primary) || ms.includes(eb.primary);
@@ -623,7 +698,6 @@
     else if ((ga === 'core') !== (gb === 'core')) r = { score: 3, why: `non-competing — ${WT.muscleName(ga === 'core' ? eb.primary : ea.primary).toLowerCase()} and core` };
     else if (WT.region(ea) !== WT.region(eb)) r = { score: 3, why: 'non-competing — upper and lower body' };
     else if (ga !== gb && P.conflict(a, b) === 0) r = { score: 3, why: `non-competing accessories — ${WT.muscleName(ea.primary).toLowerCase()} and ${WT.muscleName(eb.primary).toLowerCase()}` };
-    if (r.score && ea.equipment.includes('cable') && eb.equipment.includes('cable')) r = { score: r.score - 0.5, why: r.why };
     return r;
   };
   function letterPairs(out) {
@@ -707,7 +781,7 @@
   /* ═════════════════════ Quality evaluation ═════════════════════ */
   const ALLOWED = {
     push: ['chest', 'front-delts', 'side-delts', 'triceps'],
-    pull: ['lats', 'upper-back', 'traps', 'rear-delts', 'biceps', 'forearms', 'lower-back'],
+    pull: ['lats', 'upper-back', 'traps', 'rear-delts', 'biceps', 'forearms'],
     legs: ['quads', 'hamstrings', 'glutes', 'calves', 'adductors', 'abs', 'obliques', 'lower-back'],
     chest: ['chest', 'triceps', 'front-delts', 'side-delts'],
     arms: ['biceps', 'triceps', 'forearms'],
@@ -873,11 +947,12 @@
     guard = 0;
     while (room() > 0 && padFrom.length && guard < padFrom.length * 2) {
       const base = padFrom[guard++ % padFrom.length];
-      const s = Object.assign({}, base, { id: base.id + '-x' + guard, label: base.label + (base.legacy ? ' (extra)' : ''), repeat: true, p: base.legacy ? null : base.p, role: base.role === 'primary' ? 'accessory' : base.role, essential: false, heavy: false, lead: false });
+      const s = Object.assign({}, base, { pad: !base.legacy, id: base.id + '-x' + guard, label: base.label + (base.legacy ? ' (extra)' : ''), repeat: true, p: base.legacy ? null : base.p, role: base.role === 'primary' ? 'accessory' : base.role, essential: false, heavy: false, lead: false });
       const pick = fillSlot(s, ctx, used, chosen, focused, byId, 2);
       if (!pick) continue;
       used.add(pick.ex.id);
-      place(s, pick.ex, [`Extra ${(s.label || '').toLowerCase()}`].concat(pick.why).slice(0, 3));
+      const ls = labelled(s, pick.ex);
+      place(ls, pick.ex, [`Extra ${(ls.label || '').toLowerCase()}`].concat(pick.why).slice(0, 3));
     }
     // 4. Locked items that fit no required slot
     keepLeft.forEach((k) => {
@@ -914,6 +989,10 @@
       items.forEach((i) => {
         if (i.locked && i.sets) return;
         Object.assign(i, WT.prescribe(WT.ex(i.exId), i.intensity));
+        // Recovery: a compound for a muscle trained hard in the last day or two loses a set
+        const ex = WT.ex(i.exId);
+        i.recovering = P.recovering(ex, ctx) || undefined;
+        if (i.recovering && ex.category === 'compound' && i.sets > 3 && !WT.STAGED[i.intensity]) i.sets = 3;
       });
       const arranged = P.arrange(items, settings.supersets, type, { fresh: true, duration: settings.duration, rnd, ctx });
       G().fitDuration(arranged, settings.duration);
@@ -936,7 +1015,7 @@
       .slice(0, 3);
     if (hot.length) notes.push(`Recently trained hard: ${hot.map(([m, v]) => `${WT.muscleName(m)} (~${WT.fmtNum(Math.round(v))} sets)`).join(', ')}. Those muscles were given less work today.`);
     best.limits.forEach((l) => notes.push(l));
-    if (arranged.length < n) notes.push(`Only ${arranged.length} suitable exercises were found with your equipment and exclusions.`);
+    if (arranged.length < n) notes.push(`Only ${arranged.length} distinct exercises fit your equipment and exclusions — near-identical variations weren't added just to reach ${n}.`);
     const groups = {};
     arranged.forEach((i) => i.superset && (groups[i.superset] = groups[i.superset] || []).push(i));
     Object.entries(groups).forEach(([L, g]) => notes.push(`Superset ${L}: ${g.map((i) => WT.ex(i.exId).name).join(' + ')} — ${g[0].supersetWhy || 'non-competing muscles'}, to save time.`));

@@ -179,7 +179,8 @@ Netlify Drop (drag the folder onto app.netlify.com/drop) and Cloudflare Pages al
 
 ```bash
 node tests/engine.test.js                          # generator, intensity statistics over 3,200 workouts, progression, PRs, import/export (≈36k assertions)
-node tests/programming.test.js                     # programming quality: 900 full-body workouts over 9 equipment setups, split coverage, order, supersets, intensity, volume, swaps, determinism (≈57k assertions)
+node tests/programming.test.js                     # programming quality: 900 full-body workouts over 9 equipment setups, split coverage, order, supersets, intensity, volume, swaps, audit regressions, determinism (≈64k assertions)
+node tools/audit-workouts.js                       # quality audit report (not pass/fail): sample across equipment/history/experience, variety, 8-week simulation — see docs/workout-quality-audit.md
 python3 -m http.server 8765 & node tests/e2e.test.js   # full browser flow (needs Playwright)
 node tests/features.test.js                         # exercise demonstrations + More options panel
 node tests/settypes.test.js                         # drop sets, build-up sets, plain set types unchanged
@@ -205,6 +206,8 @@ js/foods.js           bundled generic food reference (typical values per serving
 js/products.js        branded products with sources, serving sizes and status
 js/nutrition.js       food parser, food-log store, trends, guidance
 js/views-food.js      Food screen, review/edit sheets, My foods
+tools/audit-workouts.js  workout quality audit (seeded sample, diagnostics, variety, history simulation)
+docs/                 quality audit report and before/after outputs
 fonts/                Inter (OFL) + license
 sw.js, manifest.webmanifest, icons/   PWA
 ```

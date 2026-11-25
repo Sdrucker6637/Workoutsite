@@ -86,7 +86,7 @@
 
   /* ───────────── BACK ───────────── */
   X('pullup', 'Pull-Up', 'lats', 'biceps upper-back forearms', 'bar', 'c', 'v-pull', 2, 'hrb', '5-10', 120, 'bwl', 'staple', { cue: 'Full hang to chin over bar. Add load with a dumbbell between your feet once you own 3×10.' });
-  X('chinup', 'Chin-Up', 'lats', 'biceps upper-back', 'bar', 'c', 'v-pull', 2, 'hrb', '5-10', 120, 'bwl', '');
+  X('chinup', 'Chin-Up', 'lats', 'biceps upper-back', 'bar', 'c', 'v-pull', 2, 'hrb', '5-10', 120, 'bwl', '', { moves2: ['biceps'] }); // supinated grip: also a real biceps movement
   X('neutral-pullup', 'Neutral-Grip Pull-Up', 'lats', 'biceps upper-back forearms', 'bar', 'c', 'v-pull', 2, 'hrb', '5-10', 120, 'bwl', '');
   X('pullup-negative', 'Pull-Up Negatives (Slow Eccentric)', 'lats', 'biceps forearms', 'bar', 'c', 'v-pull', 1, 'r', '3-6', 90, 'bw', '', { cue: 'Jump or step to the top, lower yourself over 4–5 seconds. Builds strength toward more full pull-ups.', harder: 'pullup' });
   X('lat-pulldown', 'Lat Pulldown', 'lats', 'biceps upper-back', 'lat', 'c', 'v-pull', 1, 'hrb', '8-12', 90, 'cable', 'staple');

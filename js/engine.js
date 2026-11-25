@@ -1106,7 +1106,7 @@
     while (est < duration - 10 && guard++ < 20) {
       const cand = items.find((i) => {
         const ex = WT.ex(i.exId);
-        return ex && ex.category === 'compound' && i.sets < 4 && WT.trackType(ex) !== 'cardio' && !WT.STAGED[i.intensity];
+        return ex && ex.category === 'compound' && i.sets < 4 && WT.trackType(ex) !== 'cardio' && !WT.STAGED[i.intensity] && !i.recovering;
       });
       if (!cand) break;
       cand.sets++;

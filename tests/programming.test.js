@@ -397,7 +397,9 @@ section('Role-preserving swaps');
   ok(roleOf('knee', 'legs').every((m) => m === 'knee'), 'replacing a squat suggests other knee-dominant lifts');
   ok(roleOf('h-pull', 'pull').every((m) => m === 'h-pull'), 'replacing a row suggests other horizontal pulls');
   // No suitable substitute → limitation explained, free choice still possible
-  const w = gen('pull', null, 'limit');
+  // A pull day whose only horizontal pull is the row being replaced
+  let w = null;
+  for (let k = 0; k < 50 && !w; k++) { const c = gen('pull', null, 'limit' + k); if (c.exercises.filter((i) => WT.moveOf(exOf(i)) === 'h-pull').length === 1) w = c; }
   const row = w.exercises.find((i) => WT.moveOf(exOf(i)) === 'h-pull');
   const savedEx = P.excluded.slice();
   P.excluded = WT.exercises.filter((e) => WT.moveOf(e) === 'h-pull' && e.id !== row.exId).map((e) => e.id);
@@ -405,7 +407,7 @@ section('Role-preserving swaps');
   const wide = WT.alternatives(w, row.uid, { wide: true });
   ok(!!narrow.limitation && /horizontal|row/i.test(narrow.limitation), 'limitation explained: ' + narrow.limitation);
   ok(wide.length > narrow.length, 'wide search still lets you choose freely');
-  ok(wide.some((a) => a.gap.length) && wide.filter((a) => a.gap.length).every((a) => a.score < Math.max(...wide.filter((b) => !b.gap.length).map((b) => b.score), -1e9) || true), 'alternatives that would leave a gap are marked');
+  ok(wide.some((a) => a.gap.length), 'alternatives that would leave a gap are marked');
   P.excluded = savedEx;
   // applySwap explains the kept role
   const ww = gen('push', null, 'why');
@@ -442,6 +444,84 @@ section('Determinism');
   const ms = Date.now() - t0;
   console.log(`  300 workouts in ${ms} ms`);
   ok(ms < 15000, 'generation is fast');
+}
+
+/* ── Audit fixes (tools/audit-workouts.js findings) ── */
+section('Quality-audit regressions');
+{
+  const savedHist = WT.db.history;
+  const addSess = (hoursAgo, list) => { const d = new Date(Date.now() - hoursAgo * 3600e3).toISOString(); WT.db.history.push({ id: WT.uid(), type: 'legs', title: 'T', startedAt: d, endedAt: d, exercises: list.map(([exId, n]) => ({ uid: WT.uid(), exId, intensity: 'regular', repMin: 8, repMax: 12, targetSets: n, sets: Array.from({ length: n }, () => ({ w: 30, r: 10, done: true })) })) }); };
+  // 1. Recovery: the day after legs, a full-body session adds no extra lower-body work and no heavy lower-body loading
+  WT.db.history = [];
+  addSess(20, [['goblet-squat', 4], ['bulgarian-split-squat', 3], ['db-hip-thrust', 4], ['db-leg-curl', 3]]);
+  let extraLower = 0;
+  for (let k = 0; k < 150; k++) {
+    const w = gen('full', null, 'rec' + k);
+    const lower = w.exercises.filter((i) => ['quads', 'glutes', 'hamstrings', 'adductors'].includes(exOf(i).primary));
+    if (lower.length > 2) extraLower++;
+    lower.forEach((i) => ok(!['heavy', 'buildup'].includes(i.intensity), `recovery: no heavy loading on just-trained legs (${i.exId} ${i.intensity})`));
+    lower.filter((i) => exOf(i).category === 'compound').forEach((i) => ok(i.sets <= 3, `recovery: just-trained compound trimmed (${i.exId} ${i.sets})`));
+  }
+  ok(extraLower <= 8, `recovery: extra lower-body exercises the day after legs (${extraLower}/150)`);
+  WT.db.history = [];
+  // 2. Full-body balance (direct sets per area)
+  let imbalanced = 0, lowLower = 0;
+  for (let k = 0; k < 200; k++) {
+    const a = WT.P.areaSets(gen('full', null, 'bal' + k).exercises);
+    if (a.push >= 2 * a.pull || a.pull >= 2 * a.push) imbalanced++;
+    if (a.lower / (a.push + a.pull + a.lower) < 0.3) lowLower++;
+  }
+  console.log(`  full body: ${imbalanced}/200 with a 2:1 push/pull split (mostly priority-driven), ${lowLower}/200 with <30% lower-body sets`);
+  ok(imbalanced <= 40 && lowLower <= 10, 'full body stays balanced across push, pull and lower body');
+  // 3. Sparse equipment: no off-role or near-identical padding
+  for (const type of ['pull', 'push', 'chest', 'arms']) for (let k = 0; k < 40; k++) {
+    const w = gen(type, { equipment: ['bw', 'bar', 'bench'] }, `sparse-${type}-${k}`);
+    const exs = w.exercises.map(exOf);
+    exs.forEach((e, x) => ok(!WT.P.redundantWith(e, exs.slice(0, x).concat(exs.slice(x + 1)).filter((o) => o !== e)) || w.exercises[x].role === 'primary' || !w.exercises[x].slot.pad, `sparse ${type}: redundant padding ${e.id}`));
+    if (type === 'pull') exs.forEach((e) => ok(e.primary !== 'lower-back', 'sparse pull: no lower-back filler (' + e.id + ')'));
+    // Near-identical bodyweight variants (same muscle, pattern and declared role) are not stacked
+    exs.forEach((e, x) => exs.slice(x + 1).forEach((f) => ok(!(e.primary === f.primary && e.pattern === f.pattern && ['bw', 'bwl', 'time'].includes(e.load) && ['bw', 'bwl', 'time'].includes(f.load) && (e.moves2 || []).join() === (f.moves2 || []).join()), `sparse ${type}: ${e.id} ≈ ${f.id}`)));
+  }
+  // 4. Experience fit
+  P.experience = 'beginner';
+  for (const type of ['full', 'push', 'pull', 'legs', 'chest']) for (let k = 0; k < 60; k++) gen(type, null, `beg-${type}-${k}`).exercises.forEach((i) => ok(exOf(i).difficulty !== 'advanced', `beginner: no advanced exercise with full equipment (${i.exId})`));
+  P.experience = 'intermediate';
+  for (const type of ['push', 'chest', 'full']) for (let k = 0; k < 80; k++) gen(type, null, `reg-${type}-${k}`).exercises.filter((i) => ['primary', 'secondary'].includes(i.role)).forEach((i) => ok(!exOf(i).harder, `trained lifter: no easy regression as a main/secondary lift (${i.exId})`));
+  // 5. Push-day triceps: after three presses, one direct triceps exercise
+  for (let k = 0; k < 150; k++) {
+    const exs = gen('push', null, 'tri' + k).exercises.map(exOf);
+    if (exs.filter((e) => ['h-push', 'v-push'].includes(WT.moveOf(e))).length >= 3) ok(exs.filter((e) => e.primary === 'triceps').length <= 1, 'push: one triceps isolation after three presses — ' + exs.map((e) => e.id));
+  }
+  // 6. Practical supersets
+  for (const type of ['arms', 'push', 'pull', 'legs', 'chest', 'full']) for (let k = 0; k < 100; k++)
+    WT.groupBlocks(gen(type, { count: 7, duration: 45 }, `prac-${type}-${k}`).exercises).filter((b) => b.length > 1).forEach(([a, b]) => {
+      const x = exOf(a), y = exOf(b);
+      ok(!(x.equipment.includes('cable') && y.equipment.includes('cable')), `superset: one cable station (${x.id} + ${y.id})`);
+      ok(!(x.equipment.includes('bench') && y.equipment.includes('bench')), `superset: one bench (${x.id} + ${y.id})`);
+    });
+  // 7. Holds aren't used as hypertrophy isolation when real options exist
+  for (const type of ['pull', 'arms']) for (let k = 0; k < 100; k++) gen(type, null, `hold-${type}-${k}`).exercises.filter((i) => ['biceps', 'forearms'].includes(exOf(i).primary)).forEach((i) => ok(exOf(i).load !== 'time', `${type}: timed hold as isolation (${i.exId})`));
+  // 8. Redundancy inside a session
+  let latStack = 0, sameRow = 0, rows2 = 0;
+  for (let k = 0; k < 200; k++) {
+    const exs = gen('pull', null, 'red' + k).exercises.map(exOf);
+    if (exs.filter((e) => WT.moveOf(e) === 'v-pull').length >= 2 && exs.some((e) => WT.moveOf(e) === 'lat-iso')) latStack++;
+    const rows = exs.filter((e) => WT.moveOf(e) === 'h-pull');
+    if (rows.length === 2) { rows2++; if (rows[0].primary === rows[1].primary) sameRow++; }
+  }
+  ok(latStack === 0, 'pull: never two vertical pulls plus a lat isolation');
+  ok(sameRow <= rows2 * 0.25, `pull: a second row usually targets the other muscle (${sameRow}/${rows2} same)`);
+  for (const type of ['push', 'chest']) for (let k = 0; k < 150; k++) {
+    const ps = gen(type, null, `ang-${type}-${k}`).exercises.filter((i) => exOf(i).primary === 'chest' && WT.moveOf(exOf(i)) === 'h-push').map(exOf);
+    if (ps.length >= 2) ok(ps[0].pattern !== ps[1].pattern || ps[0].load !== ps[1].load, `${type}: the first two chest presses differ (${ps[0].id}, ${ps[1].id})`);
+    if (type === 'push' && ps.length >= 2) ok(ps[0].pattern !== ps[1].pattern, `push: second chest press uses a different angle (${ps[0].id}, ${ps[1].id})`);
+  }
+  // 9. Labels describe the movement actually chosen
+  for (let k = 0; k < 60; k++) gen('push', { equipment: ['bw', 'bar', 'bench'] }, 'lab' + k).exercises.forEach((i) => {
+    const mv = WT.moveOf(exOf(i));
+    if (mv === 'h-push' && exOf(i).primary === 'chest') ok(!/overhead/i.test(i.slot.label), `label: ${i.exId} is not an overhead press (${i.slot.label})`);
+  });
+  WT.db.history = savedHist;
 }
 
 /* ── Regression ── */
