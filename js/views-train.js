@@ -185,10 +185,11 @@
     else if (d) {
       const sets = d.exercises.reduce((a, i) => a + (i.sets || 0), 0);
       plan = `<section class="section" id="planCol" style="scroll-margin-top:72px">
-        <div class="plan-head"><div><h2 class="title2">${esc(d.title)}</h2><div class="plan-meta">${plural(d.exercises.length, 'exercise')} · ${sets} sets · about ${d.estimatedMin} min</div></div>
+        <div class="plan-head"><div><h2 class="title2">${esc(d.title)}</h2><div class="plan-meta">${plural(d.exercises.length, 'exercise')} · ${sets} sets · about ${d.estimatedMin} min</div>${d.objective ? `<p class="footnote t3 plan-objective" style="margin-top:6px">${esc(d.objective)}</p>` : ''}</div>
           <div class="row" style="gap:2px"><button class="icon-btn" data-act="rerollIntensity" title="Re-roll intensities" aria-label="Re-roll intensities">${I('zap', 17)}</button><button class="icon-btn" data-act="regenerate" title="Regenerate" aria-label="Regenerate">${I('refresh', 17)}</button><button class="icon-btn" data-act="clearDraft" title="Discard" aria-label="Discard plan">${I('x', 18)}</button></div></div>
         <div class="plan-list fade-in">${planRows(d)}</div>
-        <div class="row between mt12"><button class="btn btn-plain btn-sm" data-act="openAdd" data-ctx="draft" style="margin-left:-10px">${I('plus', 15)}Add exercise</button>${(d.notes || []).length ? `<span class="footnote t3">${esc(d.notes[d.notes.length - 1])}</span>` : ''}</div>
+        <div class="row between mt12"><button class="btn btn-plain btn-sm" data-act="openAdd" data-ctx="draft" style="margin-left:-10px">${I('plus', 15)}Add exercise</button></div>
+        ${(d.notes || []).map((n) => `<p class="footnote t3 plan-note" style="margin-top:6px">${esc(n)}</p>`).join('')}
         <div class="sticky-cta"><button class="btn btn-primary btn-lg btn-block" data-act="startDraft">Start workout</button></div>
       </section>`;
     }
@@ -225,7 +226,7 @@
       ${H.demo(ex.id, 'sm')}
       <div style="min-width:0">
         <button class="nm" data-act="exDetail" data-id="${ex.id}">${esc(ex.name)}</button>
-        <div class="meta"><span>${WT.muscleName(ex.primary)}</span><span class="rx">${H.target(it, ex)}</span>${load ? `<span>${load}</span>` : ''}${it.intensity !== 'standard' ? H.intensity(it.intensity, 'pickIntensity', it.uid, 'draft') : ''}${ss ? `<span class="ss-tag">Superset ${ss}</span>` : ''}</div>
+        <div class="meta"><span>${WT.muscleName(ex.primary)}</span>${it.slot && it.slot.moves && it.slot.label && it.slot.label.toLowerCase() !== WT.muscleName(ex.primary).toLowerCase() ? `<span class="t3 slot-label">${esc(it.slot.label)}</span>` : ''}<span class="rx">${H.target(it, ex)}</span>${load ? `<span>${load}</span>` : ''}${it.intensity !== 'standard' ? H.intensity(it.intensity, 'pickIntensity', it.uid, 'draft') : ''}${ss ? `<span class="ss-tag">Superset ${ss}</span>` : ''}</div>
       </div>
       <div class="acts">
         <a class="icon-btn sm" href="${esc(WT.videoUrl(ex))}" target="_blank" rel="noopener" title="Watch tutorial" aria-label="Watch ${esc(ex.name)} tutorial">${I('play', 15)}</a>
@@ -471,13 +472,14 @@
         eyebrow: 'Replace ' + esc(cur.name),
         title: 'Swap exercise',
         body: `${H.seg([[0, 'Same movement'], [1, 'Same muscle group']], state.wide ? 1 : 0, 'swapWide', '', 'full')}
+          ${alts.limitation ? `<div class="callout mt12">${I('info', 15)}<span>${esc(alts.limitation)}</span></div>` : ''}
           ${doneCount ? `<div class="callout warn mt12">${I('info', 15)}<span>${plural(doneCount, 'logged set')} on this exercise will be cleared.</span></div>` : ''}
           <div class="list inset mt16">${
             alts.length
-              ? alts.map((a) => H.li({ act: 'doSwap', attrs: `data-id="${a.ex.id}"`, lead: H.demo(a.ex.id, 'sm', { static: true }), title: esc(a.ex.name) + (WT.db.profile.favorites.includes(a.ex.id) ? ' <span class="star on">★</span>' : ''), sub: `${WT.muscleName(a.ex.primary)} · ${a.ex.equipment.map((q) => WT.EQUIPMENT[q]).join(', ')}` })).join('')
+              ? alts.map((a) => H.li({ act: 'doSwap', attrs: `data-id="${a.ex.id}"`, lead: H.demo(a.ex.id, 'sm', { static: true }), title: esc(a.ex.name) + (WT.db.profile.favorites.includes(a.ex.id) ? ' <span class="star on">★</span>' : ''), sub: `${WT.muscleName(a.ex.primary)} · ${a.ex.equipment.map((q) => WT.EQUIPMENT[q]).join(', ')}${a.gap && a.gap.length ? ` · leaves no ${esc(a.gap.join(', '))}` : a.duplicate ? ' · similar to another exercise' : ''}` })).join('')
               : `<div class="li"><div class="grow su">No alternatives with your equipment and exclusions.</div></div>`
           }</div>
-          <p class="footnote t3 mt12">Keeps its place, set count and intensity where suitable. <button class="btn-link" data-act="excludeFromSwap" data-id="${cur.id}">Never suggest ${esc(cur.name)}</button></p>`,
+          <p class="footnote t3 mt12">Same-role options first: keeps its place, set count and intensity where suitable. <button class="btn-link" data-act="excludeFromSwap" data-id="${cur.id}">Never suggest ${esc(cur.name)}</button></p>`,
       };
     });
     A.swapWide = (dd) => {

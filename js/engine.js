@@ -537,31 +537,64 @@
     return `${m}:${String(s).padStart(2, '0')}`;
   };
 
-  /* ═════════════════════ TRAINING LOAD ANALYSIS ═════════════════════ */
-  /** Completed sets per muscle (primary = 1, secondary = 0.5) within the last `hours`. */
+  /* ═════════════════════ TRAINING LOAD ANALYSIS ═════════════════════
+   * Fractional set accounting: a set counts 1 for the primary muscle and a fraction for each secondary
+   * (0.5 from compounds, 0.25 from isolation / conditioning work). Pelland et al.'s dose-response
+   * meta-regressions found a "fractional" count (indirect sets ≈ 0.5) described hypertrophy best; a
+   * bench press therefore adds 1 chest set but only ½ a triceps and ½ a front-delt set.
+   */
+  WT.setShare = function (ex) {
+    const out = { [ex.primary]: 1 };
+    const f = ex.category === 'compound' ? 0.5 : 0.25;
+    (ex.secondary || []).forEach((m) => {
+      if (m !== 'cardio' && !(m in out)) out[m] = f;
+    });
+    return out;
+  };
+  function addLoad(load, s, weight) {
+    s.exercises.forEach((e) => {
+      const ex = WT.ex(e.exId);
+      if (!ex || e.skipped) return;
+      const n = (e.sets || []).filter((x) => x.done).length;
+      if (!n) return;
+      Object.entries(WT.setShare(ex)).forEach(([m, f]) => (load[m] = (load[m] || 0) + n * f * weight));
+    });
+  }
+  /** Completed (fractional) sets per muscle within the last `hours`. */
   WT.muscleLoad = function (hours, now) {
     now = now || Date.now();
     const load = {};
     WT.db.history.forEach((s) => {
       const t = new Date(s.endedAt || s.startedAt).getTime();
       if (now - t > hours * 3600e3 || t > now) return;
-      s.exercises.forEach((e) => {
-        const ex = WT.ex(e.exId);
-        if (!ex || e.skipped) return;
-        const n = (e.sets || []).filter((x) => x.done).length;
-        if (!n) return;
-        load[ex.primary] = (load[ex.primary] || 0) + n;
-        ex.secondary.forEach((m) => (load[m] = (load[m] || 0) + n * 0.5));
-      });
+      addLoad(load, s, 1);
     });
     return load;
   };
+  /** Recovery-weighted recent load: full weight for 24 h, fading linearly to zero at 72 h. */
+  WT.recentFatigue = function (now) {
+    now = now || Date.now();
+    const load = {};
+    WT.db.history.forEach((s) => {
+      const h = (now - new Date(s.endedAt || s.startedAt).getTime()) / 3600e3;
+      if (h < 0 || h >= 72) return;
+      addLoad(load, s, h <= 24 ? 1 : 1 - (h - 24) / 48);
+    });
+    return load;
+  };
+  /**
+   * Weekly set reference per muscle — a guide, not a quota. ~10 weekly sets is where the evidence for
+   * hypertrophy is most consistent (Schoenfeld 2017; ACSM 2026 position stand); returns diminish above
+   * that, so priorities get a modest bump rather than an open-ended target. Scaled by experience and by
+   * the planned number of strength sessions (adherence beats volume chasing).
+   */
   WT.weeklyTarget = function (m) {
     const p = WT.db.profile;
     if (m === 'cardio') return 0;
-    if (['calves', 'forearms', 'adductors', 'lower-back', 'traps'].includes(m)) return 4;
-    if (p.prioritize.includes(m)) return 14;
-    return 10;
+    const small = ['calves', 'forearms', 'adductors', 'lower-back', 'traps'].includes(m);
+    let t = small ? 4 : m === 'front-delts' ? 6 : { beginner: 8, intermediate: 10, advanced: 12 }[p.experience] || 10;
+    if (p.prioritize.includes(m)) t += small ? 2 : 4;
+    return Math.round(t * WT.clamp((+p.strengthPerWeek || 3) / 3, 0.75, 1.15));
   };
 
   /* ═════════════════════ GENERATOR ═════════════════════ */
@@ -778,24 +811,12 @@
   }
   WT.drawWeighted = drawWeighted;
 
-  /** Independently randomise intensities for a list of workout items (locked items keep theirs). */
+  /**
+   * Independently randomise intensities for a list of workout items (locked items keep theirs).
+   * Role-aware and budgeted — see WT.P.randomize in programming.js.
+   */
   WT.randomizeIntensities = function (items, ctx, rnd) {
-    const n = items.length;
-    // Safety rails only — they rarely bind with default odds, and never force a minimum.
-    const cap = { heavy: Math.max(1, Math.ceil(n / 2)), burnout: Math.max(1, Math.ceil(n / 3)) };
-    const used = { heavy: 0, burnout: 0 };
-    items.forEach((i) => i.locked && i.intensity && used[i.intensity] != null && used[i.intensity]++);
-    const order = WT.shuffle(items.filter((i) => !(i.locked && i.intensity)));
-    order.forEach((i) => {
-      const ex = WT.ex(i.exId);
-      const pos = n > 1 ? items.indexOf(i) / (n - 1) : 0;
-      const fatigued = ctx && ctx.fatigue ? (ctx.fatigue[ex.primary] || 0) >= 8 : false;
-      const w = WT.intensityWeights(ex, { position: i.slot && i.slot.heavy ? 0 : pos, fatigued });
-      ['heavy', 'burnout'].forEach((k) => used[k] >= cap[k] && (w[k] = 0));
-      i.intensity = drawWeighted(w, rnd);
-      if (used[i.intensity] != null) used[i.intensity]++;
-    });
-    return items;
+    return WT.P.randomize(items, ctx, rnd);
   };
 
   /** Default counts for manual (non-random) mode. */
@@ -835,7 +856,7 @@
   /** Context (fatigue, weekly volume, exercise recency) used by scoring. */
   function buildContext(settings) {
     const p = WT.db.profile;
-    const fatigue = WT.muscleLoad(48);
+    const fatigue = WT.recentFatigue();
     const weekly = WT.muscleLoad(24 * 7);
     const lastDone = {};
     WT.db.history.forEach((s) =>
@@ -856,6 +877,7 @@
       excluded: new Set(p.excluded),
       favorites: new Set(p.favorites),
       emphasis: new Set(p.emphasisTags || []),
+      rnd: Math.random,
     };
   }
 
@@ -945,7 +967,7 @@
       if (c.equipment.join() === ex.equipment.join() && focused) s -= 0.3;
       if (['row', 'lat'].some((st) => c.equipment.includes(st) && ex.equipment.includes(st))) s -= 2.5;
     });
-    s += Math.random() * (jitter == null ? 2.5 : jitter);
+    s += (ctx.rnd || Math.random)() * (jitter == null ? 2.5 : jitter);
     return { s, why };
   }
 
@@ -1057,88 +1079,12 @@
   }
   WT.groupBlocks = groupBlocks;
 
-  const ANTAGONIST = { chest: ['back'], back: ['chest', 'shoulders'], shoulders: ['back', 'legs'], legs: ['shoulders', 'chest', 'back', 'arms'], core: ['arms', 'shoulders', 'chest', 'back', 'legs'] };
-  function pairScore(a, b) {
-    const ea = WT.ex(a.exId), eb = WT.ex(b.exId);
-    if (!ea || !eb || ea.primary === eb.primary) return -1;
-    if (ea.equipment.includes('lat') && eb.equipment.includes('lat')) return -1;
-    if (ea.equipment.includes('row') && eb.equipment.includes('row')) return -1;
-    const ga = WT.MUSCLES[ea.primary].group, gb = WT.MUSCLES[eb.primary].group;
-    const pa = ea.primary, pb = eb.primary;
-    if ((pa === 'biceps' && pb === 'triceps') || (pa === 'triceps' && pb === 'biceps')) return 5;
-    if ((pa === 'quads' && pb === 'hamstrings') || (pa === 'hamstrings' && pb === 'quads')) return 4;
-    if ((ga === 'chest' && gb === 'back') || (ga === 'back' && gb === 'chest')) return 4;
-    if (ea.secondary.includes(pb) || eb.secondary.includes(pa)) return 0.5;
-    if (ga !== gb && (ANTAGONIST[ga] || []).includes(gb)) return 3;
-    if (ga !== gb) return 2;
-    return 0.8; // same group, different muscle (e.g. side delt + rear delt)
-  }
-
-  /** Order exercises sensibly and (optionally) form supersets. Mutates items' superset field. */
-  WT.arrange = function (items, supersets, type) {
-    const rank = (i) => {
-      const ex = WT.ex(i.exId);
-      if (!ex) return 5;
-      if (type === 'cardio') return ex.pattern === 'run' || ex.pattern === 'steady' ? 0 : 2;
-      if (i.intensity === 'heavy') return ex.category === 'compound' ? 0 : 0.5;
-      if (i.intensity === 'burnout') return 4;
-      if (WT.region(ex) === 'core' && type !== 'core') return 3;
-      return ex.category === 'compound' ? 1 : 2;
-    };
-    items.forEach((i) => (i.superset = null));
-    const sorted = items.map((it, idx) => ({ it, idx })).sort((a, b) => rank(a.it) - rank(b.it) || a.idx - b.idx).map((x) => x.it);
-    let blocks = sorted.map((i) => [i]);
-    if (supersets && type !== 'cardio') {
-      const pool = sorted.filter((i) => i.intensity !== 'heavy' && WT.trackType(WT.ex(i.exId) || {}) !== 'cardio');
-      const paired = new Set();
-      const pairs = [];
-      pool.forEach((a, ai) => {
-        if (paired.has(a.uid)) return;
-        let best = null;
-        pool.forEach((b, bi) => {
-          if (bi <= ai || paired.has(b.uid)) return;
-          if ((a.intensity === 'burnout') !== (b.intensity === 'burnout')) return;
-          const sc = pairScore(a, b) - Math.abs(ai - bi) * 0.15;
-          if (sc > 0 && (!best || sc > best.sc)) best = { b, sc };
-        });
-        if (best) {
-          paired.add(a.uid);
-          paired.add(best.b.uid);
-          pairs.push([a, best.b]);
-        }
-      });
-      blocks = [];
-      sorted.forEach((i) => {
-        if (!paired.has(i.uid)) blocks.push([i]);
-        else {
-          const pr = pairs.find((p) => p[0] === i);
-          if (pr) blocks.push(pr);
-        }
-      });
-      blocks.sort((a, b) => Math.min(...a.map(rank)) - Math.min(...b.map(rank)));
-    }
-    // Avoid back-to-back singles hitting the same primary muscle
-    for (let k = 1; k < blocks.length - 1; k++) {
-      const prev = WT.ex(blocks[k - 1][blocks[k - 1].length - 1].exId);
-      const cur = WT.ex(blocks[k][0].exId);
-      const nxt = WT.ex(blocks[k + 1][0].exId);
-      if (prev && cur && nxt && prev.primary === cur.primary && nxt.primary !== cur.primary && rank(blocks[k][0]) === rank(blocks[k + 1][0]))
-        [blocks[k], blocks[k + 1]] = [blocks[k + 1], blocks[k]];
-    }
-    let letter = 0;
-    const out = [];
-    const ssRest = WT.db.profile.rest.superset;
-    blocks.forEach((b) => {
-      if (b.length > 1) {
-        const L = String.fromCharCode(65 + letter++);
-        b.forEach((i, j) => {
-          i.superset = L;
-          if (j === b.length - 1) i.rest = Math.max(i.rest, ssRest);
-        });
-      }
-      out.push(...b);
-    });
-    return out;
+  /**
+   * Order exercises by programming role and keep compatible supersets (see WT.P.arrange).
+   * Existing pairs are re-validated; new pairs are only formed during generation.
+   */
+  WT.arrange = function (items, supersets, type, opts) {
+    return WT.P.arrange(items, supersets, type, opts);
   };
 
   function fitDuration(items, duration) {
@@ -1150,7 +1096,7 @@
       const cand = items
         .slice()
         .reverse()
-        .find((i) => i.sets > (i.intensity === 'heavy' ? 3 : 2) && WT.trackType(WT.ex(i.exId) || {}) !== 'cardio');
+        .find((i) => i.sets > (i.intensity === 'heavy' ? 3 : 2) && WT.trackType(WT.ex(i.exId) || {}) !== 'cardio' && !WT.STAGED[i.intensity]);
       if (!cand) break;
       cand.sets--;
       est = WT.estimateMinutes(items);
@@ -1160,7 +1106,7 @@
     while (est < duration - 10 && guard++ < 20) {
       const cand = items.find((i) => {
         const ex = WT.ex(i.exId);
-        return ex && ex.category === 'compound' && i.sets < 4 && WT.trackType(ex) !== 'cardio';
+        return ex && ex.category === 'compound' && i.sets < 4 && WT.trackType(ex) !== 'cardio' && !WT.STAGED[i.intensity];
       });
       if (!cand) break;
       cand.sets++;
@@ -1170,130 +1116,37 @@
 
   /**
    * Generate a workout.
-   * settings: see WT.defaultSettings. keep: optional array of locked items to preserve.
+   * settings: see WT.defaultSettings (+ optional `seed` for reproducible output). keep: locked items to preserve.
+   * Structure (slots, coverage) is planned before exercises are selected — see programming.js.
    */
   WT.generate = function (settings, keep) {
-    settings = Object.assign(WT.defaultSettings(settings && settings.type), settings || {});
-    const type = settings.type;
-    const ctx = buildContext(settings);
-    let n = settings.autoCount ? WT.clamp(Math.round((settings.duration - 5) / (settings.supersets ? 7.5 : 9)), 3, 10) : WT.clamp(+settings.count || 6, 1, 12);
-    if (type === 'cardio') n = Math.min(n, 6);
-    const focused = !['full', 'push', 'pull', 'legs', 'custom'].includes(type);
-    const notes = [];
-
-    // Rank slots: essentials first, then weight + priority bonus − fatigue penalty
-    const tmpl = templateFor(type, settings.targets).map((s, i) => {
-      let w = s.weight;
-      if (!s.essential) {
-        if (s.m.some((m) => ctx.prioritize.has(m))) w += 1.5;
-        const fat = Math.max(...s.m.map((m) => ctx.fatigue[m] || 0));
-        if (fat >= 8 && !focused) w -= 2.5;
-        if (s.m.every((m) => ctx.avoid.has(m))) w -= 20;
-      }
-      return Object.assign({}, s, { rank: s.essential ? 100 - i : w, order: i });
-    });
-    let slots = tmpl.slice().sort((a, b) => b.rank - a.rank).slice(0, n);
-    // Pad if more exercises requested than template slots
-    let pad = 0;
-    while (slots.length < n && pad < 20) {
-      const base = tmpl[pad % tmpl.length];
-      slots.push(Object.assign({}, base, { label: base.label + ' (extra)', p: null, essential: false, order: 100 + pad }));
-      pad++;
-    }
-    slots.sort((a, b) => a.order - b.order);
-
-    // Fatigue notes
-    const hot = Object.entries(ctx.fatigue)
-      .filter(([m, v]) => v >= 8 && m !== 'cardio')
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 3);
-    if (hot.length)
-      notes.push(`Recently trained hard (last 48h): ${hot.map(([m, v]) => `${WT.muscleName(m)} (${WT.fmtNum(v)} sets)`).join(', ')}. Exercises for these muscles were de-prioritized.`);
-
-    // Intensity plan
-    const randomMode = settings.intensityMode !== 'manual';
-    const plan = randomMode ? null : { heavy: +settings.heavy || 0, burnout: +settings.burnout || 0 };
-
-    // Fill slots
-    const used = new Set();
-    const chosen = [];
-    const items = [];
-    const keepBySlot = {};
-    (keep || []).forEach((k) => {
-      if (k.slotIndex != null) keepBySlot[k.slotIndex] = k;
-      used.add(k.exId);
-    });
-    slots.forEach((slot, idx) => {
-      const kept = keepBySlot[idx];
-      if (kept && WT.ex(kept.exId)) {
-        chosen.push(WT.ex(kept.exId));
-        items.push(Object.assign({}, kept, { slot: stripSlot(slot), slotIndex: idx }));
-        return;
-      }
-      const pick = pickForSlot(slot, ctx, used, chosen, focused);
-      if (!pick) return;
-      used.add(pick.ex.id);
-      chosen.push(pick.ex);
-      items.push({ uid: WT.uid(), exId: pick.ex.id, slot: stripSlot(slot), slotIndex: idx, why: pick.why.slice(0, 2), locked: false });
-    });
-    // Locked items whose slot no longer exists → append
-    (keep || []).forEach((k) => {
-      if (!items.find((i) => i.uid === k.uid) && WT.ex(k.exId)) items.push(Object.assign({}, k));
-    });
-
-    if (randomMode) WT.randomizeIntensities(items, ctx);
-    else assignIntensities(items, plan);
-    items.forEach((i) => {
-      if (i.locked && i.sets) return;
-      Object.assign(i, WT.prescribe(WT.ex(i.exId), i.intensity));
-    });
-    let arranged = WT.arrange(items, settings.supersets, type);
-    fitDuration(arranged, settings.duration);
-
-    if (items.length < n) notes.push(`Only ${items.length} suitable exercises were found with your equipment and exclusions.`);
-    const supersetCount = new Set(arranged.filter((i) => i.superset).map((i) => i.superset)).size;
-    if (supersetCount) notes.push(`${supersetCount} superset${supersetCount > 1 ? 's' : ''} pair non-competing muscles to save time.`);
-
-    return {
-      id: WT.uid(),
-      type,
-      title: type === 'custom' ? 'Custom: ' + (settings.targets || []).map((t) => WT.CUSTOM_TARGETS[t]).join(', ') : WT.typeName(type),
-      createdAt: new Date().toISOString(),
-      settings,
-      plan: WT.intensityTally(arranged),
-      intensityMode: randomMode ? 'random' : 'manual',
-      notes,
-      exercises: arranged,
-      estimatedMin: WT.estimateMinutes(arranged),
-    };
+    return WT.P.generate(settings, keep);
   };
   WT.intensityTally = (items) => {
     const t = { heavy: 0, regular: 0, burnout: 0, standard: 0 };
     items.forEach((i) => (t[i.intensity] = (t[i.intensity] || 0) + 1));
     return t;
   };
-  const stripSlot = (s) => ({ label: s.label, m: s.m, p: s.p, tag: s.tag, cardio: s.cardio, core: s.core, heavy: s.heavy });
-
-  function assignIntensities(items, plan) {
+  /** Fixed-count (manual) intensities: heavy goes to main lifts first, burnout to isolation work first. */
+  function assignIntensities(items, plan, type) {
     const fresh = items.filter((i) => !i.locked || !i.intensity);
     fresh.forEach((i) => (i.intensity = null));
     let heavyLeft = plan.heavy - items.filter((i) => i.locked && i.intensity === 'heavy').length;
     let burnLeft = plan.burnout - items.filter((i) => i.locked && i.intensity === 'burnout').length;
     const exOf = (i) => WT.ex(i.exId);
-    // Heavy → heavy-capable, compounds first, earliest slot first
+    const tier = (i) => WT.P.TIER[WT.P.roleOf(i, type)] ?? 3;
     fresh
       .filter((i) => exOf(i).intensities.includes('heavy'))
-      .sort((a, b) => (exOf(b).category === 'compound') - (exOf(a).category === 'compound') || (b.slot && b.slot.heavy) - (a.slot && a.slot.heavy) || a.slotIndex - b.slotIndex)
+      .sort((a, b) => tier(a) - tier(b) || (exOf(b).category === 'compound') - (exOf(a).category === 'compound') || a.slotIndex - b.slotIndex)
       .forEach((i) => {
         if (heavyLeft > 0) {
           i.intensity = 'heavy';
           heavyLeft--;
         }
       });
-    // Burnout → burnout-capable, isolations/bodyweight first, latest slot first
     fresh
       .filter((i) => !i.intensity && exOf(i).intensities.includes('burnout'))
-      .sort((a, b) => (exOf(b).category !== 'compound') - (exOf(a).category !== 'compound') || b.slotIndex - a.slotIndex)
+      .sort((a, b) => tier(b) - tier(a) || (exOf(b).category !== 'compound') - (exOf(a).category !== 'compound') || b.slotIndex - a.slotIndex)
       .forEach((i) => {
         if (burnLeft > 0) {
           i.intensity = 'burnout';
@@ -1308,30 +1161,13 @@
     });
   }
 
-  /** Alternatives for swapping an item in a workout. */
+  /**
+   * Alternatives for swapping an item, best first. Same-role options (same movement pattern and target
+   * muscle) rank highest; options that would leave a coverage gap or duplicate another exercise are marked
+   * and ranked lower. The array carries `.limitation` when nothing preserves the role.
+   */
   WT.alternatives = function (workout, uid, opts) {
-    opts = opts || {};
-    const item = workout.exercises.find((e) => e.uid === uid);
-    if (!item) return [];
-    const cur = WT.ex(item.exId);
-    const settings = Object.assign(WT.defaultSettings(workout.type), workout.settings || {});
-    const ctx = buildContext(settings);
-    const used = new Set(workout.exercises.map((e) => e.exId));
-    const chosen = workout.exercises.filter((e) => e.uid !== uid).map((e) => WT.ex(e.exId)).filter(Boolean);
-    const slot = item.slot || { m: [cur.primary], p: null };
-    const focused = !['full', 'push', 'pull', 'legs', 'custom'].includes(workout.type);
-    const out = [];
-    WT.exercises.forEach((ex) => {
-      if (!eligible(ex, ctx, used)) return;
-      const level = slotMatch(ex, slot, 0) ? 0 : slotMatch(ex, slot, 1) || ex.primary === cur.primary ? 1 : slotMatch(ex, slot, 2) ? 2 : -1;
-      if (level < 0 || (level === 2 && !opts.wide)) return;
-      const r = scoreExercise(ex, slot, ctx, chosen, focused, 0);
-      const loaded = (e) => !['bw', 'bwl', 'time', 'cardio'].includes(e.load);
-      let bonus = loaded(ex) === loaded(cur) ? 1.5 : 0;
-      if (item.intensity && ex.intensities.includes(item.intensity)) bonus += 1;
-      out.push({ ex, score: r.s - level * 3 + bonus, level, why: r.why, samePattern: ex.pattern === cur.pattern });
-    });
-    return out.sort((a, b) => b.score - a.score);
+    return WT.P.alternatives(workout, uid, opts);
   };
 
   /** Replace an exercise inside a workout/session item, keeping structure. */
@@ -1344,9 +1180,14 @@
     const keepSets = item.sets && typeof item.sets === 'number' ? item.sets : null;
     Object.assign(item, pr);
     if (keepSets && WT.trackType(ex) !== 'cardio') item.sets = keepSets;
-    item.why = ['Swapped in'];
+    // The slot (and its programming role) stays; only the exercise filling it changes.
+    const keepsRole = item.slot && item.slot.moves && WT.P.matchSlot(ex, Object.assign({}, item.slot, { legacy: false }), 0);
+    item.why = [keepsRole ? `Swapped in — keeps the ${String(item.slot.label).toLowerCase()} role` : 'Swapped in'];
     return item;
   };
+
+  /** Engine internals shared with the programming layer (programming.js). */
+  WT._gen = { buildContext, eligible, slotMatch, scoreExercise, pickForSlot, fitDuration, assignIntensities };
 
   /* ═════════════════════ SESSIONS ═════════════════════ */
   WT.sessionFromWorkout = function (w) {

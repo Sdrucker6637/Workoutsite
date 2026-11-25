@@ -2,7 +2,7 @@
 const fs = require('fs'), path = require('path'), vm = require('vm');
 const mem = {};
 globalThis.localStorage = { getItem: k => mem[k] ?? null, setItem: (k, v) => (mem[k] = String(v)), removeItem: k => delete mem[k] };
-for (const f of ['exercises.js', 'core.js', 'engine.js']) vm.runInThisContext(fs.readFileSync(path.join(__dirname, '..', 'js', f), 'utf8'), { filename: f });
+for (const f of ['exercises.js', 'core.js', 'engine.js', 'programming.js']) vm.runInThisContext(fs.readFileSync(path.join(__dirname, '..', 'js', f), 'utf8'), { filename: f });
 const WT = globalThis.WT;
 let fails = 0, passes = 0;
 const ok = (c, msg) => { if (c) passes++; else { fails++; console.log('  FAIL:', msg); } };
@@ -33,11 +33,10 @@ for (const t of WT.WORKOUT_TYPES) {
     const w = WT.generate(s);
     const exs = check(w, t.id);
     ok(w.exercises.length === (t.id === 'cardio' ? 6 : 6), `${t.id}: count ${w.exercises.length}`);
-    if (t.id === 'full') {
-      const g = exs.map(e => WT.MUSCLES[e.primary].group);
-      ok(g.includes('legs') && g.includes('chest') && g.includes('back'), 'full: push/pull/legs present ' + g);
-    }
-    const allowed = { push: ['chest', 'shoulders', 'arms'], pull: ['back', 'arms', 'shoulders'], legs: ['legs', 'core'], chest: ['chest'], back: ['back', 'shoulders', 'chest'], shoulders: ['shoulders', 'back'], biceps: ['arms'], triceps: ['arms'], arms: ['arms'], core: ['core', 'back'] }[t.id];
+    if (t.id === 'full') ['push', 'pull', 'knee', 'hip'].forEach(k => ok(exs.some(e => WT.P.covers(e, k)), 'full: covers ' + k + ' ' + exs.map(e => e.id)));
+    // Chest days: chest dominates; at most one supporting triceps / delt exercise in a 6-exercise session
+    if (t.id === 'chest') ok(exs.filter(e => e.primary !== 'chest').length <= 1 && exs.filter(e => e.primary !== 'chest').every(e => ['triceps', 'side-delts', 'front-delts'].includes(e.primary)), 'chest: support limited ' + exs.map(e => e.id));
+    const allowed = { push: ['chest', 'shoulders', 'arms'], pull: ['back', 'arms', 'shoulders'], legs: ['legs', 'core'], chest: ['chest', 'arms', 'shoulders'], back: ['back', 'shoulders', 'chest'], shoulders: ['shoulders', 'back'], biceps: ['arms'], triceps: ['arms'], arms: ['arms'], core: ['core', 'back'] }[t.id];
     if (allowed) exs.forEach(e => ok(allowed.includes(WT.MUSCLES[e.primary].group), `${t.id}: off-target ${e.id}`));
     if (t.id === 'push') exs.forEach(e => ok(e.primary !== 'biceps', 'push has biceps'));
     if (t.id === 'cardio') exs.forEach(e => ok(e.primary === 'cardio' || e.tags.includes('conditioning'), 'cardio off-target ' + e.id));
@@ -61,7 +60,7 @@ for (const t of WT.WORKOUT_TYPES) {
       ok(tally.heavy <= Math.ceil(w.exercises.length / 2), 'heavy safety cap');
       w.exercises.forEach((i) => {
         const ex = WT.ex(i.exId);
-        ok(ex.intensities.includes(i.intensity), `${ex.id} got ineligible ${i.intensity}`);
+        ok(ex.intensities.includes(i.intensity) || (WT.STAGED[i.intensity] && WT.canStage(ex)), `${ex.id} got ineligible ${i.intensity}`);
         if (i.intensity === 'burnout') ok(!ex.tags.includes('spinal-load'), 'burnout on spinal-load ' + ex.id);
         if (i.intensity === 'heavy') ex.category === 'compound' ? heavyComp++ : heavyIso++;
         if (i.intensity === 'burnout') ex.category === 'compound' ? burnComp++ : burnIso++;

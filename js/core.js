@@ -423,10 +423,10 @@
   WT.typeName = (id) => (WT.WORKOUT_TYPES.find((t) => t.id === id) || { name: id }).name;
   WT.muscleName = (m) => (WT.MUSCLES[m] || { name: m }).name;
   WT.cap = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
-  WT.shuffle = (a) => {
+  WT.shuffle = (a, rnd) => {
     a = a.slice();
     for (let i = a.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
+      const j = Math.floor((rnd || Math.random)() * (i + 1));
       [a[i], a[j]] = [a[j], a[i]];
     }
     return a;

@@ -58,7 +58,7 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
     const ex = (await db()).draft.exercises;
     tallies.add(['heavy', 'regular', 'burnout', 'standard'].map((x) => ex.filter((e) => e.intensity === x).length).join('/'));
     if (!ex.some((e) => e.intensity === 'heavy' || e.intensity === 'burnout')) noSpecial = true;
-    ok(await page.evaluate(() => WT.db.draft.exercises.every((e) => WT.ex(e.exId).intensities.includes(e.intensity))), 'assigned intensities are eligible');
+    ok(await page.evaluate(() => WT.db.draft.exercises.every((e) => WT.ex(e.exId).intensities.includes(e.intensity) || (WT.STAGED[e.intensity] && WT.canStage(WT.ex(e.exId))))), 'assigned intensities are eligible');
   }
   ok(tallies.size >= 5, `intensity mix varies (${tallies.size} distinct in 18)`);
   console.log('    a workout with no heavy/burnout seen in this sample:', noSpecial);
@@ -99,6 +99,8 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
 
   console.log('Workout 1: log sets with the editor');
   await page.click('[data-act="genType"][data-k="full"]'); await gen();
+  // The plain-set editor is exercised here (multi-stage sets have their own suite): regenerate if the first lift is staged
+  for (let k = 0; k < 10 && (await page.evaluate(() => !!WT.STAGED[WT.db.draft.exercises[0].intensity])); k++) await gen();
   await page.click('.sticky-cta [data-act="startDraft"]');
   await page.waitForSelector('.cur');
   ok(await page.evaluate(() => document.body.classList.contains('focus')), 'focus mode hides navigation while training');

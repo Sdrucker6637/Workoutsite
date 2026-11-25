@@ -36,8 +36,8 @@ A quiet, precise interface in the spirit of Apple, Linear and Things: generous w
 | Area | What it does |
 | --- | --- |
 | **Generator** | 13 workout types (Full Body, Push, Pull, Legs, Chest, Back, Shoulders, Arms, Biceps, Triceps, Core, Cardio, Custom multi-muscle). Settings for exercise count (or fit to time), duration, equipment, supersets, priority muscles and muscles to avoid. Each exercise has Swap, Lock and Remove buttons. Regenerate keeps locked exercises, "Re-roll intensities" keeps the exercises and re-draws their intensities, and you can add exercises by hand. |
-| **Randomized intensity** | There are four classes: **heavy** (5–8), **regular** (8–12), **burnout** (12–20+) and **standard** (the exercise's own recommendation, with no label). Each exercise is drawn *independently* from configurable odds (default 22 / 30 / 16 / 32). The odds are weighted by suitability: heavy leans toward compound lifts early in the session; burnout leans toward isolation work late in the session and never goes on spinal-loading lifts. An exercise can never get a class it isn't eligible for. There is no fixed formula, so 0 heavy, 3 heavy, all-regular and 2 + 2 are all possible. The only safety rails are a cap of half the session for heavy and a third for burnout; no minimums are forced. Tap any intensity label to change it. Settings can switch to fixed counts instead. |
-| **Selection logic** | Slot templates per workout type (for example, full body = squat + chest press + back pull + hips + arms + core). Exercises are scored on goal emphasis (lower chest, arm size, obliques), priority muscles, favorites, weekly volume shortfall per muscle, fatigue from the last 48 hours, overlap within the workout, recency and difficulty. Heavy work goes to compound lifts, burnouts go to finishers, and supersets pair non-competing muscles. |
+| **Randomized intensity** | Classes: **heavy** (5–8), **regular** (8–12), **burnout** (12–20+), **standard** (the exercise's own recommendation), plus occasional **drop** and **build-up** sets. Intensities are drawn *after* the structure is set, independently per exercise from configurable odds (default 22 / 30 / 16 / 32), weighted by the exercise's **role**: heavy goes to main lifts, burnout to isolation and core work (never to a main lift or a spinal-loading lift). Each workout also draws a small budget for advanced work, so many sessions have none, most have one or two touches, and regular work stays at roughly 85% of exercises. At most one multi-stage set per workout: a drop set on a loadable isolation, or a build-up set on a loadable main or secondary compound. An exercise never gets a class it isn't eligible for. Tap any intensity label to change it. Settings can switch to fixed counts instead. |
+| **Programming** | Structure comes before selection (see *Workout programming* below). Each workout type has a blueprint: required movement slots (full body always gets a squat pattern, a press, a pull and a hinge), then optional slots chosen by your priorities, weekly volume and recovery. Exercises are scored on goal emphasis, priority muscles, favorites, weekly volume, recent fatigue, overlap, recency and difficulty. Exercises are ordered by role, and supersets are formed only from compatible accessory pairs. Every plan shows its objective, and each exercise shows the slot it fills. |
 | **Active workout** | A set table with *previous*, weight, reps and ✓ columns. Blank fields fall back to last time's numbers. Supports per-set weights, adding/removing sets, skipping, replacing, reordering, notes and an effort rating. A rest timer starts on its own (with sound and vibration) and is superset-aware. |
 | **Progressive overload** | Uses your recorded sets (double progression). For example, 30 lb × 10, 10, 9 gives "Maintain 30 lb — aim for 10, 10, 10". All sets at the top of the range → add weight (+5 lb upper-body dumbbell or +2.5 if you have micro-plates, +5–10 lb lower body, snapped to dumbbells you own). Within range → add reps. Missed reps once → hold; missed twice → drop about 10%. Long layoffs restart conservatively. Bodyweight lifts get more reps, added load or a harder variation. **Weights only change when you tap Apply.** Every recommendation explains why. |
 | **Library** | 185 exercises, each with muscles, equipment, category, movement pattern, difficulty, sets, reps, rest, intensity class and a video link. Search, filters, favorites, exclusions, custom exercises and editing are supported. |
@@ -69,6 +69,30 @@ Single-pose references are labelled "Still image". Attribution appears under eve
 
 ### About the videos
 No video IDs are hard-coded, because they can't be checked offline and they break over time. Each exercise opens a **YouTube search** for that exercise's form tutorial. If you find a video you like, paste its link into the exercise (Library → exercise → paste link, or Edit). After that it **plays embedded** inside the app.
+
+## Workout programming
+
+`js/programming.js` decides **what a session must accomplish** before choosing exercises; `js/engine.js` keeps exercise scoring, prescriptions, progression and history.
+
+1. **Movement classes** are derived from each exercise's existing pattern (no data migration): horizontal / vertical push and pull, knee-dominant (bilateral and unilateral), hip-dominant, hip extension, knee flexion, the core classes (flexion, anti-extension, anti-rotation, rotation, lateral), and isolation classes for delts, arms, calves and so on. Muscle contributions are fractional: a set counts 1 for the primary muscle, ½ for each secondary muscle of a compound lift, and ¼ for each secondary muscle of an isolation exercise. A bench press is 1 chest set, but only ½ a triceps set and ½ a front-delt set.
+2. **Blueprints** (full body, push, pull, legs, chest, arms) have *required* slots with roles (main lift, secondary compound, accessory, isolation, core) and a weighted pool of *optional* slots. An emphasis is drawn for each workout (press-led vs overhead-led push, row-led vs vertical-pull-led pull, quad- vs posterior-led legs, which chest angles), so sessions vary inside the same structure. Back, shoulders, biceps, triceps, core, custom and cardio keep their focused slot lists. Cardio never contains resistance work.
+3. **Optional slots** (the 5th and 6th exercise by default) are weighted by priority muscles, goal tags, weekly need, recent fatigue and a per-session cap (~10 fractional sets per muscle, 12 for priorities). Each one says why it was added.
+4. **Coverage** is a hard check. If equipment, restrictions or avoided muscles make a category impossible, the plan says so and why (for example, "nothing fits your equipment"), and full body is titled *(partial)* rather than claiming coverage.
+5. **Order**: main lifts → secondary compounds → accessories → isolation → core. The session's lead lift opens it, and lifts that share working muscles are not placed back to back.
+6. **Supersets** are optional and fairly infrequent (about a quarter of sessions, more when the plan runs over your time). They pair only accessory or isolation work that doesn't compete for the same muscles: antagonists (biceps/triceps, quads/hamstrings, chest/upper back) or non-competing work (delts + calves, upper body + core). Main lifts always stand alone.
+7. **Quality check**: each plan is scored on coverage, movement variety, redundancy, compound/isolation balance, order, intensity, supersets, volume/recovery, duration and focus. Hard violations trigger regeneration (up to 6 attempts; in practice almost always 1).
+8. **Swaps** keep the slot: same-role alternatives (same movement and target muscle) come first. Options that would open a coverage gap or duplicate another exercise are marked. If nothing fits the role, the sheet says so, and *Same muscle group* still lets you choose freely.
+
+**Volume and recovery.** Weekly reference: ~10 fractional sets per muscle (8 for beginners, 12 for advanced, +4 for priorities, 4 for small muscles), scaled by your planned sessions per week. Muscles below their reference are favoured *gently* (diminishing weight), and those well above it are de-emphasised. Recent fatigue is weighted by recency (full for 24 h, fading to zero at 72 h) and lowers both selection and heavy loading.
+
+**Evidence base, and how strongly it is applied.**
+- *Currier et al. 2026, ACSM position stand (overview of 137 systematic reviews, >30,000 participants):* hypertrophy is associated with higher weekly volume (≥10 sets/week), and strength with heavier loads, 2–3 sets, ≥2 sessions/week and exercises placed **early in the session**. Many variables (training to failure, set structure such as drop sets, equipment type, periodization) showed **no consistent effect**. Forge uses this for the ~10-set reference, for placing heavy work on the first lifts, and for treating drop / build-up sets as occasional variety rather than a driver of results.
+- *Schoenfeld et al. 2017* (dose-response meta-analysis): more weekly sets → more growth, with diminishing returns. This is why volume targets are references with a gentle, saturating pull rather than quotas.
+- *Pelland et al. 2025* (dose-response meta-regressions): counting indirect sets as fractions (≈0.5) modelled hypertrophy best, and returns diminish as volume rises. This is the basis for fractional set accounting. The ¼ weight for isolation secondaries is a heuristic, not a finding.
+- *Ramos-Campo et al. 2024* (14 studies): split and full-body routines produce similar strength and hypertrophy when volume is equated. Forge therefore doesn't favour either; it balances volume across whatever sessions you choose.
+- *Currier et al. 2023* (Bayesian network meta-analysis): heavier loads favour strength, while hypertrophy is similar across a wide range of loads when sets are hard. That is why heavy work is limited to a few main lifts and regular work dominates.
+
+Everything else (slot weights, the session cap, superset frequency, intensity budgets) is a practical coaching heuristic, not a research finding, and can be tuned in `programming.js`.
 
 ## Food & protein tracker
 
@@ -154,7 +178,8 @@ Netlify Drop (drag the folder onto app.netlify.com/drop) and Cloudflare Pages al
 ## Tests
 
 ```bash
-node tests/engine.test.js                          # generator, intensity statistics over 3,200 workouts, progression, PRs, import/export (≈37k assertions)
+node tests/engine.test.js                          # generator, intensity statistics over 3,200 workouts, progression, PRs, import/export (≈36k assertions)
+node tests/programming.test.js                     # programming quality: 900 full-body workouts over 9 equipment setups, split coverage, order, supersets, intensity, volume, swaps, determinism (≈57k assertions)
 python3 -m http.server 8765 & node tests/e2e.test.js   # full browser flow (needs Playwright)
 node tests/features.test.js                         # exercise demonstrations + More options panel
 node tests/settypes.test.js                         # drop sets, build-up sets, plain set types unchanged
@@ -170,7 +195,8 @@ index.html            app shell
 css/app.css           design system (dark/light), responsive layout
 js/exercises.js       exercise database (185)
 js/core.js            taxonomy, default profile, storage, import/export
-js/engine.js          history queries, progression, generator, stats
+js/engine.js          history queries, progression, exercise scoring, prescriptions, stats
+js/programming.js     workout structure: movement classes, blueprints, coverage, order, supersets, intensity, quality score, swaps
 js/charts.js          SVG line/bar charts + rings
 js/ui.js              shell, router, sheets, toasts, rest timer
 js/views-train.js     Home, Generate, Train (active workout)
