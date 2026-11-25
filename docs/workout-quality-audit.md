@@ -13,7 +13,7 @@ Seeds are fixed, so runs are directly comparable. `docs/audit/before.txt` is the
 | | Before | After |
 |---|---|---|
 | Flags in the 85-workout sample | 55 | 20 |
-| Flags in 1,200 identical-settings workouts | 347 | ~140 |
+| Flags in 1,200 identical-settings workouts | 347 | 129 |
 | Mean / minimum quality score (sample) | 94.2 / 68 | 94.6 / 75 |
 | Triceps overload on push/chest days (sample / 1,200 runs) | 8 / 59 | 2 / 0 |
 | Impractical supersets (cable + cable, bench + bench) | 3 / 12 | 0 / 0 |
@@ -73,6 +73,6 @@ In the 8-week simulation, main lifts stay fairly consistent (good for progressio
 
 ## Known limitations
 - **Bodyweight-only lower body:** the library has no basic bodyweight squat or split squat, so the only bodyweight knee-dominant compound is the advanced Cossack squat. Adding exercises (with demonstrations) would fix this.
-- **Pull-Up + a pulldown** still appears in ~10% of pull days (heavy bodyweight work, then loadable volume). This is defensible and was left in.
+- **Pull-Up + a pulldown** still appears in ~13% of pull days (heavy bodyweight work, then loadable volume). This is defensible and was left in.
 - **Arms days are short** (~35–40 min at a 60-minute setting), because duration fitting only adds sets to compound lifts.
 - **Gym layout is unknown:** "different stations" supersets (machine + cable) are allowed.
